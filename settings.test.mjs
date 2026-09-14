@@ -30,7 +30,7 @@ console.log('① spec 与默认值（UI 表单结构也由它生成 ⇒ 新增�
 {
   const d = defaultSettings();
   check(SETTINGS_GROUPS.join(',') === 'identity,roster,display,gates', '四组：身份 / 编制 / 显示 / 门禁', SETTINGS_GROUPS.join(','));
-  check(Object.keys(flatSpec()).length === 19, '共 19 个设置项（4+5+4+6）', String(Object.keys(flatSpec()).length));
+  check(Object.keys(flatSpec()).length === 20, '共 20 个设置项（4+5+4+7）', String(Object.keys(flatSpec()).length));
   check(d.roster.maxTasks === 200 && d.gates.tierGate === 'soft' && d.identity.profile === 'developer', '默认值符合既有行为（maxTasks=200 / 档位门 soft / 身份 developer）');
   const schema = settingsSchema();
   check(schema.length === 4 && schema.every((g) => g.label && g.hint && g.items.length), 'schema 每组都有中文标签与说明', schema.map((g) => `${g.group}:${g.items.length}`).join(' '));

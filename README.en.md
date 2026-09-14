@@ -91,6 +91,10 @@ pnpm install && dsh web
 > on the official page — its value type cannot be expressed reliably in the host schema, so it stays with
 > the overlay's settings tab and `$DSH_HOME/expert-team/settings.json`. On a host with no settings service
 > every setting falls back to that file.
+>
+> **The A-line switch**: the "narrow the lead's tool face" gate (`gates.leadToolFace`, default `on`)
+> decides whether execution tools (`bash/write/edit/grep/glob`) are taken away from the lead and given
+> to the role subagents. Turn it off with `config.leadToolFace` or `DSH_EXPERT_TEAM_LEAD_TOOLFACE=off`.
 
 ## Quick start
 

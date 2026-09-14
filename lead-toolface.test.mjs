@@ -188,6 +188,52 @@ console.log('\n⑧ `agentScopedToolNames`：作用域清单怎么取，以及取
   check(emptyScoped.reason === 'empty-scoped-view', '作用域视图为空 ⇒ 标记 empty-scoped-view（供排查，而不是当成"没什么可收"）', emptyScoped.reason);
 }
 
+
+console.log('\n⑨ lead 工具面收窄的开关：config > env > 设置 > 默认(on)，关掉时出声一次');
+{
+  const { _live } = await import(join(here, 'lib', 'command.js'));
+  const ENV = _live.LEAD_TOOLFACE_ENV;
+  const saved = process.env[ENV];
+  try {
+    // 默认：没人表态 ⇒ on（设计意图）
+    delete process.env[ENV];
+    check(_live.resolveLeadToolFace({}, { leadToolFace: undefined }) === 'on', '默认 on（设计意图：执行类工具不在 lead 手上）', _live.effectiveLeadToolFace());
+
+    // 设置控制台改 off ⇒ 生效（这是用户日常最可能用的那条路：官方面板/浮层）
+    check(_live.resolveLeadToolFace({}, { leadToolFace: 'off' }) === 'off', '设置里改 off ⇒ 生效', _live.effectiveLeadToolFace());
+
+    // env 压过设置
+    process.env[ENV] = 'on';
+    check(_live.resolveLeadToolFace({}, { leadToolFace: 'off' }) === 'on', 'env 压过设置（优先级正确）', _live.effectiveLeadToolFace());
+
+    // config 压过 env（部署方显式配置最高）
+    process.env[ENV] = 'off';
+    check(_live.resolveLeadToolFace({ leadToolFace: 'on' }, { leadToolFace: 'off' }) === 'on', 'config 压过 env 与设置', _live.effectiveLeadToolFace());
+
+    // 非法值一律回默认，不猜不报错
+    process.env[ENV] = '也许吧';
+    check(_live.resolveLeadToolFace({}, { leadToolFace: '涡轮' }) === 'on', '非法值（env 与设置都写错）⇒ 回默认 on，不猜', _live.effectiveLeadToolFace());
+  } finally {
+    if (saved === undefined) delete process.env[ENV]; else process.env[ENV] = saved;
+    _live.resolveLeadToolFace({}, { leadToolFace: 'on' });   // 复位，别影响后续断言
+  }
+
+  // 接线：处理器真的尊重它，且关掉时**出声一次**（否则"我明明关了"与"开关没生效"看起来一样）
+  const cmd = readFileSync(join(here, 'lib', 'command.js'), 'utf8');
+  check(/if \(LEAD_TOOLFACE === 'off'\)/.test(cmd), '处理器真的检查了开关', '');
+  check(/LEAD_TOOLFACE_OFF_LOGGED/.test(cmd), '关闭状态只播报一次（不刷屏）', '');
+  check(/resolveLeadToolFace\(config, currentSettings\(\)\.gates\)/.test(cmd), 'apply() 里按 config > env > 设置 解析', '');
+  check(/resolveLeadToolFace\(PLUGIN_CONFIG, s\.gates\)/.test(cmd), '重算路径也解析（设置页改完即时生效）', '');
+
+  // 设置项本身：进 spec ⇒ 官方面板里也能改（enum 是宿主 schema 表达得了的类型）
+  const { flatSpec, defaultSettings } = await import(join(here, 'lib', 'settings.js'));
+  const item = flatSpec()['gates.leadToolFace'];
+  check(!!item && item.type === 'enum' && item.default === 'on' && item.values.join('/') === 'on/off', 'settings spec 里有 gates.leadToolFace（enum on/off，默认 on）', JSON.stringify(item && { type: item.type, default: item.default }));
+  check(defaultSettings().gates.leadToolFace === 'on', '默认设置对象里也是 on', '');
+  const hs = await import(join(here, 'lib', 'host-settings.js'));
+  check(hs.hostSchemaPaths().includes('gates.leadToolFace'), '该字段可被宿主 schema 表达 ⇒ 官方面板里能改', '');
+}
+
 console.log('');
 if (fail > 0) {
   console.log(`✗ lead 工具面测试失败：${fail} 项`);

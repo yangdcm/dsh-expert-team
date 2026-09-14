@@ -3,6 +3,18 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.2.3
+
+**给 lead 工具面收窄加开关**（因为 1.2.2 让一个从未生效的行为突然生效了）
+
+- 背景：A 线"把执行类工具从 lead 手上拿走"此前因取错作用域**从未真正生效**，1.2.2 修好后它会
+  立刻改变日常形态 —— expert-team 会话的 lead 不再持有 `bash/write/edit/grep/glob`。
+  这是设计意图，但**没有开关的行为变更不该只留一个"忍着或回退版本"的选项**。
+- 新增开关 `gates.leadToolFace`（`on`/`off`，默认 `on`）：优先级与档位门一致
+  **`config.leadToolFace` > `DSH_EXPERT_TEAM_LEAD_TOOLFACE` > 设置（官方面板/浮层） > 默认 on**；
+  非法值一律回默认 on（不猜、不报错 —— 与档位门同一条纪律）。
+- 关掉时**出声一次**（`[expert-team] lead 工具面收窄已关闭…`）：否则"我明明关了"与
+  "开关没生效"看起来一模一样。
 ## 1.2.2
 
 **修掉"lead 工具面收窄静默失效"**（拿真机启动日志换来的）

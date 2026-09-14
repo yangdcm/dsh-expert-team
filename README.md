@@ -84,6 +84,10 @@ pnpm install && dsh web
 > 并且随插件市场的**备份与恢复**一起走。**诚实边界**：`默认班底`（角色 id 数组）不在官方页面里
 > —— 它的取值类型在宿主 schema 里表达不可靠，继续由浮层设置页签与
 > `$DSH_HOME/expert-team/settings.json` 负责；宿主没有 settings 服务时，全部设置退回该文件。
+>
+> **A 线开关**：设置里的「门禁 → 收窄 lead 工具面」（`gates.leadToolFace`，默认 `on`）决定
+> 是否把执行类工具（`bash/write/edit/grep/glob`）从 lead 手上拿走、交给角色子代理。
+> 也可用 `config.leadToolFace` 或环境变量 `DSH_EXPERT_TEAM_LEAD_TOOLFACE=off` 关闭。
 
 ## 快速上手
 
