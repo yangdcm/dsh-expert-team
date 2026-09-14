@@ -68,7 +68,16 @@ const MAPPINGS = [
 ];
 
 const SKIP_DIR = new Set(['node_modules', '.git', '__pycache__']);
-const SKIP_FILE = /(?:\.bak|\.bak-.*|\.tsbuildinfo|\.DS_Store)$/;
+/**
+ * 不参与比对的文件。
+ *
+ * `.expert-team-version` 是**我们自己的归属/版本标记**（`lib/command.js` 的 `INSTALL_STAMP`），
+ * 不是待同步的包内资产：它只存在于运行时副本里，源里永远没有这一份。两侧都不比 ⇒ 带戳副本判
+ * `IN_SYNC`。不加这条的话，1.2.x 起"加载即铺"给每个用户都盖章，skill/preset 两条映射会立刻
+ * 因为"目标多了一个文件"报假漂移 —— 而 `listFiles` 同时喂给 `compareTree` 与 `syncTree`，
+ * 所以放在这里也让**检测范围与 `--fix` 范围保持一致**（本仓既有纪律：不许"报漂移但永不修复"）。
+ */
+const SKIP_FILE = /(?:\.bak|\.bak-.*|\.tsbuildinfo|\.DS_Store|\.expert-team-version)$/;
 
 function sha1(file) {
   try {

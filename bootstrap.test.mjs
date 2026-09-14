@@ -159,6 +159,48 @@ console.log('\n⑧ 命令面：/team uninstall 可解析');
   check(/\/team uninstall/.test((await import(join(here, 'lib', 'command-parse.js'))).USAGE), 'USAGE 里有它');
 }
 
+console.log('\n⑨ 插件加载时就把 preset 铺到位（2026-09-15 事故：uninstall 后 preset 消失 ⇒ 会话丢角色工具）');
+{
+  /** 与 ⑥ 段同形的假 ctx。 */
+  const fakeCtx = () => ({
+    commands: { register: () => {} },
+    on: () => {},
+    effect: (fn) => { try { fn(); } catch { /* 忽略 */ } },
+    inject: () => {},
+    get: (k) => (k === 'skills' ? { register: () => () => {} } : undefined),
+  });
+
+  // 前置：模拟"/team uninstall 之后、且还没跑过 /team <任务>"的状态
+  await rm(presetDst, { recursive: true, force: true });
+  check(!(await exists(presetDst)), '前置：preset 副本不存在（正是事故现场的状态）');
+
+  // ⑨.1 加载即铺 —— 本事故的核心修复：不再等 createRun
+  apply(fakeCtx(), {});
+  await new Promise((r) => setTimeout(r, 100));   // fire-and-forget 需要等一拍
+  check(await exists(join(presetDst, 'agent.cordis.yml')), 'apply() 之后 preset 已在位（**加载即铺**，不再等首次 /team）');
+  check((await readFile(join(presetDst, _live.INSTALL_STAMP), 'utf8')).trim() === _live.PLUGIN_VERSION, '且带上当前版本戳', _live.PLUGIN_VERSION);
+  check(!(await exists(skillDst)), 'skill 仍不落地（运行时注册优先，加载时那次调用立即返回）');
+
+  // ⑨.2 事故回归：uninstall → 再加载 ⇒ preset 又回来
+  await _live.uninstallInstalled();
+  check(!(await exists(presetDst)), 'uninstall 之后副本被清掉');
+  apply(fakeCtx(), {});
+  await new Promise((r) => setTimeout(r, 100));
+  check(await exists(join(presetDst, 'agent.cordis.yml')), '再次加载 ⇒ preset 又铺回来了（**本事故的回归测试**）');
+
+  // ⑨.3 铺不上不许抛（只读盘/权限问题不能把插件挂不上）
+  const savedHome = process.env.DSH_HOME;
+  let threw = null;
+  try {
+    process.env.DSH_HOME = '/dev/null/nope';
+    try { apply(fakeCtx(), {}); } catch (e) { threw = String((e && e.message) || e); }
+    await new Promise((r) => setTimeout(r, 80));
+  } finally {
+    process.env.DSH_HOME = savedHome;
+  }
+  check(threw === null, '$DSH_HOME 不可写时 apply() 不抛（铺不上不影响插件加载）', threw || '（预期会出现一条一次性的 warn）');
+}
+
 await rmFixture(root);
 console.log('');
 if (fail > 0) {

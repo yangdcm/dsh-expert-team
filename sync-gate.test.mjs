@@ -119,9 +119,50 @@ check(/preset\.yml/.test(r7.out), '指出具体是哪个文件漂移', '');
 const presetLine = r7.out.split('\n').filter((l) => l.includes('[preset]')).join('');
 check(/\[preset\]/.test(r7.out) && !/目标不存在/.test(presetLine), 'preset 那行报的是漂移，不是"目标不存在"');
 
+console.log('\n⑦ 归属标记 `.expert-team-version` 不参与比对（1.2.x「加载即铺」会给每个副本盖章）');
+{
+  // 为什么要这条：1.2.x 起插件**加载时**就铺 preset 并盖上 `.expert-team-version`（归属/版本标记，
+  // 源里永远没有这一份）。它若进了比对名单，每个用户装完立刻会看到 skill/preset 两条**假漂移**。
+  // 这里构造的正是"新用户装完"的初始状态：**只有标记不同、内容与源逐字节一致**。
+  const { _live } = await import(join(here, 'lib', 'command.js'));
+  const STAMP = _live.INSTALL_STAMP;   // 不硬编码文件名：用插件自己的常量（单一真源）
+
+  await rm(skillDst, { recursive: true, force: true });
+  await rm(presetDst, { recursive: true, force: true });
+  await cp(join(here, 'skills', 'expert-team'), skillDst, { recursive: true });
+  await cp(join(here, 'presets', 'expert-team'), presetDst, { recursive: true });
+  await writeFile(join(skillDst, STAMP), '9.9.9-probe\n');
+  await writeFile(join(presetDst, STAMP), '9.9.9-probe\n');
+
+  const r8 = await gate(home);
+  check(r8.code === 0, '带归属标记、内容与源一致 ⇒ exit 0（新用户装完就是这个状态）', `exit=${r8.code}`);
+  check(/三副本一致/.test(r8.out), '结论是"一致"');
+
+  const j = JSON.parse((await gate(home, ['--json'])).out);
+  const skillMap = j.mappings.find((m) => m.id === 'skill') || {};
+  const presetMap = j.mappings.find((m) => m.id === 'preset') || {};
+  check(skillMap.status === 'IN_SYNC', 'skill 判 IN_SYNC（不是 DRIFT）', String(skillMap.status));
+  check(presetMap.status === 'IN_SYNC', 'preset 判 IN_SYNC', String(presetMap.status));
+  const leaked = [...(skillMap.onlyDst || []), ...(skillMap.differ || []), ...(presetMap.onlyDst || []), ...(presetMap.differ || [])]
+    .filter((f) => String(f).includes(STAMP));
+  check(leaked.length === 0, '标记既不在 onlyDst 也不在 differ 里', leaked.join(','));
+  check(!JSON.stringify(j).includes(STAMP), '整份 JSON 报告里都不出现该标记');
+
+  await writeFile(join(skillDst, STAMP), '0.0.1-别的版本\n');
+  const r9 = await gate(home);
+  check(r9.code === 0, '标记的**内容**不同 ⇒ 仍 exit 0（标记内容不参与同步判定）', `exit=${r9.code}`);
+
+  const r10 = await gate(home, ['--fix']);
+  check(r10.code === 0, '--fix 仍 exit 0', `exit=${r10.code}`);
+  const keptSkill = await readFile(join(skillDst, STAMP), 'utf8');
+  const keptPreset = await readFile(join(presetDst, STAMP), 'utf8');
+  check(/0\.0\.1-别的版本/.test(keptSkill) && /9\.9\.9-probe/.test(keptPreset),
+    '--fix 不删也不覆盖目标侧的归属标记（检测范围与修复范围一致，没有"报漂移却永不修复"的死角）', `${keptSkill.trim()} / ${keptPreset.trim()}`);
+}
+
 console.log('');
 if (fail > 0) {
   console.log(`✗ 同步门禁元测试失败：${fail} 项`);
   process.exit(1);
 }
-console.log('✔ 同步门禁元测试通过（能抓漂移、能修复、可选缺席不误报且不崩、可选存在仍抓漂移）');
+console.log('✔ 同步门禁元测试通过（能抓漂移、能修复、可选缺席不误报且不崩、可选存在仍抓漂移、归属标记不参与比对）');
