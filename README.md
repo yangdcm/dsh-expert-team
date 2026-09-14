@@ -79,11 +79,17 @@ pnpm install && dsh web
 > API），但带版本戳：升级后整目录重铺，不会静默停在旧版本。用 `/team uninstall` 可回收本插件
 > 铺下的副本（只删带我们版本戳的目录，用户自己写的同名内容一律保留）。
 >
-> **设置在哪改**：插件加载时把设置注册成宿主命名空间 `expert-team` ⇒ 出现在
-> **设置 → 插件 → 插件配置**，改动**即时生效**（上限/轮次/档位门在进程内重算，不必重启），
-> 并且随插件市场的**备份与恢复**一起走。**诚实边界**：`默认班底`（角色 id 数组）不在官方页面里
-> —— 它的取值类型在宿主 schema 里表达不可靠，继续由浮层设置页签与
-> `$DSH_HOME/expert-team/settings.json` 负责；宿主没有 settings 服务时，全部设置退回该文件。
+> **设置在哪改**：插件加载时把设置注册成宿主命名空间 `expert-team`（**数据层**：宿主持有、
+> 随插件市场的**备份与恢复**一起走、可被任何按 schema 渲染的界面读取；改值后上限/轮次/档位门
+> 在进程内**即时重算**，不必重启）。
+> **内置设置页里的卡片尚未交付**：那张页面渲染的是「宿主服务的命名空间 ∩ 已注册卡片」，
+> 我们只有前半（`ctx.settings.register`）；后半需要**客户端分节贡献**（slot
+> `settings.plugin.item`，`key` 为该命名空间；并把 `@deepseek-ai/dsh-client-ui-settings`
+> 加进 `dsh.client.inject`）—— 实施要点见 `docs/专家团-设置卡片-实施要点.md`。
+> 所以**当前改设置的地方是浮层的设置页签**（`/plugins/dsh-expert-team/settings`）。
+> **诚实边界**：`默认班底`（角色 id 数组）刻意不上宿主 schema（类型表达不可靠），继续由
+> 浮层页签与 `$DSH_HOME/expert-team/settings.json` 负责；宿主没有 settings 服务时，
+> 全部设置退回该文件。
 >
 > **A 线开关**：设置里的「门禁 → 收窄 lead 工具面」（`gates.leadToolFace`，默认 `on`）决定
 > 是否把执行类工具（`bash/write/edit/grep/glob`）从 lead 手上拿走、交给角色子代理。

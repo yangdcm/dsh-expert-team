@@ -84,13 +84,21 @@ pnpm install && dsh web
 > upgrade instead of silently going stale. `/team uninstall` reclaims the copies this plugin laid down —
 > it only removes directories carrying our stamp, and never touches content you authored yourself.
 >
-> **Where settings live**: on load the plugin registers its settings as the host namespace `expert-team`,
-> so they appear under **Settings → Plugins → Plugin configuration** and take effect immediately (limits,
-> round caps and the tier gate are recomputed in-process — no restart), and they travel with the plugin
-> market's **backup and restore**. **Honest boundary**: the default roster (an array of role ids) is *not*
-> on the official page — its value type cannot be expressed reliably in the host schema, so it stays with
-> the overlay's settings tab and `$DSH_HOME/expert-team/settings.json`. On a host with no settings service
-> every setting falls back to that file.
+> **Where settings live**: on load the plugin registers its settings as the host namespace `expert-team`
+> — the **data layer**: the host owns them, they travel with the plugin market's **backup and restore**,
+> any interface that renders the schema can read them, and a changed value recomputes limits, round caps
+> and the tier gate in-process (no restart).
+> **The card inside the built-in settings page is not shipped yet**: that page renders the intersection of
+> *the host service's namespaces* and *registered cards*. We only have the first half
+> (`ctx.settings.register`); the second half needs a **client-side section contribution** (slot
+> `settings.plugin.item` keyed by this namespace, plus `@deepseek-ai/dsh-client-ui-settings` added to
+> `dsh.client.inject`) — see `docs/专家团-设置卡片-实施要点.md` for the implementation notes.
+> So **settings are currently edited from the overlay's settings tab**
+> (`/plugins/dsh-expert-team/settings`).
+> **Honest boundary**: the default roster (an array of role ids) is deliberately *not* in the host schema
+> (its value type cannot be expressed reliably), so it stays with the overlay's tab and
+> `$DSH_HOME/expert-team/settings.json`. On a host with no settings service every setting falls back to
+> that file.
 >
 > **The A-line switch**: the "narrow the lead's tool face" gate (`gates.leadToolFace`, default `on`)
 > decides whether execution tools (`bash/write/edit/grep/glob`) are taken away from the lead and given
