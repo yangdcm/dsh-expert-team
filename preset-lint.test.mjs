@@ -51,6 +51,20 @@ const ROW = (agentOptions) => `- id: tool-subagent-pm
 ${agentOptions}
 `;
 
+// ── 宿主可用性前置 ─────────────────────────────────────────────────────────
+// 本文件校验的是「用**宿主插件自带的 Config schema** 逐行校验 preset」——没有 dsh 就没有 schema
+// 可校验。CI runner 与大多数别人的机器上没有装 dsh，此时 `validate-agent-preset.mjs` 会以
+// exit 2 明确报错（这是**有意的**：对作者要响亮），但**不该被这个测试解读成 15 项断言失败**。
+// 2026-09-14 GitHub Actions 三档全红，根因正是这里把"机器没装 dsh"当成了被测代码的缺陷。
+// 于是：先探一次宿主；不可用就跳过整个文件并说明怎么启用。
+const hostProbe = run(writeFixture('probe-host.yml', ROW('      reasoningEffort: high')));
+if (/找不到 dsh 安装目录/.test(hostProbe.out)) {
+  console.log('# 预设自检：agentOptions 键名（L3-4b 前置）\n');
+  console.log('· 跳过：本机找不到 dsh 安装 —— 本 lint 需要宿主插件自带的 Config schema。');
+  console.log('  在装了 dsh 的机器上重跑，或设置 DSH_INSTALL 指向 @deepseek-ai/dsh 包目录。');
+  process.exit(0);
+}
+
 console.log('# 预设自检：agentOptions 键名（L3-4b 前置）\n');
 
 console.log('① 正确键名 → 通过');
