@@ -123,7 +123,27 @@ console.log('\n⑥ 宿主提供 skill 注册表时：走运行时注册，一个
   check(!(await exists(skillDst)), '仍然没有复制（运行时注册已覆盖它）');
 }
 
-console.log('\n⑦ 命令面：/team uninstall 可解析');
+console.log('\n⑦ 历史遗留：1.2.0 之前的副本**没有登记过**，卸载仍要能回收它们');
+{
+  // 造一个"旧版本铺的 skill 副本"：无版本戳、无清单条目，但身份是我们的（SKILL.md 的 name 对得上）
+  await rm(skillDst, { recursive: true, force: true });
+  await rm(manifestPath, { force: true });
+  await mkdir(skillDst, { recursive: true });
+  await writeFile(join(skillDst, 'SKILL.md'), '---\nname: expert-team\ndescription: 旧副本\n---\n\n旧正文\n');
+  check(!(await exists(manifestPath)), '前置：清单不存在（模拟 1.1.x 时代）');
+  const out = await _live.uninstallInstalled();
+  check(!(await exists(skillDst)), '无清单也能回收历史 skill 副本（按身份判定：SKILL.md 的 name = expert-team）', out.text.split('\n')[2] || '');
+
+  // 反例：用户自己写的同名 skill（name 不是 expert-team）**不能**被删
+  await mkdir(skillDst, { recursive: true });
+  await writeFile(join(skillDst, 'SKILL.md'), '---\nname: my-own-skill\ndescription: 用户自己写的\n---\n\n我的正文\n');
+  const out2 = await _live.uninstallInstalled();
+  check(await exists(skillDst), '身份不符 ⇒ 保留（用户自己写的同名 skill 不会被删）', '');
+  check(/保留/.test(out2.text), '并在输出里如实列出"保留"项');
+  await rm(skillDst, { recursive: true, force: true });
+}
+
+console.log('\n⑧ 命令面：/team uninstall 可解析');
 {
   const c = parseTeamCommand('uninstall');
   check(c.kind === 'uninstall', '/team uninstall → kind=uninstall', JSON.stringify(c));
