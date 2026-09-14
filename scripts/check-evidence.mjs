@@ -55,10 +55,28 @@ import { join, resolve, dirname, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-/** 包根：packages/dsh-expert-team */
+/** 包根：独立仓布局下它同时就是仓根；monorepo 布局下是 `<repo>/packages/dsh-expert-team`。 */
 const PKG_ROOT = resolve(HERE, '..');
-/** 工作区根：本仓约定为包根的上两级 */
-const WORKSPACE_ROOT = resolve(PKG_ROOT, '..', '..');
+
+/**
+ * 工作区根：**装着 `team/` 的那个目录**。
+ *
+ * 这里刻意不再写死「包根的上两级」。那套算法只在原始 monorepo 布局里成立；仓库改成独立仓
+ * （包根 = 仓根）之后，它会把工作区算到仓库外面去 —— 于是门禁要么扫不到东西，要么去扫
+ * 旁边一个无关目录。解析顺序：
+ *   ① `EXPERT_TEAM_WORKSPACE`（显式指定，CI 或特殊布局用）
+ *   ② 包根本身（独立仓 / 直接在项目里跑）
+ *   ③ 包根的上两级（monorepo：`<repo>/packages/<pkg>`）
+ * 三处都没有 `team/` 时回退到包根，此时只是「没有工件可校验」，**不是失败**。
+ */
+function resolveWorkspaceRoot() {
+  if (process.env.EXPERT_TEAM_WORKSPACE) return resolve(process.env.EXPERT_TEAM_WORKSPACE);
+  for (const candidate of [PKG_ROOT, resolve(PKG_ROOT, '..', '..')]) {
+    if (existsSync(join(candidate, 'team'))) return candidate;
+  }
+  return PKG_ROOT;
+}
+const WORKSPACE_ROOT = resolveWorkspaceRoot();
 
 const DRIFT_TOLERANCE = 5; // 行号容差：±5 行内视为"命中且未漂移"
 

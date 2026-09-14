@@ -1,0 +1,232 @@
+{
+  "_comment": "SPEC.md §1.3 / §6-B1 的测试夹具：由一次真实 run 导出。createdAt 逐条读自各子代理会话 header；role 取自该子代理首条 user/message 的「（role-id）」。禁止改动这些数值 —— 它们是验收基准。",
+  "_expected": {
+    "waveGapMs": 1500,
+    "waves": 7,
+    "membersPerWave": [
+      3,
+      1,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "total": 13,
+    "startAt": 1789052788891
+  },
+  "agents": [
+    {
+      "id": "a21c707a-4f62-458c-80df-ecc0924d87bb",
+      "role": "architect",
+      "label": "架构师 · 差异对照矩阵",
+      "activity": "inactive",
+      "createdAt": 1789052788891,
+      "parentId": "session-89fd2b7b-fc13-4633-adcf-8320de7bf535",
+      "depth": 1,
+      "hasTimestamp": true,
+      "wave": 1,
+      "offsetSec": 0
+    },
+    {
+      "id": "059f55f8-a578-490e-86ba-fc9b911f1764",
+      "role": "pm",
+      "label": "产品经理",
+      "activity": "inactive",
+      "createdAt": 1789052788892,
+      "parentId": "session-89fd2b7b-fc13-4633-adcf-8320de7bf535",
+      "depth": 1,
+      "hasTimestamp": true,
+      "wave": 1,
+      "offsetSec": 0
+    },
+    {
+      "id": "69587d8c-ad0a-4f18-905a-028bb493fcba",
+      "role": "product-analyst",
+      "label": "产品分析员",
+      "activity": "inactive",
+      "createdAt": 1789052788892,
+      "parentId": "session-89fd2b7b-fc13-4633-adcf-8320de7bf535",
+      "depth": 1,
+      "hasTimestamp": true,
+      "wave": 1,
+      "offsetSec": 0
+    },
+    {
+      "id": "047765b8-c38b-4b9b-88ed-e7368958e337",
+      "role": "architect",
+      "label": "架构师 · 工程可行性复核",
+      "activity": "inactive",
+      "createdAt": 1789052849481,
+      "parentId": "a21c707a-4f62-458c-80df-ecc0924d87bb",
+      "depth": 2,
+      "hasTimestamp": true,
+      "wave": 2,
+      "offsetSec": 60
+    },
+    {
+      "id": "0d7007d3-299f-422e-abfb-4c305bcae7a5",
+      "role": "reviewer",
+      "label": "评审专家",
+      "activity": "inactive",
+      "createdAt": 1789053432953,
+      "parentId": "session-89fd2b7b-fc13-4633-adcf-8320de7bf535",
+      "depth": 1,
+      "hasTimestamp": true,
+      "wave": 3,
+      "offsetSec": 644
+    },
+    {
+      "id": "bbfb0f86-dce4-43cf-be7a-7ee6f40053cf",
+      "role": "qa",
+      "label": "测试专家",
+      "activity": "inactive",
+      "createdAt": 1789053432954,
+      "parentId": "session-89fd2b7b-fc13-4633-adcf-8320de7bf535",
+      "depth": 1,
+      "hasTimestamp": true,
+      "wave": 3,
+      "offsetSec": 644
+    },
+    {
+      "id": "6e20ff51-28f0-4bb1-b8df-d36e44f4b9cd",
+      "role": "architect",
+      "label": "架构师",
+      "activity": "inactive",
+      "createdAt": 1789053783336,
+      "parentId": "session-89fd2b7b-fc13-4633-adcf-8320de7bf535",
+      "depth": 1,
+      "hasTimestamp": true,
+      "wave": 4,
+      "offsetSec": 994
+    },
+    {
+      "id": "b2260a8e-d509-4832-88da-ed816d08288c",
+      "role": "pm",
+      "label": "产品经理",
+      "activity": "inactive",
+      "createdAt": 1789053783337,
+      "parentId": "session-89fd2b7b-fc13-4633-adcf-8320de7bf535",
+      "depth": 1,
+      "hasTimestamp": true,
+      "wave": 4,
+      "offsetSec": 994
+    },
+    {
+      "id": "683269b1-ac20-4786-9e3b-0b1a6e3fd2db",
+      "role": "reviewer",
+      "label": "评审专家",
+      "activity": "inactive",
+      "createdAt": 1789054309624,
+      "parentId": "session-89fd2b7b-fc13-4633-adcf-8320de7bf535",
+      "depth": 1,
+      "hasTimestamp": true,
+      "wave": 5,
+      "offsetSec": 1520
+    },
+    {
+      "id": "98da6f96-704e-4069-b190-b3911e915b32",
+      "role": "qa",
+      "label": "测试专家",
+      "activity": "inactive",
+      "createdAt": 1789054309625,
+      "parentId": "session-89fd2b7b-fc13-4633-adcf-8320de7bf535",
+      "depth": 1,
+      "hasTimestamp": true,
+      "wave": 5,
+      "offsetSec": 1520
+    },
+    {
+      "id": "2204acb2-4482-4b35-b232-349c09b26439",
+      "role": "reviewer",
+      "label": "评审专家",
+      "activity": "inactive",
+      "createdAt": 1789055138889,
+      "parentId": "session-89fd2b7b-fc13-4633-adcf-8320de7bf535",
+      "depth": 1,
+      "hasTimestamp": true,
+      "wave": 6,
+      "offsetSec": 2349
+    },
+    {
+      "id": "3f358de5-c3d9-45f0-aaa1-55c3252e3c3b",
+      "role": "qa",
+      "label": "测试专家",
+      "activity": "inactive",
+      "createdAt": 1789055138889,
+      "parentId": "session-89fd2b7b-fc13-4633-adcf-8320de7bf535",
+      "depth": 1,
+      "hasTimestamp": true,
+      "wave": 6,
+      "offsetSec": 2349
+    },
+    {
+      "id": "95e3cea6-2482-4311-aef8-9a0a08ffb075",
+      "role": "reviewer",
+      "label": "评审专家",
+      "activity": "inactive",
+      "createdAt": 1789056190690,
+      "parentId": "session-89fd2b7b-fc13-4633-adcf-8320de7bf535",
+      "depth": 1,
+      "hasTimestamp": true,
+      "wave": 7,
+      "offsetSec": 3401
+    },
+    {
+      "id": "cac7c9a0-87ea-461c-91e7-74dcfcd6ff91",
+      "role": "qa",
+      "label": "测试专家",
+      "activity": "inactive",
+      "createdAt": 1789056190690,
+      "parentId": "session-89fd2b7b-fc13-4633-adcf-8320de7bf535",
+      "depth": 1,
+      "hasTimestamp": true,
+      "wave": 7,
+      "offsetSec": 3401
+    }
+  ],
+  "notPartOfThisRun": [
+    {
+      "id": "e0c18c5d",
+      "createdAt": 1789049878706,
+      "note": "parentSession = 本 PM 会话，属另一轮（run 前序尝试）"
+    },
+    {
+      "id": "cd533fe9",
+      "createdAt": 1789056173864,
+      "note": "parentSession = 本 PM 会话（label: PM re-plan the flow view）"
+    },
+    {
+      "id": "5e7f59bd",
+      "createdAt": 1789056173866,
+      "note": "parentSession = 本 PM 会话（label: UI spec for the flow view）"
+    }
+  ],
+  "tasks_real_TASKS_json": {
+    "tasks": [],
+    "_note": "该 run 的真实 TASKS.json 是 {\"tasks\": []}（§88 协议未回写）。因此按 SPEC §2.5-1，本夹具下**不得**出现任何任务徽章/返工卡，只能出现「未绑定任务」空区与「无任务记录」说明。"
+  },
+  "tasksLive_projection_example": {
+    "_note": "host 兜底投影（TASKS.json 为空且有子代理时，lib/command.js ≈2291）的真实字段形状；此时 agentId 存在，允许 TaskChip 绑定。",
+    "tasksLive": [
+      {
+        "id": "L1",
+        "title": "架构师 · 差异对照矩阵",
+        "owner": "architect",
+        "status": "completed",
+        "live": true,
+        "agentId": "a21c707a-4f62-458c-80df-ecc0924d87bb",
+        "model": "auto"
+      },
+      {
+        "id": "L2",
+        "title": "产品经理",
+        "owner": "pm",
+        "status": "completed",
+        "live": true,
+        "agentId": "059f55f8-a578-490e-86ba-fc9b911f1764",
+        "model": "auto"
+      }
+    ]
+  }
+}

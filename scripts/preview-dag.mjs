@@ -102,7 +102,10 @@ const legend = toHtml(h('div', { className: 'exp-legend' }, dagStatusOrder().map
     h('i', { style: `background:${m.color}` }), m.label, n ? h('b', null, ' ' + n) : null);
 })));
 
-const out = process.argv[2] || join(resolve(PKG, '..', '..'), 'browser-screenshots', 'dag-status-preview.html');
+// 默认输出到包内（独立仓布局下「包根往上两级」是仓库外面 —— 2026-09-14 与 flow.test.mjs /
+// check-evidence.mjs 同一个错源）。要放别处就显式传路径或设 EXPERT_TEAM_PREVIEW_DIR。
+const previewDir = process.env.EXPERT_TEAM_PREVIEW_DIR || join(PKG, 'browser-screenshots');
+const out = process.argv[2] || join(previewDir, 'dag-status-preview.html');
 await mkdir(dirname(out), { recursive: true });
 await writeFile(out, `<!doctype html><html lang="zh"><head><meta charset="utf-8">
 <title>任务依赖图 · 状态展示预览</title>

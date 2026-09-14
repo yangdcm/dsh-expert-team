@@ -13,6 +13,9 @@ node_modules/
 # 注意：$DSH_HOME 下的 skill/preset/运行副本不在本仓内，由 gate:sync 负责一致性。
 team/
 
+# `npm run preview:dag` 的产物落在包内（不再写到仓库外面）
+browser-screenshots/
+
 # ── 本地发布凭据（绝不入库）──────────────────────────────────────────────
 .npmrc
 *.tgz

@@ -1,5 +1,10 @@
 // 波次聚类单测（SPEC §2.3 / §6-B1）：直接从 client.js 抽取 buildWaves 源码执行，
-// 用 PM 从真实 run 导出的夹具 WAVES.sample.json 断言 7 波 / 3,1,2,2,2,2,2 / 共 13 人。
+// 用真实 run 导出的夹具 regression.fixtures/waves.sample.json 断言 7 波 / 3,1,2,2,2,2,2 / 共 13 人。
+//
+// ⚠ 夹具**必须随仓提交**：这里原来读的是 `join(here, '..', '..', 'team', <run>/WAVES.sample.json)`，
+// 也就是「包根往上两级的工作区里、作者本机那个真实 run」。该路径只在原始 monorepo 布局 + 作者机器上
+// 存在；独立仓 / CI / 别人的机器上必然 ENOENT，而它是**硬抛错**，会打断整条 test:all
+// （2026-09-14 CI 三档全红即此因）。夹具入库后，这个测试才真正自洽、可移植。
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +15,7 @@ const m = src.match(/var WAVE_GAP_MS = 1500[\s\S]*?\n    \}\n/);
 if (!m) { console.error('✗ 未能从 client.js 抽取 buildWaves'); process.exit(1); }
 const buildWaves = new Function(m[0] + '\n return buildWaves;')();
 
-const fixturePath = join(here, '..', '..', 'team', '人员流转视图-重新规划-000243', 'WAVES.sample.json');
+const fixturePath = join(here, 'regression.fixtures', 'waves.sample.json');
 const fx = JSON.parse(readFileSync(fixturePath, 'utf8'));
 // 夹具的 agents[] 就是该 run 的全部子代理（14 个）；notPartOfThisRun 里的 id 是别轮会话的前缀，不在 agents 内。
 const people = fx.agents;
