@@ -1050,7 +1050,7 @@ window.__ModuleLoader__.load({
           var value = typeof cur === 'undefined' ? it.default : cur
           return {
             path: it.path, key: it.key, type: it.type, label: it.label, hint: it.hint || '',
-            values: it.values || null, min: typeof it.min === 'number' ? it.min : null, max: typeof it.max === 'number' ? it.max : null,
+            values: it.values || null, labels: it.labels || null, min: typeof it.min === 'number' ? it.min : null, max: typeof it.max === 'number' ? it.max : null,
             value: it.type === 'roles' ? (Array.isArray(value) ? value.join(', ') : '') : value,
             known: ['bool', 'int', 'enum', 'roles'].indexOf(it.type) >= 0,
           }
@@ -1107,7 +1107,7 @@ window.__ModuleLoader__.load({
             return
           }
           setData(function (prev) { return { schema: (prev && prev.schema) || [], settings: res.d.settings, ok: true } })
-          setMsg(res.d.needsRestart ? '已保存 —— **重启 dsh web 后生效**' : '已保存')
+          setMsg('已保存')   // 1.3.2：经逐项核查，没有任何设置需要重启（见 lib/command.js 的 needsRestart 注释）⇒ 死分支已删
         }).catch(function (e) { setErr(String(e && e.message ? e.message : e)); setMsg('') })
       }
       if (loading) return h('div', { className: 'exp-settings' }, h('div', { className: 'exp-empty' }, t('（正在读取设置…）', '(loading settings…)')))
@@ -1133,7 +1133,7 @@ window.__ModuleLoader__.load({
               onChange: function (e) { var v = e.target.value; if (v !== '' && /^-?\d+$/.test(v)) save({ [r.path]: Number(v) }) } })
           } else if (r.type === 'enum') {
             ctl = h('select', { value: String(r.value), onChange: function (e) { save({ [r.path]: e.target.value }) } },
-              (r.values || []).map(function (v) { return h('option', { key: v, value: v }, esc(v)) }))
+              (r.values || []).map(function (v) { return h('option', { key: v, value: v }, esc((r.labels && r.labels[v]) || v)) }))
           } else {
             ctl = h('input', { type: 'text', value: String(r.value), placeholder: t('留空 = 按档位默认', 'empty = tier default'), style: { width: 168 },
               onBlur: function (e) { var v = e.target.value.trim(); save({ [r.path]: v === '' ? null : v.split(',').map(function (x) { return x.trim() }).filter(Boolean) }) } })
@@ -1145,12 +1145,13 @@ window.__ModuleLoader__.load({
         })
       })
       return h('div', { className: 'exp-settings' },
-        // 这句必须按**事实**说：宿主设置可用时（默认，也就是官方面板与浮层都在写的那个真源）
-        // 写入会经 `watch` → `reapplySettingsDerived()` 在**进程内即时重算**上限与档位门
-        // （`lib/command.js:5476` 的保存回执原文就是"无需重启"）；只有**回退到 settings.json**
-        // 时才有"重启后生效"的保守提示，且那条由每次保存的回执逐次给出（`needsRestart`）。
-        // 所以这里既不写"两类需重启"（在默认形态下是假的），也不写"永远不用重启"（回退路径会假）。
-        h('div', { className: 'exp-settings-head' }, esc(t('改动即保存。宿主设置可用时（默认）上限与档位门在进程内即时重算，无需重启；若保存提示"重启后生效"，按提示操作。', 'Saved on change. With host settings available (the default), caps and the tier gate are recomputed in-process — no restart needed; if a save says "applies after restart", follow that.'))),
+        // 这句必须按**事实**说（2026-09-15 审核逐项查过消费者后定的口径）：
+        //   ① 上限 / 轮次 / 档位门 / 振荡检测开关 ⇒ `reapplySettingsDerived()` 在**进程内即时重算**；
+        //   ② `身份`、`班底` 等 ⇒ 下一次 `/team` 建 run 时现读；
+        //   ③ **没有任何一项需要重启** ⇒ 回执只说"已保存"（`needsRestart` 恒 false）。
+        //   ④ 标着「暂未生效」的项 = **还没接线**（`INERT_SETTINGS`，见 lib/settings.js）：写在这里
+        //      不是承诺，而是如实告知；逐项标记由 per-item hint 携带，不在这里重复。
+        h('div', { className: 'exp-settings-head' }, esc(t('改动即保存并即时生效（上限 / 轮次 / 档位门 / 振荡检测开关在进程内重算）。标着「暂未生效」的项尚未接线，改了不会有作用。', 'Saved on change and applied immediately (caps, rounds, the tier gate and the oscillation switch are recomputed in-process). Items marked as not yet in effect are not wired up — changing them does nothing.'))),
         rows,
         h('div', { className: 'exp-settings-msg' + (err ? ' bad' : '') }, esc(err ? '✗ ' + err : (msg || ''))))
     }
