@@ -35,6 +35,10 @@ const MAPPINGS = [
     label: '已装 skill',
     src: join(PKG_ROOT, 'skills', 'expert-team'),
     dst: join(DSH_HOME, 'skills', 'expert-team'),
+    // 1.2.0 起 skill 走**运行时注册**（`ctx.skills.register`），默认根本不落地 ⇒ 目标不存在是
+    // **正常状态**，不是漂移。（宿主机没有 skill 注册表时才会回退复制，那时这个目录会存在，
+    // 于是照常参与比对。）旧实现把它当硬性目标，会让 gate:sync 在正常安装上误报。
+    optional: true,
   },
   {
     id: 'preset',
@@ -154,8 +158,9 @@ function main() {
     report.driftCount = 0;
     for (const m of MAPPINGS) {
       if (!existsSync(m.dst)) {
-        report.mappings.push({ id: m.id, label: m.label, dst: m.dst, status: 'MISSING_TARGET' });
-        report.driftCount += 1;
+        // optional：目标不存在是**正常状态**（例：1.2.0 起 skill 走运行时注册，不落地）
+        report.mappings.push({ id: m.id, label: m.label, dst: m.dst, status: m.optional ? 'ABSENT_OPTIONAL' : 'MISSING_TARGET' });
+        if (!m.optional) report.driftCount += 1;
         continue;
       }
       let agg = { onlySrc: [], onlyDst: [], differ: [], same: [] };

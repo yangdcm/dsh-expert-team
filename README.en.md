@@ -74,8 +74,15 @@ cd ~/.dsh/profiles/web
 pnpm install && dsh web
 ```
 
-> The first `/team` run idempotently bootstraps the `expert-team` skill and the
-> 「专家团模式」 preset into `$DSH_HOME/skills/` and `$DSH_HOME/.agent-presets/`.
+> **The skill is never copied to disk**: when the plugin loads it registers the `expert-team` skill as a
+> **runtime entry** in the host skill registry (relative resources resolve through `resourceBase` back into
+> the package), so nothing appears under `$DSH_HOME/skills/` — uninstalling stays clean. Only when the host
+> has no skill registry does it fall back to copying.
+>
+> **The 「专家团模式」 preset is still copied** into `$DSH_HOME/.agent-presets/` (the host offers no
+> runtime API to add a preset scan root), but it carries a version stamp and is re-materialised in full on
+> upgrade instead of silently going stale. `/team uninstall` reclaims the copies this plugin laid down —
+> it only removes directories carrying our stamp, and never touches content you authored yourself.
 
 ## Quick start
 
@@ -138,7 +145,8 @@ npm run check:name      # verify no placeholder package name is left behind
   `host: 0.0.0.0` the guard only stops clients without a loopback address).
 - **Web profile only**: the overlay and routes need `webServer`. The command and artifacts still work without it.
 - **Preset drift**: the bundled 「专家团模式」 is a copy of the official `standard` preset plus the role
-  tools; upstream preset restructuring needs a matching update here.
+  tools; upstream preset restructuring needs a matching update here. Upgrades re-materialise it by version
+  stamp, and `/team uninstall` reclaims it (a same-named preset you authored yourself is left alone).
 - Calls `git status --porcelain` (read-only) to judge artifact freshness.
 
 ## License

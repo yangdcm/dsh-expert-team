@@ -71,8 +71,13 @@ cd ~/.dsh/profiles/web
 pnpm install && dsh web
 ```
 
-> 首次 `/team` 会幂等地把 `expert-team` skill 与「专家团模式」preset 自举到
-> `$DSH_HOME/skills/` 与 `$DSH_HOME/.agent-presets/`。
+> **skill 不落地**：插件加载时就把 `expert-team` skill 作为**运行时条目**注册进宿主的 skill 注册表
+> （相对资源用 `resourceBase` 指回包内目录），所以 `$DSH_HOME/skills/` 下不会出现副本 ——
+> 卸载即干净。宿主没有 skill 注册表时才会回退为复制到 `$DSH_HOME/skills/`。
+>
+> **「专家团模式」preset 仍会复制**到 `$DSH_HOME/.agent-presets/`（宿主没有"运行时加扫描根"的
+> API），但带版本戳：升级后整目录重铺，不会静默停在旧版本。用 `/team uninstall` 可回收本插件
+> 铺下的副本（只删带我们版本戳的目录，用户自己写的同名内容一律保留）。
 
 ## 快速上手
 
@@ -81,6 +86,7 @@ pnpm install && dsh web
 /team --persist 重构订单模块            # 持久化活团队：成员可反复指挥、跨会话恢复
 /team --no-code 评审现有 API 设计       # 只产出计划/评审/测试工件，不改代码
 /team --confirm 大改版需求              # 先建 run、不自动派工，浮层点「执行」才开工
+/team uninstall                         # 回收本插件铺到 $DSH_HOME 的副本（skill 默认走运行时注册，本就不落地）
 /team status                            # 所有 run 的阶段、成员、模型计划、实时违规
 /team resume <run-id>                   # 跨会话恢复
 ```
@@ -131,7 +137,8 @@ dsh 安装里插件自带的 Config schema（dsh 路径自动探测，可用 `DS
   所以别把 `dsh web` 暴露到不可信网络（宿主配置 `host: 0.0.0.0` 时，守卫只挡住"没有回环地址"的客户端）。
 - **仅 web profile**：浮层与路由依赖 `webServer`；无浮层时命令与工件仍然可用。
 - **preset 漂移**：随包的「专家团模式」是官方 `standard` preset 的拷贝 + 角色工具，
-  宿主若调整内置 preset 结构，需要同步更新。
+  宿主若调整内置 preset 结构，需要同步更新。升级插件时会按版本戳整目录重铺；
+  `/team uninstall` 可回收它（用户自己写的同名 preset 不会被碰）。
 - 会调用 `git status --porcelain`（只读）用于工件新鲜度判断。
 
 ## License
