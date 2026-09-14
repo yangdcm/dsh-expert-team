@@ -3,6 +3,85 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.3.2
+
+**诚实性收口：把"点了没反应"的设置项要么接线、要么如实标注。**
+起因是一次审核（两轮独立只读核验 + 全库 grep）：20 个设置项里 **10 项的设置值没有任何消费者** ——
+用户在设置页勾了、改了，什么都不会发生。本版处理其中 3 项，并把剩下 7 项**如实标注** +
+登记在**单一真源** `INERT_SETTINGS` 里（界面上直接可见）。
+
+### 接线：`gates.loopGuard`（唯一"变成真的"的开关）
+
+- 事实：行为在（`lib/loop-guard.js`）、模块能力也在（`loop-guard.test.mjs` 已证明 `{enabled:false}` 完全放行），
+  但**设置值从未被读** —— 真正决定开关的是 `config.loopGuard.enabled`，而默认 bundle 的
+  `cordis.patch.yml` 两条 insert 行都没有 config 字段 ⇒ 设置页那个复选框是空转的。
+- 接法照 `resolveTierGate` / `resolveLeadToolFace` 同一套：**config > env（`DSH_EXPERT_TEAM_LOOP_GUARD`）> 设置 > 默认(on)**，
+  两个汇合点（`apply()` 与 `reapplySettingsDerived()`）各解析一次，非法值一律回默认（不猜不报错）。
+- **即时生效**：`createLoopGuard` 在**构造时**就把 `enabled` 解构成常量，因此 `lib/loop-guard.js`
+  现在也接受**函数/getter**，插件传 `enabled: () => LOOP_GUARD_ENABLED` ⇒ 改设置**当场生效**，
+  不必重建钩子（重建会丢掉每 agent 的振荡链）。
+- 关掉时**出声一次**（照 1.2.3 为 `leadToolFace` 立的纪律："否则『我明明关了』与『开关没生效』看起来一模一样"）。
+
+### 删除两条**装饰性**门禁开关
+
+- `gates.boundaryTasks` / `gates.boundarySpec`：两条行为**本就无条件强制**
+  （`lib/interception.js` 的 `HARD_GRAPH_CODES` 与 `SPEC_COMPLETE_PHASES`；装配处 `createBoundaryInterceptor`
+  的 deps 根本没有开关参数），README 也把"门禁由插件代码强制、不是提示词请求"当卖点 ⇒
+  做成可关开关是**安全回退**，故**删除 spec**（共 18 项：4+5+4+5）。只把 hint 改成"预留"更糟：
+  UI 上留一个点了没反应的复选框本身就是一句承诺。
+- 容错：设置文件里残留这两个键时**不崩、也不产生噪声 repair**（有断言守着）。
+
+### 回执与界面不再说谎
+
+- `POST /settings` 的 `needsRestart` **恒为 false**：逐项查明上限/轮次/档位门/振荡开关都由
+  `reapplySettingsDerived()` 当场重算、`identity.*` 每次建 run 经 `compilePolicy(currentSettings())` 现读、
+  `SETTINGS_CACHE` 就地刷新 ⇒ **没有任何一项需要重启**。此前按"补丁顶层键 ∈ {roster,gates}"置 true
+  并回一句"重启后生效"，是假话（同一个补丁刚在上一行被重算过）。
+- 客户端那句死分支（`needsRestart ? '已保存 —— 重启后生效' : '已保存'`）一并删除；设置页头部改为
+  "改动即保存并即时生效"，并加一句指向逐项的「暂未生效」标记。
+- 相关测试与注释同步改准（`settings.test.mjs` 的项数与 `needsRestart` 断言、`settings-page.test.mjs`
+  的死分支断言、路由处的"诚实边界"注释）。
+
+### 未接线的 7 项：如实标注 + 单一真源
+
+- `lib/settings.js` 新增 `INERT_SETTINGS`（键 = 限定路径，值 = "为什么现在没用"，写**实测来源**）：
+  `display.pollMs` / `display.capsuleMs` / `display.panelWidth` / `display.defaultTab` /
+  `roster.deliverable` / `roster.persist` / `roster.defaultRoles`。
+- `decorateHint()` 是**唯一加工点**：设置页 schema（`settingsSchema()`）与扁平视图（`flatSpec()`，
+  宿主 schema 侧的取值口）都经它 ⇒ 两处结果必然一致；标记**幂等**（不重复追加）。
+- 这些项的 hint 现在带「（暂未生效：待 1.3.3 接线 —— …）」。**1.3.3 接线后从该表删一行，标注自动消失。**
+- 设计已验证：删掉 `INERT_SETTINGS` 的某一行 ⇒ 该项界面标注**自动消失**，同时新测试转红
+  （"无消费者又没登记"）；恢复后两者复原、文件逐字节一致。
+
+### 新增 ratchet 测试 `settings-consumers.test.mjs`
+
+- 每个设置项要么在生产代码里被读、要么在 `INERT_SETTINGS` 里；语义是**集合相等**（不是包含）：
+  新增死开关 ⇒ 红；接线后忘了删白名单 ⇒ 也红（白名单**只减不增**）。
+- 判真口径处理了本仓的"同名不同物"：`mode.deliverable` / `mode.persist` / `TIER_SPEC[].defaultRoles`
+  都不是设置消费者 ⇒ 歧义叶子必须**限定路径**命中；**注释行不算消费者**；`lib/settings.js`
+  **不能整文件排除**（`compilePolicy` 在里面，否则 `identity.askBudget`/`offerDecideForMe` 会被误判）。
+- 该测试写出来就当场纠正了一次误判（上条），并确认 7 项白名单与实测完全一致。
+
+### 设置页枚举下拉改为中文标签（**值仍是英文标识**）
+
+- 症结：`settingsFormModel()` 把 `it.values` 原样交给渲染器 ⇒ 下拉里显示的是 `developer` /
+  `code+artifacts` / `team` / `soft` / `on` 这些**标识**。
+- 修法：中文标签做成**规格层单一真源** —— `lib/settings.js` 的每个 enum 项新增
+  `labels: { '<值>': '<中文>' }`，**值域 / 类型 / 默认值 / 持久化格式 / 宿主 schema 一律不变**；
+  `settingsSchema()` 把 `labels` **显式透传**（该响应按字段白名单构造，漏一个字段就会静默消失），
+  `client.js` 的 `<option>` 文本用 `labels[值] || 值`（**缺标签退回裸值，绝不留空白**）。
+- 为什么必须走响应体：`client.js` 是手写 bundle（`__ModuleLoader__` 工厂）**不能 import `lib/`**
+  ⇒ 标签只能随 `GET /plugins/dsh-expert-team/settings` 的 schema 到达设置页。
+- 防回归：`settings.test.mjs` 断言每个 enum 项的 `Object.keys(labels)` 与 `values` **集合相等**
+  （新增枚举值忘配中文会红）；`settings-page.test.mjs` 断言模型带出 `labels` 且渲染取用 `labels[值] || 值`。
+- **宿主的 schemastery schema 不带标签**：本仓的 `@deepseek-ai/schemastery` 里无法核实"给枚举成员挂描述"
+  的可靠写法，而 schema 建错会让官方设置注册失败（本仓既有纪律："表达不可靠就退回文件层"）⇒ **明确跳过**，不硬做。
+
+### 仍未接线（计划 1.3.3）
+
+`display.*` 4 项与 `roster.deliverable` / `roster.persist` / `roster.defaultRoles` 3 项 ——
+**本版只标注、不接线**（不碰它们的行为），接线后从 `INERT_SETTINGS` 删行即可。
+
 ## 1.3.1
 
 **只改文案与文档，不动任何功能逻辑。**
@@ -37,6 +116,12 @@
   （通常是标准模式），既不是我们的预设，还会占住该 id 让自动重铺失效；要给专家团做定制，
   请以「专家团模式」为源、**另用一个自己的 id**，改动只写在自己的目录里（`expert-team/` 归插件所有，
   加载/升级会整目录重铺）。
+> ⚠️ **更正（1.3.2 补记）**：本节曾写"该路径的保存回执仍按既有契约返回 `needsRestart: true`"，
+> 读起来像"回执已与事实一致"——**实际那次只改了设置页顶部那一句文案**
+> （`git show --stat bad5468` = 仅 `client.js` 一个文件），`lib/command.js` 的保存回执**一字未动**，
+> 当时仍在说"`编制` / `门禁` 两类设置在插件加载时解析 ⇒ **重启 dsh web 后生效**"（假话）。
+> 1.3.2 才真正修掉：`needsRestart` 恒 false、回执如实、客户端死分支删除。
+
 ## 1.3.0
 
 **设置页搬进官方「设置」菜单 + 预设在插件加载时就位 + 门禁两处修复**
