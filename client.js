@@ -1145,7 +1145,12 @@ window.__ModuleLoader__.load({
         })
       })
       return h('div', { className: 'exp-settings' },
-        h('div', { className: 'exp-settings-head' }, esc(t('改动即保存（`编制` / `门禁` 两类需重启 dsh web 后生效）。', 'Saved on change; `roster` and `gates` apply after a dsh web restart.'))),
+        // 这句必须按**事实**说：宿主设置可用时（默认，也就是官方面板与浮层都在写的那个真源）
+        // 写入会经 `watch` → `reapplySettingsDerived()` 在**进程内即时重算**上限与档位门
+        // （`lib/command.js:5476` 的保存回执原文就是"无需重启"）；只有**回退到 settings.json**
+        // 时才有"重启后生效"的保守提示，且那条由每次保存的回执逐次给出（`needsRestart`）。
+        // 所以这里既不写"两类需重启"（在默认形态下是假的），也不写"永远不用重启"（回退路径会假）。
+        h('div', { className: 'exp-settings-head' }, esc(t('改动即保存。宿主设置可用时（默认）上限与档位门在进程内即时重算，无需重启；若保存提示"重启后生效"，按提示操作。', 'Saved on change. With host settings available (the default), caps and the tier gate are recomputed in-process — no restart needed; if a save says "applies after restart", follow that.'))),
         rows,
         h('div', { className: 'exp-settings-msg' + (err ? ' bad' : '') }, esc(err ? '✗ ' + err : (msg || ''))))
     }
