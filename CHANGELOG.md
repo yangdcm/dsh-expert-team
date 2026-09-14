@@ -3,6 +3,20 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.2.2
+
+**修掉"lead 工具面收窄静默失效"**（拿真机启动日志换来的）
+
+- 症状：每次创建 agent 都刷一行 `lead 工具面**未**收窄（nothing-to-deny）… 宿主里这些名字一个都不存在`，
+  而实际上模型可见的 `bash/write/edit/grep/glob` **存在** —— 结论不成立，收窄也没发生。
+- 根因：宿主 `tools.view(scope)` **不传 scope = 全局视图**；0.1.5 起模型可见工具由 preset 注册在
+  **agent 平面**，于是全局视图"非空但缺这几个名字"，纯函数据实报 `nothing-to-deny`。
+  宿主自己的 `restrict()` 用的就是 `scopeOf(this.ctx)`，我们却用了不传 scope 的 `view()`。
+- 修法：新增 `agentScopedToolNames()`（动态 import `@deepseek-ai/dsh-scope` 取 `scopeOf(agent.ctx)`，
+  再 `view(scope)`）；取不到 scope 时返回 `knownNames: undefined` ⇒ 如实报 **no-known-names**
+  （"我不知道有什么"），绝不再退化成"宿主里没有这些工具"这种不成立的结论。
+- 告警去重：同一 status 每进程只喊一次（十行同样的 warn 会把"响亮"变成噪声，
+  而噪声的代价是所有告警一起被降权）。两种零仍然分得清。
 ## 1.2.1
 
 **卸载回收覆盖历史副本**（1.2.0 的补丁）

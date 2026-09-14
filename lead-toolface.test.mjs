@@ -138,14 +138,54 @@ console.log('\n⑦ 接线是真的接上了（读 command.js 源码钉住，防�
   check(/composedPreset\?\.\(agent\.ctx\)/.test(cmd), 'preset 取自 `composedPreset(agent.ctx)`（服务路径，不 import 宿主包）');
   check(/agent\.ctx\.tools\.restrict\(\{ deny: plan\.deny \}\)/.test(cmd),
     '施加在 **agent.ctx**（lead 自己的作用域）上，形状与宿主 :554 一致');
-  check(/knownNames/.test(cmd) && /restrictableNames/.test(cmd), '取 knownNames 走 `tools.view().restrictableNames`');
+  check(/restrictableNames/.test(readFileSync(join(here, 'lib', 'lead-toolface.js'), 'utf8')), '清单取自 `tools.view(scope).restrictableNames`（取 scope 的逻辑在 lead-toolface.js 里）');
+  // ── 真机日志换来的那一条：必须取 **agent 作用域** 的清单 ────────────────────
+  // 反例（0.1.5 上真出过）：`ctx.get('tools').view()` 不传 scope = 全局视图，而模型可见工具由
+  // preset 注册在 agent 平面 ⇒ 全局视图非空但缺 bash/write/edit，收窄**静默失效**，
+  // 日志还给出"宿主里这些工具一个都不存在"这种**不成立**的结论。
+  check(/await agentScopedToolNames\(\{ agentCtx: agent\.ctx \}\)/.test(cmd), '清单取自 agent 作用域（`agentScopedToolNames({ agentCtx: agent.ctx })`）');
+  check(!/ctx\.get\('tools'\)\?\.view\?\.\(\)\?\.restrictableNames/.test(cmd), '不再用"不传 scope 的全局视图"取清单（那正是静默失效的原因）');
+  check(/warnLeadToolFaceOnce\(plan\.status/.test(cmd), '未收窄时走"同一状态只喊一次"的去重出口');
   // 降级口径：两处 try/catch —— 施加失败与装配失败都不能影响会话
-  // 注意：不能按第一个 `});` 切 —— `planLeadToolFace({ ... });` 里也含 `});`。
+  // 注意：不能按第一个 `});` 切 —— `tf.planLeadToolFace({ ... });` 里也含 `});`。
   // 取一段足够长的窗口即可（接线块 ~2.5KB）。
   const wiring = cmd.slice(cmd.indexOf("ctx.on('agent/created'"));
   const block = wiring.slice(0, 3000);
-  check(/catch \(e\)/.test(block), '施加被 try/catch 包住（失败退化为"维持原工具面"，不影响会话）');
+  check(/catch \(e\)/.test(wiring.slice(0, 3200)), '施加被 try/catch 包住（失败退化为"维持原工具面"，不影响会话）');
   check(/未\*\*收窄/.test(block) || /plan\.status/.test(block), '未生效时**出声**（两种零不静默）');
+}
+
+console.log('\n⑧ `agentScopedToolNames`：作用域清单怎么取，以及取不到时怎么说话');
+{
+  const { agentScopedToolNames } = tf;
+  const rich = new Set(['bash', 'write', 'edit', 'grep', 'glob', 'read']);
+  const agentCtx = { tools: { view: (scope) => (scope === 'S1' ? { restrictableNames: rich } : { restrictableNames: new Set(['run_code']) }) } };
+
+  // ① 成功：scope 传对了 ⇒ 拿到真正的清单
+  const ok = await agentScopedToolNames({ agentCtx, loadScope: async () => ({ scopeOf: () => 'S1' }) });
+  check(ok.reason === 'ok' && ok.knownNames === rich, 'scope 取对 ⇒ 拿到 agent 平面的清单', ok.reason);
+  const planOk = tf.planLeadToolFace({ platform: 'darwin', knownNames: ok.knownNames });
+  check(planOk.effective === true && planOk.deny.includes('bash') && planOk.deny.includes('write'), '据此收窄真的生效（bash/write 进 deny）', JSON.stringify(planOk.deny));
+
+  // ② 方向性证明：全局视图为空、作用域视图有 ⇒ 只有走作用域才对
+  const globalEmpty = { tools: { view: () => ({ restrictableNames: new Set(['run_code']) }) } };
+  const viaGlobal = tf.planLeadToolFace({ platform: 'darwin', knownNames: globalEmpty.tools.view().restrictableNames });
+  check(viaGlobal.effective === false, '反例：全局视图（非空但缺那几个名字）⇒ 收窄不生效（这正是真机上发生的事）', viaGlobal.status);
+
+  // ③ 取不到 scope：必须报"不知道"，**不能**说成"宿主里没有这些工具"
+  const noModule = await agentScopedToolNames({ agentCtx, loadScope: async () => { throw new Error('解析不到 @deepseek-ai/dsh-scope'); } });
+  check(noModule.knownNames === undefined && /scope-module-unavailable/.test(noModule.reason), '模块解析不到 ⇒ knownNames=undefined 并给出原因', noModule.reason);
+  const planUnknown = tf.planLeadToolFace({ platform: 'darwin', knownNames: noModule.knownNames });
+  check(planUnknown.status === 'no-known-names', '于是如实报 no-known-names（而不是 nothing-to-deny）', planUnknown.status);
+
+  const notScoped = await agentScopedToolNames({ agentCtx, loadScope: async () => ({ scopeOf: () => undefined }) });
+  check(notScoped.knownNames === undefined && notScoped.reason === 'not-a-scoped-ctx', '不是作用域 ctx ⇒ not-a-scoped-ctx', notScoped.reason);
+
+  const viewThrows = await agentScopedToolNames({ agentCtx: { tools: { view: () => { throw new Error('boom'); } } }, loadScope: async () => ({ scopeOf: () => 'S1' }) });
+  check(viewThrows.knownNames === undefined && /view-failed/.test(viewThrows.reason), 'view 抛错 ⇒ 如实记原因、不抛给调用方', viewThrows.reason);
+
+  const emptyScoped = await agentScopedToolNames({ agentCtx: { tools: { view: () => ({ restrictableNames: new Set() }) } }, loadScope: async () => ({ scopeOf: () => 'S1' }) });
+  check(emptyScoped.reason === 'empty-scoped-view', '作用域视图为空 ⇒ 标记 empty-scoped-view（供排查，而不是当成"没什么可收"）', emptyScoped.reason);
 }
 
 console.log('');
