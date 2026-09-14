@@ -75,7 +75,9 @@ console.log('\n④ 立项前提的探针结果必须可复核（把"没有证据
   // 与后端评审的条件对齐：他要求"先用数据证明『忘了读 skill』是高频失败之后再立项"。
   // 这个断言把**当时的测量结果与判定门槛**固化下来 —— 若将来证据变了，应当**有意**修改此断言，
   // 而不是让它悄悄漂移。
-  const roots = ['/Users/yangbingtao/Documents/dsh/team', '/Users/yangbingtao/Documents/php/school/team', '/Users/yangbingtao/Documents/php/jiu/team', '/Users/yangbingtao/Documents/php/mch/team'];
+  // 真实 run 目录：默认当前工程的 `team/`（可用 EXPERT_TEAM_RUN_ROOTS 指定多个，冒号分隔）。
+  // 目录不存在即跳过 —— **不把"这台机器上还没有 run"当成失败**。
+  const roots = (process.env.EXPERT_TEAM_RUN_ROOTS || join(process.cwd(), 'team')).split(':').filter(Boolean);
   let started = 0;
   const outliers = [];
   for (const root of roots) {
@@ -91,16 +93,16 @@ console.log('\n④ 立项前提的探针结果必须可复核（把"没有证据
   }
   const complete = started - outliers.length;
   const rate = started ? complete / started : 1;
-  check(started > 0, `扫描到真正启动的 run（${started} 个）`);
+  if (started === 0) console.log('      · 跳过：未发现可扫描的真实 run（把 EXPERT_TEAM_RUN_ROOTS 指向你的 run 目录即可启用本探针）');
   if (outliers.length) console.log(`      偏离 scaffold 协议的 run（${outliers.length} 个）：${outliers.join('；')}`);
   // 实测（2026-09-11）：11 个启动过的 run 里 1 个偏离（≈9%）——**有**偏离，但远够不上"高频"。
   // 因此按后端评审的条件：不立项建工具；同时**不谎称"零证据"**。
-  check(rate >= 0.8, `scaffold 协议遵循率 ${complete}/${started}（${(rate * 100).toFixed(0)}%）≥ 80% ⇒ 未达"高频失败"门槛`, outliers.join('；'));
+  if (started > 0) check(rate >= 0.8, `scaffold 协议遵循率 ${complete}/${started}（${(rate * 100).toFixed(0)}%）≥ 80% ⇒ 未达"高频失败"门槛`, outliers.join('；'));
 }
 
 console.log('\n⑤ 结论必须写在可审计处（不是只活在测试里）');
 {
-  const backlog = '/Users/yangbingtao/Documents/dsh/team/做竞品分析-分析dsh官方的te-145629/BACKLOG.md';
+  const backlog = process.env.EXPERT_TEAM_BACKLOG || join(process.cwd(), 'team', 'BACKLOG.md');
   if (existsSync(backlog)) {
     const b = readFileSync(backlog, 'utf8');
     check(/L3-6/.test(b), 'BACKLOG 里有 L3-6 条目');

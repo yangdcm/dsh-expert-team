@@ -123,8 +123,8 @@ npm run check:name      # verify no placeholder package name is left behind
 
 `npm run gate` (`gate:preset` / `gate:sync` / `gate:evidence` / `gate:bypass` / `gate:mutation`) is a
 **developer-machine-only** set: `gate:sync` diffs the self-installed copies under your local
-`$DSH_HOME`, and `gate:preset` reads your local dsh install by default (override with `DSH_INSTALL`).
-Neither runs in CI.
+`$DSH_HOME`, and `gate:preset` borrows the Config schemas shipped inside your local dsh install
+(the dsh path is auto-detected; override with `DSH_INSTALL`). Neither runs in CI.
 
 ## Known limitations
 

@@ -67,12 +67,7 @@ console.log('\n③ 缺 ROSTER.json / STATE 不可解析');
 console.log('\n④ 【关键】真实 run 必须**零误报**（否则红条变噪音、用户整体降权）');
 {
   // 扫描本机真实存在的 run 目录；找不到就跳过（不把"环境没有"当失败）
-  const roots = [
-    '/Users/yangbingtao/Documents/dsh/team',
-    '/Users/yangbingtao/Documents/php/jiu/team',
-    '/Users/yangbingtao/Documents/php/school/team',
-    '/Users/yangbingtao/Documents/php/mch/team',
-  ];
+  const roots = (process.env.EXPERT_TEAM_RUN_ROOTS || join(process.cwd(), 'team')).split(':').filter(Boolean);
   let seen = 0, falsePos = 0;
   for (const root of roots) {
     if (!existsSync(root)) continue;
@@ -90,8 +85,14 @@ console.log('\n④ 【关键】真实 run 必须**零误报**（否则红条变�
       if (v.selfBuilt) { falsePos += 1; console.log(`      ✗ 误报：${n.slice(0, 40)} → 缺 ${v.missing.join('、')}`) }
     }
   }
-  check(seen > 0, `扫描到真实 run（${seen} 个）`);
-  check(falsePos === 0, `真实 run 零误报（${falsePos}/${seen}）`);
+  // 零 run 时**跳过而非失败**：该探针证明的是"对真实 run 零误报"，没有 run 就没有证据可言
+  // （此前这里写死作者本机的 run 路径并断言 seen > 0，等于把"这台机器上有 run"当成了通过条件 ——
+  // 换任何一台机器都会红，测试反而失去了可移植性）。
+  if (seen === 0) {
+    console.log('      · 跳过：未发现可扫描的真实 run（把 EXPERT_TEAM_RUN_ROOTS 指向你的 run 目录即可启用本探针）');
+  } else {
+    check(falsePos === 0, `真实 run 零误报（${falsePos}/${seen}）`);
+  }
 }
 
 console.log('\n⑤ 接线检查：/team check 与面板都接了这个指纹');

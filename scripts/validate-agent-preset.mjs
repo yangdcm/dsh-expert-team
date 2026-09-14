@@ -17,20 +17,63 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
-const DSH = process.env.DSH_INSTALL || '/Applications/ServBay/package/node/24/24.14.0/lib/node_modules/@deepseek-ai/dsh';
+/**
+ * 解析 dsh 安装根目录，用于借用宿主自带的 `yaml`。
+ *
+ * 为什么不再写死一台机器的绝对路径：写死会让脚本在别人的机器上直接抛错，
+ * 也把开发机的目录结构带进了公开仓库。解析顺序：
+ *   ① `DSH_INSTALL`（显式覆盖，CI/多版本共存时用）；
+ *   ② PATH 上 `dsh` 的真实路径 → `…/node_modules/@deepseek-ai/dsh`；
+ *   ③ 常见全局安装位置兜底。
+ * 全都找不到时报一条能照着做的错误，而不是 TypeError。
+ */
+function resolveDshInstall() {
+  if (process.env.DSH_INSTALL) return process.env.DSH_INSTALL;
+  const candidates = [];
+  try {
+    const bin = execFileSync('which', ['dsh'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    // …/@deepseek-ai/dsh/lib/bin.js → 包根
+    if (bin) candidates.push(path.resolve(fs.realpathSync(bin), '..', '..'));
+  } catch { /* PATH 上没有 dsh：继续兜底 */ }
+  if (process.env.npm_config_prefix) {
+    candidates.push(path.join(process.env.npm_config_prefix, 'lib', 'node_modules', '@deepseek-ai', 'dsh'));
+  }
+  // 判据用 package.json 而不是 index.js：dsh 包根本**没有** 根 index.js（入口是 lib/bin.js），
+  // 而 `createRequire` 只需要一个解析基准路径、并不要求它存在 —— 用 index.js 当判据会永远失败。
+  for (const c of candidates) {
+    if (c && fs.existsSync(path.join(c, 'package.json'))) return c;
+  }
+  console.error('✗ 找不到 dsh 安装目录。请设置 DSH_INSTALL=/path/to/node_modules/@deepseek-ai/dsh 后重试。');
+  process.exit(2);
+}
+
+const DSH = resolveDshInstall();
 const require = createRequire(path.join(DSH, 'index.js'));
 const YAML = require('yaml');
 
-const files = process.argv.slice(2).length
-  ? process.argv.slice(2)
-  : fs
-      .readdirSync(path.join(os.homedir(), '.dsh', '.agent-presets'), { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => path.join(os.homedir(), '.dsh', '.agent-presets', d.name, 'agent.cordis.yml'))
-      .filter((p) => fs.existsSync(p));
+/** 用户 preset 根目录（尊重 `DSH_HOME`，不再是写死的 `~/.dsh`）。 */
+const USER_PRESET_ROOT = path.join(process.env.DSH_HOME || path.join(os.homedir(), '.dsh'), '.agent-presets');
+
+/** 扫描用户 preset 根；**目录不存在不是错误**（还没跑过 /team 的机器就是这种状态）。 */
+function discoverPresetFiles() {
+  let entries = [];
+  try {
+    entries = fs.readdirSync(USER_PRESET_ROOT, { withFileTypes: true });
+  } catch {
+    console.log(`· ${USER_PRESET_ROOT} 不存在 —— 没有可校验的 preset（还没自举过属正常）。`);
+    return [];
+  }
+  return entries
+    .filter((d) => d.isDirectory())
+    .map((d) => path.join(USER_PRESET_ROOT, d.name, 'agent.cordis.yml'))
+    .filter((p) => fs.existsSync(p));
+}
+
+const files = process.argv.slice(2).length ? process.argv.slice(2) : discoverPresetFiles();
 
 /** 递归展开 cordis:group 的 config 数组，收集叶子行。 */
 function collectRows(rows, out = [], parent = '') {

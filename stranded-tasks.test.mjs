@@ -121,7 +121,7 @@ console.log('\n⑥ 接线检查：可发现（status/check）与可清算（disp
 
 console.log('\n⑦ 真实 run 无误报：已完成的 run 不该被报成"有搁浅任务"');
 {
-  const roots = ['/Users/yangbingtao/Documents/dsh/team', '/Users/yangbingtao/Documents/php/jiu/team', '/Users/yangbingtao/Documents/php/school/team'];
+  const roots = (process.env.EXPERT_TEAM_RUN_ROOTS || join(process.cwd(), 'team')).split(':').filter(Boolean);
   let seen = 0, noisyCompleted = 0;
   for (const root of roots) {
     if (!existsSync(root)) continue;
@@ -141,8 +141,11 @@ console.log('\n⑦ 真实 run 无误报：已完成的 run 不该被报成"有�
       if (done && inFlight.length === 0 && s.length) noisyCompleted += 1;
     }
   }
-  check(seen > 0, `扫描到有任务表的真实 run（${seen} 个）`);
-  check(noisyCompleted === 0, `已完成的 run 零误报（${noisyCompleted}）`);
+  if (seen === 0) {
+    console.log('      · 跳过：未发现带任务表的真实 run（把 EXPERT_TEAM_RUN_ROOTS 指向你的 run 目录即可启用本探针）');
+  } else {
+    check(noisyCompleted === 0, `已完成的 run 零误报（${noisyCompleted}）`);
+  }
 }
 
 console.log('');

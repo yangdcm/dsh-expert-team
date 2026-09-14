@@ -2,8 +2,8 @@
 # 所以 CI 不需要 install 一步，直接跑测试即可 —— 这也正是「装上就能用」的底气所在。
 #
 # 为什么这里**故意不跑** `npm run gate`：
-#   · `gate:preset`（scripts/validate-agent-preset.mjs）默认指向本机 dsh 安装路径，
-#     需要 DSH_INSTALL 才可移植；
+#   · `gate:preset`（scripts/validate-agent-preset.mjs）借用**宿主插件自带的 Config schema**
+#     校验 preset，因此需要一台装了 dsh 的机器（dsh 路径自动探测，也可用 DSH_INSTALL 指定）；
 #   · `gate:sync`（scripts/check-sync.mjs）比对的是 **本机 $DSH_HOME 下的运行时副本**，
 #     干净机器上必然报漂移。
 # 两者都是**开发机专用**门禁，等它们去掉机器耦合后再纳入这里。

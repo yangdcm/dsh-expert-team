@@ -118,8 +118,8 @@ npm run check:name      # 检查占位包名残留
 ```
 
 `npm run gate`（`gate:preset` / `gate:sync` / `gate:evidence` / `gate:bypass` / `gate:mutation`）
-是**开发机专用**门禁：`gate:sync` 比对本机 `$DSH_HOME` 下的自举副本，`gate:preset` 默认读本机
-dsh 安装路径（可用 `DSH_INSTALL` 覆盖），因此**不在 CI 里跑**。
+是**开发机专用**门禁：`gate:sync` 比对本机 `$DSH_HOME` 下的自举副本，`gate:preset` 借用本机
+dsh 安装里插件自带的 Config schema（dsh 路径自动探测，可用 `DSH_INSTALL` 覆盖），因此**不在 CI 里跑**。
 
 ## 已知限制
 

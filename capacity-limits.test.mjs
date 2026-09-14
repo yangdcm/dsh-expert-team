@@ -107,7 +107,7 @@ console.log('\n⑥ 接线检查：写拦截（plan + approve）与读可见（ch
 
 console.log('\n⑦ 真实 run 不得被误报（默认值必须容得下实际规模）');
 {
-  const roots = ['/Users/yangbingtao/Documents/dsh/team', '/Users/yangbingtao/Documents/php/school/team', '/Users/yangbingtao/Documents/php/jiu/team'];
+  const roots = (process.env.EXPERT_TEAM_RUN_ROOTS || join(process.cwd(), 'team')).split(':').filter(Boolean);
   let seen = 0, flagged = 0;
   resolveLimits(null);
   for (const root of roots) {
@@ -122,8 +122,11 @@ console.log('\n⑦ 真实 run 不得被误报（默认值必须容得下实际�
       if (v.length) { flagged += 1; console.log(`      ✗ 误报：${n} ${JSON.stringify(v.map((c) => c.code))}`) }
     }
   }
-  check(seen > 0, `扫描到真实 run（${seen} 个）`);
-  check(flagged === 0, `真实 run 零误报（${flagged}/${seen}）—— 默认值容得下实际规模`);
+  if (seen === 0) {
+    console.log('      · 跳过：未发现可扫描的真实 run（把 EXPERT_TEAM_RUN_ROOTS 指向你的 run 目录即可启用本探针）');
+  } else {
+    check(flagged === 0, `真实 run 零误报（${flagged}/${seen}）—— 默认值容得下实际规模`);
+  }
 }
 
 console.log('');
