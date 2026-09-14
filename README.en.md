@@ -101,6 +101,32 @@ pnpm install && dsh web
 > decides whether execution tools (`bash/write/edit/grep/glob`) are taken away from the lead and given
 > to the role subagents. Turn it off with `config.leadToolFace` or `DSH_EXPERT_TEAM_LEAD_TOOLFACE=off`.
 
+### After installing
+
+1. **Restart `dsh web` once**: on load the plugin lays the 「专家团模式」 preset down into
+   `$DSH_HOME/.agent-presets/expert-team` (version-stamped; upgrades re-lay the whole directory) —
+   **no manual preset creation needed**. After that restart the preset picker lists it, and all 12 role
+   subagent tools are in place (visible under `Settings → Plugins → Plugin list → Session plugins`).
+2. Switch the session to that preset, then run `/team <one-line goal>`.
+3. Change settings under **Settings →「专家团」** (values live in the host namespace `expert-team`, so they
+   travel with the plugin market's backup/restore).
+
+**Troubleshooting**: a missing preset, or a same-id preset squatting on ours, is healed by **one `dsh web`
+restart** (the plugin re-lays on load); running `/team <task>` once does the same. See the
+[Troubleshooting](#troubleshooting) section below for the details — including the easiest trap to fall into:
+**never** create a preset with the id `expert-team`.
+
+### Custom presets (when you want to change expert-team's defaults)
+
+- **Create**: `Settings → Agent presets → create a custom preset with "creation mode"` (its mechanism is
+  "copy an existing preset"; the result lands in `$DSH_HOME/.agent-presets/<id>/`).
+- **To customise expert-team, copy 「专家团模式」 as the source under an id of your own** (e.g. `my-team`): the
+  copy already carries the 12 role tools and their skill directory, and your edits stay inside `my-team/`.
+  **Never edit files under `expert-team/`** — that copy belongs to the plugin and is re-laid wholesale on
+  load/upgrade.
+- A newly created preset **may only appear in the picker after a `dsh web` restart** (the host reads its roster
+  at startup).
+
 ## Quick start
 
 ```
