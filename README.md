@@ -51,15 +51,16 @@
 - 会话使用 **「专家团模式」** preset 时，12 个角色工具（`subagent_pm` / `subagent_architect` / …）才可用；
   否则自动退回通用 `subagent`（角色人设写进 prompt），功能不丢、只是少了配置层的边界保证
 
-**方式一：插件市场（推荐）**
-
-`dsh web` → **设置 → 插件市场** → 搜索「专家团」→ 一键安装 → 刷新页面。
-
-**方式二：命令行**
+**方式一：命令行（推荐）**
 
 ```sh
 dsh plugin --profile web add @yangdcm/dsh-expert-team
 # 然后重启 dsh web，使新 bundle 进入组合
+```
+
+**方式二：插件市场**（收录尚未提交 ⇒ 目前可能搜不到）
+
+若已被收录：`dsh web` → **设置 → 插件市场** → 搜索「专家团」→ 一键安装 → 刷新页面。
 ```
 
 **方式三：从源码（开发/未发布时）**
@@ -79,17 +80,14 @@ pnpm install && dsh web
 > API），但带版本戳：升级后整目录重铺，不会静默停在旧版本。用 `/team uninstall` 可回收本插件
 > 铺下的副本（只删带我们版本戳的目录，用户自己写的同名内容一律保留）。
 >
-> **设置在哪改**：插件加载时把设置注册成宿主命名空间 `expert-team`（**数据层**：宿主持有、
-> 随插件市场的**备份与恢复**一起走、可被任何按 schema 渲染的界面读取；改值后上限/轮次/档位门
-> 在进程内**即时重算**，不必重启）。
-> **内置设置页里的卡片尚未交付**：那张页面渲染的是「宿主服务的命名空间 ∩ 已注册卡片」，
-> 我们只有前半（`ctx.settings.register`）；后半需要**客户端分节贡献**（slot
-> `settings.plugin.item`，`key` 为该命名空间；并把 `@deepseek-ai/dsh-client-ui-settings`
-> 加进 `dsh.client.inject`）—— 实施要点见 `docs/专家团-设置卡片-实施要点.md`。
-> 所以**当前改设置的地方是浮层的设置页签**（`/plugins/dsh-expert-team/settings`）。
-> **诚实边界**：`默认班底`（角色 id 数组）刻意不上宿主 schema（类型表达不可靠），继续由
-> 浮层页签与 `$DSH_HOME/expert-team/settings.json` 负责；宿主没有 settings 服务时，
-> 全部设置退回该文件。
+> **插件加载时就把 preset 铺到位**：`/team uninstall` 回收之后，重启 `dsh web` 即会**自愈重铺**（不需要手工救）。
+>
+> **设置在哪改**：**设置 →「专家团」** —— 官方设置菜单里的一整页（`settings.section` 槽，
+> `id: expert-team`、`order: 50`），与其它插件的设置同一入口、同一套面板 chrome。数据层是宿主命名空间
+> `expert-team`（宿主持有、随插件市场的**备份与恢复**一起走；改值后上限/轮次/档位门在进程内**即时重算**，
+> 不必重启）。浮层里原来的「设」页签已移除 —— 同一份表单只在一处渲染。
+> **诚实边界**：`默认班底`（角色 id 数组）刻意不上宿主 schema（类型表达不可靠），由该页里的对应控件与
+> `$DSH_HOME/expert-team/settings.json` 负责；宿主没有 settings 服务时，全部设置退回该文件。
 >
 > **A 线开关**：设置里的「门禁 → 收窄 lead 工具面」（`gates.leadToolFace`，默认 `on`）决定
 > 是否把执行类工具（`bash/write/edit/grep/glob`）从 lead 手上拿走、交给角色子代理。
@@ -142,6 +140,21 @@ npm run check:name      # 检查占位包名残留
 `npm run gate`（`gate:preset` / `gate:sync` / `gate:evidence` / `gate:bypass` / `gate:mutation`）
 是**开发机专用**门禁：`gate:sync` 比对本机 `$DSH_HOME` 下的自举副本，`gate:preset` 借用本机
 dsh 安装里插件自带的 Config schema（dsh 路径自动探测，可用 `DSH_INSTALL` 覆盖），因此**不在 CI 里跑**。
+
+## 排障
+
+**设置菜单里找不到「专家团」那一页？** 确认版本 ≥ 1.3.0（`dsh plugin --profile web add @yangdcm/dsh-expert-team`
+升级，或 `npm view @yangdcm/dsh-expert-team version` 看线上版本），然后**重启 `dsh web`** —— 1.3.0 之前没有这一页。
+
+**「专家团模式」显示成裸 id（`expert-team`）、会话里没有 12 个角色工具？** 说明
+`$DSH_HOME/.agent-presets/expert-team/` 里不是我们那份（被删过，或被一份同名预设占了）。按优先级修：
+
+1. 跑一次 `/team <任意小任务>` —— 插件会用包内资产重铺一份带版本戳的（最省事；1.3.0 起插件加载时也会自动铺）；
+2. 或从包内覆盖：`cp -f <包路径>/presets/expert-team/{agent.cordis.yml,preset.yml} ~/.dsh/.agent-presets/expert-team/`；
+3. **不要**用同一个 id 在「设置 → Agent 预设」里「创建 preset」——那只会得到你选的**源**的组合（例如标准模式），
+   不是我们这份。
+
+改完**重启 `dsh web`**（预设名册在启动时固化，刷新页面不够），再开**新会话**（预设只在会话创建时固定）。
 
 ## 已知限制
 

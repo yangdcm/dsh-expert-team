@@ -54,15 +54,16 @@ The roster is trimmed per task; small jobs start only the roles they need.
   `subagent` tool with personas written into the prompt — nothing breaks, you just lose the
   config-level boundary guarantees.
 
-**Option 1 — plugin market (recommended)**
-
-`dsh web` → **Settings → Plugin market** → search for "专家团" / "expert team" → install → refresh.
-
-**Option 2 — CLI**
+**Option 1 — CLI (recommended)**
 
 ```sh
 dsh plugin --profile web add @yangdcm/dsh-expert-team
 # then restart dsh web so the new bundle joins the composition
+```
+
+**Option 2 — plugin market** (listing not submitted yet, so it may not be searchable)
+
+If it has been listed: `dsh web` → **Settings → Plugin market** → search for "专家团" / "expert team" → install → refresh.
 ```
 
 **Option 3 — from source (development)**
@@ -84,21 +85,17 @@ pnpm install && dsh web
 > upgrade instead of silently going stale. `/team uninstall` reclaims the copies this plugin laid down —
 > it only removes directories carrying our stamp, and never touches content you authored yourself.
 >
-> **Where settings live**: on load the plugin registers its settings as the host namespace `expert-team`
-> — the **data layer**: the host owns them, they travel with the plugin market's **backup and restore**,
-> any interface that renders the schema can read them, and a changed value recomputes limits, round caps
-> and the tier gate in-process (no restart).
-> **The card inside the built-in settings page is not shipped yet**: that page renders the intersection of
-> *the host service's namespaces* and *registered cards*. We only have the first half
-> (`ctx.settings.register`); the second half needs a **client-side section contribution** (slot
-> `settings.plugin.item` keyed by this namespace, plus `@deepseek-ai/dsh-client-ui-settings` added to
-> `dsh.client.inject`) — see `docs/专家团-设置卡片-实施要点.md` for the implementation notes.
-> So **settings are currently edited from the overlay's settings tab**
-> (`/plugins/dsh-expert-team/settings`).
-> **Honest boundary**: the default roster (an array of role ids) is deliberately *not* in the host schema
-> (its value type cannot be expressed reliably), so it stays with the overlay's tab and
-> `$DSH_HOME/expert-team/settings.json`. On a host with no settings service every setting falls back to
-> that file.
+> **The preset is laid down when the plugin loads**: after `/team uninstall`, a restart of `dsh web`
+> re-materialises it automatically (no manual rescue needed).
+>
+> **Where settings live**: **Settings →「专家团」** — a full page inside the host's official settings menu
+> (the `settings.section` slot, `id: expert-team`, `order: 50`), sharing the entry point and panel chrome with
+> every other plugin's settings. The data layer is the host namespace `expert-team` (the host owns it, it travels
+> with the plugin market's **backup and restore**, and a changed value recomputes limits, round caps and the tier
+> gate in-process — no restart). The overlay's old "settings" tab has been removed: one form, one place.
+> **Honest boundary**: the default roster (an array of role ids) is deliberately *not* in the host schema (its value
+> type cannot be expressed reliably); it stays with the corresponding control on that page and
+> `$DSH_HOME/expert-team/settings.json`. On a host with no settings service every setting falls back to that file.
 >
 > **The A-line switch**: the "narrow the lead's tool face" gate (`gates.leadToolFace`, default `on`)
 > decides whether execution tools (`bash/write/edit/grep/glob`) are taken away from the lead and given
@@ -152,6 +149,25 @@ npm run check:name      # verify no placeholder package name is left behind
 **developer-machine-only** set: `gate:sync` diffs the self-installed copies under your local
 `$DSH_HOME`, and `gate:preset` borrows the Config schemas shipped inside your local dsh install
 (the dsh path is auto-detected; override with `DSH_INSTALL`). Neither runs in CI.
+
+## Troubleshooting
+
+**No「专家团」page in the settings menu?** Make sure you are on 1.3.0 or newer
+(`dsh plugin --profile web add @yangdcm/dsh-expert-team` to upgrade) and then **restart `dsh web`** — the page
+did not exist before 1.3.0.
+
+**The「专家团模式」preset shows as the bare id (`expert-team`) and sessions have none of the 12 role tools?**
+That means `$DSH_HOME/.agent-presets/expert-team/` does not hold our preset (it was deleted, or a same-named
+preset took the id). Fix it in this order:
+
+1. Run `/team <any small task>` once — the plugin re-lays a version-stamped copy from the package (simplest; from
+   1.3.0 it also does this automatically on load);
+2. Or copy over it: `cp -f <package>/presets/expert-team/{agent.cordis.yml,preset.yml} ~/.dsh/.agent-presets/expert-team/`;
+3. Do **not** "create preset" with the same id in Settings → Agent presets — that only gives you a composition of
+   the *source* you picked (e.g. standard mode), not ours.
+
+Afterwards **restart `dsh web`** (the preset roster is fixed at startup; a page refresh is not enough) and open a
+**new session** (a session's preset is fixed when it is created).
 
 ## Known limitations
 
