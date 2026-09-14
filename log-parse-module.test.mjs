@@ -94,7 +94,11 @@ console.log('\n③ 行为契约（重构不许顺手改口径；下面的期望�
 
 console.log('\n④ 兼容层：`_live` 的导出键**一个都没少**（用改动前的快照比对，不靠人列清单）');
 {
-  const before = await readFile('/tmp/backup-lib-before-logparse/command.js', 'utf8');
+  // 基准随仓提交（regression.fixtures/live-keys-before-logparse.json）。
+  // 以前这里读的是 `/tmp/backup-lib-before-logparse/command.js` —— 重构当天作者手工留下的备份，
+  // CI 与别人的机器上都不存在，于是这条断言在 CI 上以 ENOENT 直接失败（2026-09-14 三档全红）。
+  // 抽成夹具后基准可评审、可追溯，且不再依赖任何机器状态；本基线只允许**增**键、不允许丢键。
+  const baseline = JSON.parse(await readFile(join(here, 'regression.fixtures', 'live-keys-before-logparse.json'), 'utf8'));
   const keysOf = (src) => {
     const m = src.match(/export const _live = \{([\s\S]*?)\};/);
     const out = new Set();
@@ -104,7 +108,9 @@ console.log('\n④ 兼容层：`_live` 的导出键**一个都没少**（用改�
     }
     return out;
   };
-  const b = keysOf(before); const a = keysOf(cmdSrc);
+  const b = new Set(baseline.keys);
+  const a = keysOf(cmdSrc);
+  check(b.size > 20, `基准快照可用（${b.size} 个键，取自 ${baseline._source}）`);
   const lost = [...b].filter((k) => !a.has(k));
   check(lost.length === 0, '改动前的 `_live` 键一个都没丢', lost.length ? `丢：${lost.join(', ')}` : `${b.size} → ${a.size}`);
   check(_live.parseLogLine === LP.parseLogLine, '`_live.parseLogLine` 与模块里**是同一个函数**（不是又包一层）');
