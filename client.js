@@ -199,6 +199,20 @@ window.__ModuleLoader__.load({
       '.exp-preview{margin-top:10px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));border-radius:9px;background:var(--dsw-alias-bg-layer-1,var(--bg,#fff));font-size:12px;line-height:1.6;white-space:pre-wrap;word-wrap:break-word;max-height:330px;overflow:auto}' +
       '.exp-empty{color:var(--dsw-alias-label-secondary,var(--text,#57606a));font-size:12px;padding:8px 0}' +
       '.exp-err{color:#b3291e;font-size:12px;padding:8px 0}' +
+      // ── 设置表单（官方「设置」面板的专家团分节；浮层里已不再有「设」页签）──
+      // 这些类以前**没有任何 CSS**（只有 JS 里的 className），在浮层里靠浏览器默认样式勉强能看；
+      // 搬进官方设置面板后需要一个真正的表单布局：左标签、中控件、右说明。
+      '.exp-settings{font-size:12.5px;color:var(--dsw-alias-label-primary,var(--text,#1f2328));max-width:760px}' +
+      '.exp-settings-head{margin:0 0 4px;font-size:11.5px;line-height:1.6;color:var(--dsw-alias-label-secondary,var(--text,#57606a))}' +
+      '.exp-settings-group{margin:16px 0 2px;font-size:11.5px;font-weight:700;letter-spacing:.02em;color:var(--dsw-alias-label-secondary,var(--text,#57606a))}' +
+      '.exp-settings-row{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-top:1px solid var(--dsw-alias-border-l1,var(--border,#eef1f5))}' +
+      '.exp-settings-label{flex:0 0 188px;max-width:188px;font-size:12.5px;line-height:1.5}' +
+      '.exp-settings-ctl{flex:none;display:flex;align-items:center;min-height:20px}' +
+      '.exp-settings-note{flex:1;min-width:0;font-size:11px;line-height:1.5;color:var(--dsw-alias-label-secondary,var(--text,#57606a))}' +
+      '.exp-settings-msg{margin-top:10px;padding:6px 0;font-size:11.5px;font-weight:700;color:#1a7f5a}' +
+      '.exp-settings-msg.bad{color:#b3291e;font-weight:600}' +
+      '.exp-settings-retry{margin-top:10px;padding:4px 12px;border:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));border-radius:8px;background:var(--dsw-alias-bg-layer-3,var(--bg,#fff));color:inherit;cursor:pointer;font-size:12px}' +
+      '.exp-settings-retry:hover{background:var(--dsw-alias-bg-layer-2,var(--bg-subtle,#f6f8fa))}' +
       '.exp-viol{color:#fff;background:linear-gradient(90deg,#c62828,#e53935);font-size:12px;font-weight:600;padding:7px 10px;border-radius:8px;margin:0 0 8px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
       '.exp-decision{margin:8px 0;padding:12px 14px;border:1px solid var(--dsw-alias-state-business-primary,#0969da);border-radius:10px;background:linear-gradient(180deg,#f6f9ff,var(--dsw-alias-bg-layer-1,#fff))}' +
       '.exp-decision-title{font-weight:700;font-size:13px;color:var(--dsw-alias-state-business-primary,#0969da)}' +
@@ -257,6 +271,20 @@ window.__ModuleLoader__.load({
       + '.etv-g-node.lead{stroke:var(--etv-lead);stroke-width:1.6}'
       + '.etv-link{position:relative;height:16px;margin-left:var(--etv-indent)}.etv-link i{position:absolute;left:6px;top:0;bottom:0;width:2px;background:var(--etv-line)}.etv-link b{position:absolute;left:1.5px;bottom:-2px;font-size:9px;line-height:1;color:var(--dsw-alias-label-tertiary)}.etv-list{position:relative;margin:2px 0 6px var(--etv-indent);padding-left:16px}.etv-list-i{position:absolute;left:0;top:0;bottom:14px;width:2px;background:var(--etv-line)}.etv-row{position:relative;margin:0 0 10px}.etv-row::before{content:"";position:absolute;left:-16px;top:28px;width:14px;height:2px;background:var(--etv-line)}.etv-row::after{content:"";position:absolute;left:-19px;top:25px;width:6px;height:6px;border-radius:50%;background:var(--etv-line)}'
     // ── session store (mirrors dsh-md-preview) ──
+    /**
+     * 注入本插件的样式表（幂等）。**必须由任何会渲染本插件 UI 的入口调用** ——
+     * 原来只有 HeaderButton 在渲染时注入，于是「会话还没建/首屏打开官方设置面板」时
+     * 设置表单是一堆无样式控件。
+     */
+    function ensureCss() {
+      try {
+        if (typeof document === 'undefined' || document.querySelector('style[data-et-css]')) return
+        var stEl = document.createElement('style')
+        stEl.setAttribute('data-et-css', '1')
+        stEl.textContent = CSS
+        document.head.appendChild(stEl)
+      } catch (e) {}
+    }
     var currentSessionId = null
     var open = false // default collapsed so the panel never auto-blocks the workspace; open via the「专家团」header button
     var listeners = new Set()
@@ -1032,21 +1060,42 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 设置页签：**只做三件事** —— 读（GET /settings）、渲染（照 schema）、存（POST，自动保存）。
-     * 失败一律照实显示（400 的错误列表 / 网络错误），**并把控件回滚到服务端的值** ——
+     * 设置页：**只做四件事** —— 读（GET /settings）、渲染（照 schema）、存（POST，自动保存）、
+     * **读失败要照实说**。
+     *
+     * 为什么读失败必须显式报错：旧实现是 `r.ok ? r.json() : null` —— 非 200 被静默丢成 null，
+     * 于是永远停在「（正在读取设置…）」，既不报错也不超时。实测运行中的 `dsh web` 若启动早于
+     * 本功能（宿主路由只在插件加载时注册），`GET /settings` 就是 **404**，用户看到的就是无限加载。
+     *
+     * 保存失败（400 的错误列表）与读失败分开渲染：读失败整页显示 +「重试」；保存失败只在表单
+     * 下方出红字，**不把已经填好的表单整页换掉**，控件始终回滚到服务端的值 ——
      * "界面显示 A、服务端是 B"是最难排查的状态，宁可回滚也不装作成功。
      */
-    function SettingsTab() {
+    function SettingsSection() {
       var sS = useState(null); var data = sS[0], setData = sS[1]
       var mS = useState(''); var msg = mS[0], setMsg = mS[1]
       var eS = useState(''); var err = eS[0], setErr = eS[1]
+      var lS = useState(''); var loadErr = lS[0], setLoadErr = lS[1]
+      var rS = useState(0); var retry = rS[0], setRetry = rS[1]
+      var loadingS = useState(true); var loading = loadingS[0], setLoading = loadingS[1]
       useEffect(function () {
         var alive = true
-        fetch('/plugins/dsh-expert-team/settings').then(function (r) { return r.ok ? r.json() : null }).then(function (d) {
-          if (alive && d && d.ok) setData(d)
-        }).catch(function (e) { if (alive) setErr(String(e && e.message ? e.message : e)) })
+        setLoading(true); setLoadErr('')
+        fetch('/plugins/dsh-expert-team/settings').then(function (r) {
+          return r.json().catch(function () { return null }).then(function (d) { return { ok: r.ok, status: r.status, d: d } })
+        }).then(function (res) {
+          if (!alive) return
+          setLoading(false)
+          if (res.ok && res.d && res.d.ok && res.d.schema) { setData(res.d); return }
+          var detail = (res.d && (res.d.error || (res.d.errors || []).join('；'))) || ''
+          setLoadErr(t('读取设置失败：HTTP ', 'Reading settings failed: HTTP ') + res.status + (detail ? ' ' + t('（', '(') + detail + t('）', ')') : ''))
+        }).catch(function (e) {
+          if (!alive) return
+          setLoading(false)
+          setLoadErr(t('读取设置失败：', 'Reading settings failed: ') + String(e && e.message ? e.message : e))
+        })
         return function () { alive = false }
-      }, [])
+      }, [retry])
       function save(patch) {
         setErr(''); setMsg('保存中…')
         fetch('/plugins/dsh-expert-team/settings', {
@@ -1061,8 +1110,14 @@ window.__ModuleLoader__.load({
           setMsg(res.d.needsRestart ? '已保存 —— **重启 dsh web 后生效**' : '已保存')
         }).catch(function (e) { setErr(String(e && e.message ? e.message : e)); setMsg('') })
       }
-      if (err) return h('div', { className: 'exp-settings' }, h('div', { style: { color: '#c0392b' } }, '✗ ' + esc(err)))
-      if (!data || !data.schema) return h('div', { className: 'exp-empty' }, t('（正在读取设置…）', '(loading settings…)'))
+      if (loading) return h('div', { className: 'exp-settings' }, h('div', { className: 'exp-empty' }, t('（正在读取设置…）', '(loading settings…)')))
+      if (loadErr) return h('div', { className: 'exp-settings' },
+        h('div', { className: 'exp-err' }, '✗ ' + esc(loadErr)),
+        h('div', { className: 'exp-settings-note' },
+          esc(t('若是 404：运行中的 dsh web 启动早于本功能 —— 宿主的 /settings 路由在插件加载时才注册，重启 dsh web 后点「重试」即可。',
+            'On a 404: the running dsh web started before this feature — the host /settings route registers at plugin load. Restart dsh web, then retry.'))),
+        h('button', { className: 'exp-settings-retry', onClick: function () { setRetry(retry + 1) } }, esc(t('重试', 'Retry'))))
+      if (!data || !data.schema) return h('div', { className: 'exp-settings' }, h('div', { className: 'exp-empty' }, t('（正在读取设置…）', '(loading settings…)')))
       var model = settingsFormModel(data.schema, data.settings)
       var rows = []
       model.forEach(function (g) {
@@ -1074,22 +1129,25 @@ window.__ModuleLoader__.load({
           } else if (r.type === 'bool') {
             ctl = h('input', { type: 'checkbox', checked: !!r.value, onChange: function (e) { save({ [r.path]: e.target.checked }) } })
           } else if (r.type === 'int') {
-            ctl = h('input', { type: 'number', value: String(r.value), min: r.min === null ? undefined : r.min, max: r.max === null ? undefined : r.max, style: { width: 72 },
+            ctl = h('input', { type: 'number', value: String(r.value), min: r.min === null ? undefined : r.min, max: r.max === null ? undefined : r.max, style: { width: 84 },
               onChange: function (e) { var v = e.target.value; if (v !== '' && /^-?\d+$/.test(v)) save({ [r.path]: Number(v) }) } })
           } else if (r.type === 'enum') {
             ctl = h('select', { value: String(r.value), onChange: function (e) { save({ [r.path]: e.target.value }) } },
               (r.values || []).map(function (v) { return h('option', { key: v, value: v }, esc(v)) }))
           } else {
-            ctl = h('input', { type: 'text', value: String(r.value), placeholder: t('留空 = 按档位默认', 'empty = tier default'), style: { width: 150 },
+            ctl = h('input', { type: 'text', value: String(r.value), placeholder: t('留空 = 按档位默认', 'empty = tier default'), style: { width: 168 },
               onBlur: function (e) { var v = e.target.value.trim(); save({ [r.path]: v === '' ? null : v.split(',').map(function (x) { return x.trim() }).filter(Boolean) }) } })
           }
           rows.push(h('div', { key: r.path, className: 'exp-settings-row' },
             h('span', { className: 'exp-settings-label', title: r.hint }, esc(r.label)),
-            ctl,
-            r.hint ? h('span', { className: 'exp-muted', style: { marginLeft: 6 } }, esc(r.hint)) : null))
+            h('span', { className: 'exp-settings-ctl' }, ctl),
+            h('span', { className: 'exp-settings-note', title: r.hint }, r.hint ? esc(r.hint) : null)))
         })
       })
-      return h('div', { className: 'exp-settings' }, rows, h('div', { className: 'exp-muted', style: { marginTop: 6 } }, esc(msg || '')))
+      return h('div', { className: 'exp-settings' },
+        h('div', { className: 'exp-settings-head' }, esc(t('改动即保存（`编制` / `门禁` 两类需重启 dsh web 后生效）。', 'Saved on change; `roster` and `gates` apply after a dsh web restart.'))),
+        rows,
+        h('div', { className: 'exp-settings-msg' + (err ? ' bad' : '') }, esc(err ? '✗ ' + err : (msg || ''))))
     }
 
     function DecisionCard(props) {
@@ -1944,9 +2002,13 @@ window.__ModuleLoader__.load({
       var headCls = 'exp-head' + (docked || viewMode ? '' : ' exp-grab')
 
       try {
-        var TAB_ZH = { team: '人', tasks: '事', info: '料', board: '盘', settings: '设' }
+        // 「设」页签已移除：设置页搬进**官方「设置」菜单**（`settings.section` 槽，见 apply()）。
+        // 为什么改：浮层页签是一个只有打开浮层才够得着的第二入口，且它依赖一个「读取设置」的
+        // 自建请求路径 —— 一旦宿主路由没注册就永远停在「正在读取设置…」。搬进官方菜单后与
+        // 其它插件的设置同一入口、同一套面板 chrome。
+        var TAB_ZH = { team: '人', tasks: '事', info: '料', board: '盘' }
         var tabBar = h('div', { className: 'exp-tabs' },
-          ['team', 'tasks', 'info', 'board', 'settings'].map(function (tb) {
+          ['team', 'tasks', 'info', 'board'].map(function (tb) {
             return h('span', { key: tb, className: 'exp-tab' + (tab === tb ? ' on' : ''), onClick: function () { setTab(tb) } },
               esc((langNow === 'en' ? TAB_ZH[tb] : TAB_ZH[tb])) + (tb === 'tasks' ? ' ' + tasks.length : ''))
           }),
@@ -2189,7 +2251,7 @@ window.__ModuleLoader__.load({
             h('ol', { className: 'exp-path' }, stepper),
             (data.pendingDecision && data.pendingDecision.options && data.pendingDecision.options.length) ? h(DecisionCard, { decision: data.pendingDecision, onChoose: function (id, label) { decide({ choice: label || id }) } }) : null,
             tabBar,
-            tab === 'team' ? teamTab : (tab === 'tasks' ? tasksTab : (tab === 'board' ? boardTab : (tab === 'settings' ? h(SettingsTab, null) : infoTab)))
+            tab === 'team' ? teamTab : (tab === 'tasks' ? tasksTab : (tab === 'board' ? boardTab : infoTab))
           ] : null))
       } catch (e) {
         return h('div', { className: 'exp-preview' }, 'PANEL ERR: ' + esc(String(e && e.stack ? e.stack : e)).slice(0, 800))
@@ -2253,14 +2315,7 @@ window.__ModuleLoader__.load({
       function toggle() { if (!isOpen) { dockState = true; saveLS('et-dock', true); notify(); setOpen() } else setOpen() }
       // CSS must exist for the HEADER button too — the panel's own <style> is
       // only in the DOM while the panel is open. Inject once, globally.
-      try {
-        if (typeof document !== 'undefined' && !document.querySelector('style[data-et-css]')) {
-          var stEl = document.createElement('style')
-          stEl.setAttribute('data-et-css', '1')
-          stEl.textContent = CSS
-          document.head.appendChild(stEl)
-        }
-      } catch (e) {}
+      ensureCss()
       var badge = teamBadge(live)
       var tip = '专家团 · ' + badge.title + '｜点击' + (isOpen ? '收起' : '打开') + '并排面板（全屏画布：切到上方「🧑‍🔬 专家团」标签）'
       return h('button', { className: 'exp-open exp-live-badge' + (badge.cls || ''), title: tip, onClick: toggle },
@@ -2396,6 +2451,22 @@ window.__ModuleLoader__.load({
         }
         exports._syncPending = syncPending
         exports._resolvePending = resolvePending
+
+        // CSS 必须在这里就注入：官方「设置」面板可以在**没有会话**（新会话/首屏）时打开，
+        // 而原来这份 CSS 只挂在 HeaderButton 的渲染里 —— 那样设置面板会是一堆无样式的裸控件。
+        ensureCss()
+
+        // 设置页进**官方设置菜单**（`settings.section` 是宿主 ui-settings-general 声明、其它
+        // 插件（agent-preset / models / plugins）同样在用的槽）。`ctx.slots.inject` 等的是**声明**
+        // 而不是包顺序：宿主没声明该槽时这条贡献不会挂上，插件其余部分照常工作。
+        ctx.slots.inject('settings.section', function () {
+          return ctx.slots.register({
+            name: 'settings.section',
+            id: 'expert-team',
+            order: 50,
+            label: function () { return t('专家团', 'Expert team') }
+          }, wrap(SettingsSection))
+        })
 
         ctx.slots.inject('conversation.session.header.actions', function () {
           return ctx.slots.register({ name: 'conversation.session.header.actions', id: 'expert-team-open', order: 900, inject: function (sessionId) { return sessionId ? { sessionId: sessionId } : {} } }, wrap(HeaderButton))

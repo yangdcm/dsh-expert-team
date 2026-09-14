@@ -1553,15 +1553,15 @@
       ]
     },
     {
-      "id": "M119-client-settings-tab-unlisted",
-      "title": "设置页签**注册了却不在 tab 列表里** ⇒ 界面照常渲染，但那个页签永远点不开",
-      "why": "2026-09-13 新增（F 线第 3 项 · 设置页签）：浮层的标签表 `TAB_ZH` 与真正渲染的 tabs 数组是**两处**（历史写法如此）。只加了标签、忘了加进数组，或反之，结果都是「设置页看起来做好了，用户却点不到」—— 这正是本仓已登记的 D7（写出来了但没人调用）在 UI 上的形态。本变异体把 `settings` 从 tab 数组里去掉 ⇒ settings-page.test.mjs 的「tab 列表含 settings（否则那个页签永远不会被渲染）」必红。",
+      "id": "M119-client-settings-section-unwired",
+      "title": "设置页**写好了却没接进官方设置菜单** ⇒ 组件、路由、测试全在，用户永远看不到入口",
+      "why": "2026-09-14 重写（原 M119 钉的是浮层「设」页签；该页签已按用户要求移除、设置搬进官方 `settings.section` 槽，原 find 串不复存在）：`SettingsSection` 组件 + `/settings` 路由都齐备，唯独 `ctx.slots.inject('settings.section', …)` 那一处注册被删/被注释 —— 界面照常加载、测试若只查组件存不存在也全绿，但用户在设置菜单里**看不到这一页**。这正是本仓已登记的 D7（写出来了但没人调用）在 UI 上的形态。本变异体删掉整段注册 ⇒ settings-page.test.mjs 的「注册进官方 settings.section 槽」等必红。",
       "test": "settings-page.test.mjs",
       "edits": [
         {
           "file": "client.js",
-          "find": "          ['team', 'tasks', 'info', 'board', 'settings'].map(function (tb) {",
-          "replace": "          ['team', 'tasks', 'info', 'board'].map(function (tb) { // MUTANT: 设置页签不在列表里"
+          "find": "        ctx.slots.inject('settings.section', function () {\n          return ctx.slots.register({\n            name: 'settings.section',\n            id: 'expert-team',\n            order: 50,\n            label: function () { return t('专家团', 'Expert team') }\n          }, wrap(SettingsSection))\n        })",
+          "replace": "        // MUTANT: 分节注册被删（组件与路由都在，用户在设置菜单里看不到这一页）"
         }
       ]
     },
@@ -1744,6 +1744,19 @@
           "file": "lib/command.js",
           "find": "const isRoot = agents?.roots?.().includes(agent) === true;",
           "replace": "const isRoot = true;"
+        }
+      ]
+    },
+    {
+      "id": "M134-client-settings-read-failure-swallowed",
+      "title": "读设置失败**静默丢弃**（回到 `r.ok ? r.json() : null`）⇒ 界面永远停在「（正在读取设置…）」",
+      "why": "2026-09-14 新增（用户报障「设 点击之后一直是（正在读取设置…）」的**原始形态**）。旧实现把非 200 的响应静默丢成 null：既不报错、也不超时、也没有重试入口 —— 用户只能看到一个永远转不完的加载态，而真实原因（运行中的 dsh web 启动早于本功能，宿主 `/settings` 路由在插件加载时才注册 ⇒ GET 返回 404）被完全吞掉。实测：旧进程上 `GET /plugins/dsh-expert-team/settings` 就是 404，而 `/plan`、`/task` 等更早注册的路由正常。本变异体把 ok/status 判定改回静默丢弃 ⇒ settings-page.test.mjs ④ 的两条断言必红。",
+      "test": "settings-page.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "          if (res.ok && res.d && res.d.ok && res.d.schema) { setData(res.d); return }\n          var detail = (res.d && (res.d.error || (res.d.errors || []).join('；'))) || ''\n          setLoadErr(t('读取设置失败：HTTP ', 'Reading settings failed: HTTP ') + res.status + (detail ? ' ' + t('（', '(') + detail + t('）', ')') : ''))",
+          "replace": "          if (res.d && res.d.ok) setData(res.d) // MUTANT: 非 200 静默丢弃（回到旧实现）"
         }
       ]
     }

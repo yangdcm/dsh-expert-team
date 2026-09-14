@@ -1,13 +1,22 @@
-// 测试：F 线第 3 项 **设置页签**（client 侧）+ 与 host spec 的**不分叉**保证
+// 测试：设置页（client 侧）+ 与 host spec 的**不分叉**保证
 //
 // 需求原文：「插件需要一个控制台设置页面…把常用的参数可视化配置加上」。
-// 实现选择（如实记下）：**没有**依赖宿主是否提供 `settings.section` 槽（本机 layout 包里查不到该槽），
-// 而是把设置做成专家团浮层的**第 5 个页签**（人 / 事 / 料 / 盘 / 设）—— 自包含、不新增宿主面。
+// 实现历史（如实记下，含一次**被实测推翻的判断**）：
+//   · 第一版把设置做成专家团浮层的**第 5 个页签**（人/事/料/盘/设），当时的理由是
+//     「本机 layout 包里查不到 `settings.section` 槽」。**这个理由是错的** —— 该槽由
+//     `@deepseek-ai/dsh-client-ui-settings-general` 声明（不是 layout），安装目录里逐字可见，
+//     `agent-preset` / `settings-models` / `settings-plugins` 都在用它。
+//   · 第二版（现行）把设置页注册进**官方设置菜单**的 `settings.section` 槽，并**删掉「设」页签**：
+//     单一入口、与其它插件同一套面板 chrome。
 //
 // 本测试钉住：
 //   ① 表单**由 host 的 schema 生成**（客户端不另写一份默认值/值域）；
 //   ② **spec 里出现的每一种类型，界面都认识** —— 这条是防"加了设置项但界面没跟上"的漂移闸；
-//   ③ 页签真的接进了浮层（注册了但不在 tab 列表里 = 看不见，这是本仓 D7 的老毛病）。
+//   ③ 设置页真的接进了**官方设置菜单**（注册了但没人渲染 = 看不见，这是本仓 D7 的老毛病），
+//      且浮层里**不再**留「设」页签（两处渲染同一份表单必然分叉）；
+//   ④ **读失败必须显式报错**：旧实现 `r.ok ? r.json() : null` 把非 200 静默丢成 null，
+//      于是永远停在「（正在读取设置…）」—— 实测运行中的 dsh web 若早于本功能，GET /settings
+//      返回 404，用户看到的就是无限加载（2026-09-14 用户报障原话）。
 //
 // 变异验证：见 `regression.fixtures/mutations.json` 的 **M119**。
 // 运行：node settings-page.test.mjs
@@ -65,19 +74,31 @@ console.log('\n② spec 的每一种类型界面都认识（防"加了设置项�
   check(probe[0].rows[0].known === false, '真出现未知类型时**如实标出**（不静默渲染成空控件）');
 }
 
-console.log('\n③ 页签真的接进了浮层（注册了但不在 tab 列表里 = 看不见）');
+console.log('\n③ 设置页真的接进了官方设置菜单（注册了但没人渲染 = 看不见）');
 {
-  check(/TAB_ZH = \{ team: '人', tasks: '事', info: '料', board: '盘', settings: '设' \}/.test(src), 'tab 标签表含 `settings: \'设\'`（5 个页签）');
-  check(/\['team', 'tasks', 'info', 'board', 'settings'\]\.map/.test(src), 'tab 列表含 settings（否则那个页签永远不会被渲染）');
-  check(/tab === 'settings' \? h\(SettingsTab, null\)/.test(src), '渲染分发里有 `SettingsTab`');
-  check(/function SettingsTab\(\)/.test(src), '`SettingsTab` 组件已定义');
+  check(/ctx\.slots\.inject\('settings\.section'/.test(src), '注册进官方 `settings.section` 槽（宿主 ui-settings-general 声明）');
+  check(/name: 'settings\.section',[\s\S]{0,120}?id: 'expert-team'/.test(src), '分节 id 稳定（`expert-team`）');
+  check(/order: 50/.test(src) && /label: function \(\) \{ return t\('专家团', 'Expert team'\) \}/.test(src), '带上 nav 位置与随语言变化的标签');
+  check(/function SettingsSection\(\)/.test(src), '`SettingsSection` 组件已定义');
+  check(/wrap\(SettingsSection\)/.test(src), '分节用 `wrap()` 挂载（渲染出错不会炸掉整个设置面板）');
+  check(!/TAB_ZH = \{[^}]*settings/.test(src), '浮层「设」页签已移除（不再两处渲染同一份表单）');
+  check(!/\['team', 'tasks', 'info', 'board', 'settings'\]/.test(src) && !/tab === 'settings'/.test(src), '浮层 tab 列表与渲染分发里都没有 settings');
+  check(/ensureCss\(\)/.test(src) && /exports\.apply = function \(ctx\) \{[\s\S]{0,4000}?ensureCss\(\)/.test(src), 'CSS 在 apply() 里注入（首屏/无会话时打开设置面板也有样式）');
   check(/fetch\('\/plugins\/dsh-expert-team\/settings'\)/.test(src), 'GET 读设置');
   check(/method: 'POST'/.test(src) && /JSON\.stringify\(patch\)/.test(src), 'POST 写设置（自动保存）');
   check(/setErr\(\(\(res\.d && res\.d\.errors\) \|\| \['保存失败'\]\)\.join/.test(src), '400 的 errors 照实显示（不吞）');
   check(/needsRestart \? '已保存 —— \*\*重启 dsh web 后生效\*\*' : '已保存'/.test(src), '如实区分"要不要重启"（不假装即时生效）');
   check(/esc\(r\.label\)/.test(src) && /esc\(r\.hint\)/.test(src), '标签与说明过 `esc()`（与其它文案同一套转义纪律）');
-  check(!/settings\.section/.test(src), '未依赖宿主 `settings.section` 槽（本机 layout 无该槽 ⇒ 用浮层第 5 页签自包含实现）');
+}
+
+console.log('\n④ 读失败必须显式报错（不许停在「正在读取设置…」）');
+{
+  check(/if \(!res\.ok \|\| !res\.d \|\| !res\.d\.ok\)/.test(src), '非 200 / 非 ok 响应**进了错误分支**（旧实现是 `r.ok ? r.json() : null` 静默丢弃）');
+  check(/setLoadErr\(t\('读取设置失败：HTTP '/.test(src), '带上真实 HTTP 状态码（404 = 路由未注册，可直接判因）');
+  check(/setLoadErr\(t\('读取设置失败：', 'Reading settings failed: '\)/.test(src), '网络错误也照实上报');
+  check(/'（正在读取设置…）'/.test(src) && /if \(loading\) return/.test(src), '「正在读取设置…」只出现在 loading 状态（不是"读不到时的兜底文案"）');
+  check(/setRetry\(retry \+ 1\)/.test(src) && /exp-settings-retry/.test(src), '给出「重试」按钮（重启 dsh web 后不必刷新整页）');
 }
 
 if (fail) { console.error(`\n✗ settings-page：${fail} 项失败`); process.exit(1); }
-console.log('\n✓ settings-page：全部通过（schema 驱动 / 类型全覆盖 / 真接进浮层）');
+console.log('\n✓ settings-page：全部通过（schema 驱动 / 类型全覆盖 / 接进官方设置菜单 / 读失败显式报错）');
