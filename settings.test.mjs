@@ -30,12 +30,23 @@ console.log('① spec 与默认值（UI 表单结构也由它生成 ⇒ 新增�
 {
   const d = defaultSettings();
   check(SETTINGS_GROUPS.join(',') === 'identity,roster,display,gates', '四组：身份 / 编制 / 显示 / 门禁', SETTINGS_GROUPS.join(','));
-  check(Object.keys(flatSpec()).length === 20, '共 20 个设置项（4+5+4+7）', String(Object.keys(flatSpec()).length));
+  check(Object.keys(flatSpec()).length === 18, '共 18 个设置项（4+5+4+5；原 4+5+4+7 里的两条台账/规格边界开关已删除 —— 它们的行为本就无条件强制，做成开关是安全回退）', String(Object.keys(flatSpec()).length));
   check(d.roster.maxTasks === 200 && d.gates.tierGate === 'soft' && d.identity.profile === 'developer', '默认值符合既有行为（maxTasks=200 / 档位门 soft / 身份 developer）');
   const schema = settingsSchema();
   check(schema.length === 4 && schema.every((g) => g.label && g.hint && g.items.length), 'schema 每组都有中文标签与说明', schema.map((g) => `${g.group}:${g.items.length}`).join(' '));
   check(schema.flatMap((g) => g.items).every((i) => i.path.includes('.') && i.label && typeof i.default !== 'undefined'), '每个设置项都有 path/label/default（UI 直接渲染）');
   check(getSetting(d, 'roster.maxTasks') === 200 && getSetting(d, 'nope.nope') === undefined, 'getSetting 取默认、未知项 undefined');
+
+  // 1.3.2：枚举项的**中文标签**（规格层单一真源）。标签只影响可读性 ⇒ **值域/类型/默认值不许变**，
+  // 但必须"每个值都有标签"，否则下拉里会露出英文标识（这正是本次要修的）。
+  const enums = schema.flatMap((g) => g.items).filter((i) => i.type === 'enum');
+  check(enums.length === 5, '恰好 5 个枚举项（新增枚举项时这条会提醒你同时补标签断言面）', String(enums.length));
+  for (const it of enums) {
+    const vals = (it.values || []).slice().sort();
+    const keys = Object.keys(it.labels || {}).sort();
+    check(keys.join(',') === vals.join(','), `\`${it.path}\` 的 labels 与 values **集合相等**（多一个少一个都红）`, `values=${vals.join('/')} labels=${keys.join('/')}`);
+    check(vals.every((v) => typeof (it.labels || {})[v] === 'string' && it.labels[v].trim().length > 0), `\`${it.path}\` 每个值都有非空中文标签`, JSON.stringify(it.labels));
+  }
 }
 
 console.log('\n② 单值校验：类型 / 值域 / 两个经典陷阱');
@@ -105,7 +116,7 @@ const call = async (method, body) => {
 
   const p = await call('POST', { roster: { maxTasks: 12 } });
   check(p.code === 200 && p.json.ok && p.json.settings.roster.maxTasks === 12, 'POST 合法补丁 ⇒ 200');
-  check(p.json.needsRestart === true, '改动 `编制` ⇒ 如实标注**要重启**（不假装即时生效）');
+  check(p.json.needsRestart === false, '改动 `编制` ⇒ **不需要重启**（上限/轮次/档位门/振荡开关都由 reapplySettingsDerived() 当场重算；此前那句"要重启"是假话）');
   const onDisk = JSON.parse(await readFile(settingsFile, 'utf8'));
   check(onDisk.roster.maxTasks === 12, '**真的落盘**了', String(onDisk.roster.maxTasks));
 
@@ -115,7 +126,7 @@ const call = async (method, body) => {
   check(after.roster.maxTasks === 12, '**被拒绝时磁盘未变**（半套生效是最难排查的状态）');
 
   const disp = await call('POST', { display: { pollMs: 5000 } });
-  check(disp.code === 200 && disp.json.needsRestart === false, '改动 `显示` ⇒ 不需要重启（浮层每次拉设置时读）');
+  check(disp.code === 200 && disp.json.needsRestart === false, '改动 `显示` ⇒ 不需要重启（⚠️ 但 `display.*` 目前**只有存储层、没有消费者**，已在 hint 上如实标注「暂未生效」，待 1.3.3 接线）');
 
   const put = await call('PUT');
   check(put.code === 405, '方法不在名单 ⇒ 405（与既有 9 条路由逐字一致）', String(put.code));
@@ -145,6 +156,30 @@ console.log('\n⑥ 接线：设置真的影响既有解析（且优先级不许�
   check(_live.LIMITS.maxTasks === 11, 'config 赢过 env 与设置（maxTasks=11）', String(_live.LIMITS.maxTasks));
   check(_live.effectiveTierGate() === 'hard', 'config 赢过 env（档位门 hard）', _live.effectiveTierGate());
 
+  // 1.3.2：**振荡检测开关**此前只读 `config.loopGuard.enabled` ⇒ 设置页那个复选框是空转的。
+  // 接线后按同一套优先级：config > env > 设置 > 默认(on)。
+  {
+    const savedLoop = { env: process.env.DSH_EXPERT_TEAM_LOOP_GUARD };
+    delete process.env.DSH_EXPERT_TEAM_LOOP_GUARD;
+    await writeFile(settingsFile, JSON.stringify({ gates: { loopGuard: false } }, null, 2));
+    apply({ commands: { register: () => {} }, on: () => {}, get: () => undefined, inject: () => {} });
+    check(_live.effectiveLoopGuard() === false, '设置里关掉 `gates.loopGuard` ⇒ 真的关掉（此前设置值从不被读）', String(_live.effectiveLoopGuard()));
+    check(_live.resolveLoopGuard({}, { loopGuard: true }) === true, '设置里打开 ⇒ 真的打开', String(_live.effectiveLoopGuard()));
+
+    process.env.DSH_EXPERT_TEAM_LOOP_GUARD = 'true';
+    check(_live.resolveLoopGuard({}, { loopGuard: false }) === true, 'env 赢过设置（`=true` ⇒ on）', String(_live.effectiveLoopGuard()));
+    process.env.DSH_EXPERT_TEAM_LOOP_GUARD = 'off';
+    apply({ commands: { register: () => {} }, on: () => {}, get: () => undefined, inject: () => {} });
+    check(_live.effectiveLoopGuard() === false, "env 的 `off` 也认（布尔开关容错 `false`/`0`/`off`）", String(_live.effectiveLoopGuard()));
+
+    check(_live.resolveLoopGuard({ loopGuard: { enabled: true } }, { loopGuard: false }) === true, 'config 赢过 env 与设置', String(_live.effectiveLoopGuard()));
+    delete process.env.DSH_EXPERT_TEAM_LOOP_GUARD;   // 先清 env（它按设计压过设置值），再验"非法值回默认"
+    check(_live.resolveLoopGuard({}, { loopGuard: '也许吧' }) === true, '非法值一律回默认 on（不猜不报错）', String(_live.effectiveLoopGuard()));
+
+    if (savedLoop.env === undefined) delete process.env.DSH_EXPERT_TEAM_LOOP_GUARD; else process.env.DSH_EXPERT_TEAM_LOOP_GUARD = savedLoop.env;
+    _live.resolveLoopGuard({}, { loopGuard: true });
+  }
+
   // 复位：清掉 env 与盘上的设置，别污染同一进程里的后续断言
   if (savedEnv.maxTasks === undefined) delete process.env.DSH_EXPERT_TEAM_MAX_TASKS; else process.env.DSH_EXPERT_TEAM_MAX_TASKS = savedEnv.maxTasks;
   if (savedEnv.tierGate === undefined) delete process.env.DSH_EXPERT_TIER_GATE; else process.env.DSH_EXPERT_TIER_GATE = savedEnv.tierGate;
@@ -161,6 +196,22 @@ console.log('\n⑦ 坏设置文件不许让插件挂掉');
   await writeFile(settingsFile, JSON.stringify({ roster: { maxTasks: 999999 } }, null, 2));
   const r2 = _live.loadSettingsSync();
   check(r2.settings.roster.maxTasks === 200 && r2.repaired.length === 1, '越界值 ⇒ 回默认 + repairs 上报（用户能在设置页看到被改回了什么）', JSON.stringify(r2.repaired));
+
+  // 1.3.2：删掉的两条装饰开关（`gates.boundaryTasks` / `gates.boundarySpec`）可能**残留在老用户的
+  // settings.json 里**。加载器只遍历 spec ⇒ 未知键应被**静默忽略**：不崩、**不产生噪声 repair**
+  // （把"我们删了一项"报成"你的值非法"是两种零分不清的典型）。
+  await writeFile(settingsFile, JSON.stringify({
+    gates: { boundaryTasks: false, boundarySpec: false, tierGate: 'hard' },
+    roster: { maxTasks: 50 },
+    display: { pollMs: 5000 },
+  }, null, 2));
+  const r3 = _live.loadSettingsSync();
+  check(r3.repaired.length === 0, '残留的已删除键 ⇒ **不产生噪声 repair**（未知键静默忽略）', JSON.stringify(r3.repaired));
+  check(r3.settings.gates.tierGate === 'hard' && r3.settings.roster.maxTasks === 50 && r3.settings.display.pollMs === 5000,
+    '同文件里的**合法**设置照常生效（不是"遇到未知键就整份丢弃"）',
+    JSON.stringify({ tierGate: r3.settings.gates.tierGate, maxTasks: r3.settings.roster.maxTasks, pollMs: r3.settings.display.pollMs }));
+  check(r3.settings.gates.boundaryTasks === undefined && r3.settings.gates.boundarySpec === undefined,
+    '被删除的键不会出现在生效设置里（没有半死不活的字段）', JSON.stringify(Object.keys(r3.settings.gates)));
 }
 
 if (fail) { console.error(`\n✗ settings：${fail} 项失败`); process.exit(1); }

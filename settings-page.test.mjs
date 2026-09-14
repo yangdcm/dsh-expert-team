@@ -87,7 +87,11 @@ console.log('\n③ 设置页真的接进了官方设置菜单（注册了但没�
   check(/fetch\('\/plugins\/dsh-expert-team\/settings'\)/.test(src), 'GET 读设置');
   check(/method: 'POST'/.test(src) && /JSON\.stringify\(patch\)/.test(src), 'POST 写设置（自动保存）');
   check(/setErr\(\(\(res\.d && res\.d\.errors\) \|\| \['保存失败'\]\)\.join/.test(src), '400 的 errors 照实显示（不吞）');
-  check(/needsRestart \? '已保存 —— \*\*重启 dsh web 后生效\*\*' : '已保存'/.test(src), '如实区分"要不要重启"（不假装即时生效）');
+  check(/setMsg\('已保存'\)/.test(src) && !/needsRestart \?/.test(src), '回执只说「已保存」且**不留死分支**（1.3.2 起逐项查明没有任何设置需要重启）');
+  // 1.3.2：枚举中文标签 —— 规格层给了 labels，模型要透出来、渲染要取用，且**缺标签时退回裸值**
+  // （不能渲染成空白：那会让"标签漏配"看起来像"这个选项本来就没有名字"）。
+  check(/labels: it\.labels \|\| null/.test(src), '表单模型透出 \`labels\`（标签随 GET /settings 的 schema 到达客户端）');
+  check(/r\.labels && r\.labels\[v\]\) \|\| v/.test(src), '<option> 文本取 \`labels[值] || 值\`（缺标签退回裸值，绝不留空白）');
   check(/esc\(r\.label\)/.test(src) && /esc\(r\.hint\)/.test(src), '标签与说明过 `esc()`（与其它文案同一套转义纪律）');
 }
 
