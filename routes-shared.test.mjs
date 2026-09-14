@@ -18,7 +18,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { json, readJsonBody, readRequestBody, withRoute } from './lib/routes/shared.js';
+import { json, readJsonBody, readRequestBody, withRoute, localOnly, guardLocalRequest, hostnameOf, isLoopbackHost, isLoopbackOrigin, isLoopbackAddress } from './lib/routes/shared.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 let fail = 0;
@@ -144,6 +144,72 @@ console.log('\n④ 结构：试点路由确实不再自带 json/405/500 样板')
   check(!/catch \(e\) \{\s*json\(500/.test(seg), '/artifact 不再手写 500 兜底', '');
   const rbCount = (src.match(/^async function readRequestBody/m) || []).length;
   check(rbCount === 0, 'command.js 不再自带 readRequestBody（已搬进共享件）', `命中 ${rbCount}`);
+}
+
+console.log('\n⑤ 本机来源守卫：三条攻击路径各有一条规则挡，合法同源请求放行');
+{
+  /** 合法浏览器请求的形状：Host 回环 + Origin 同源 + POST 带 JSON。 */
+  const browser = (over = {}) => ({
+    method: 'POST',
+    url: '/plugins/dsh-expert-team/task',
+    headers: { host: '127.0.0.1:3080', origin: 'http://127.0.0.1:3080', 'content-type': 'application/json' },
+    socket: { remoteAddress: '127.0.0.1' },
+    body: '{}',
+    ...over,
+  });
+
+  // ── 基础件 ──
+  check(hostnameOf('127.0.0.1:3080') === '127.0.0.1' && hostnameOf('[::1]:3080') === '[::1]' && hostnameOf('localhost') === 'localhost', 'hostnameOf 处理端口与 IPv6 字面量');
+  check(isLoopbackHost('localhost:1') && isLoopbackHost('127.0.0.1') && !isLoopbackHost('evil.example') && !isLoopbackHost(''), 'isLoopbackHost 只认回环');
+  check(isLoopbackOrigin('http://127.0.0.1:3080') && isLoopbackOrigin('https://[::1]') && !isLoopbackOrigin('null') && !isLoopbackOrigin('http://evil.example'), 'isLoopbackOrigin 拒绝 null 与外站');
+  check(isLoopbackAddress('127.0.0.1') && isLoopbackAddress('::1') && isLoopbackAddress('::ffff:127.0.0.1') && !isLoopbackAddress('192.168.1.9') && !isLoopbackAddress(''), 'isLoopbackAddress 认 IPv4/IPv6/mapped');
+
+  // ── 放行面 ──
+  check(guardLocalRequest(browser(), { methods: ['POST'] }) === null, '合法同源 POST 放行');
+  check(guardLocalRequest(browser({ headers: { host: 'localhost:3080' } }), { methods: ['POST'] }) === null, 'localhost 也是回环（放行）');
+  check(guardLocalRequest(browser({ headers: { host: '[::1]:3080' } }), { methods: ['POST'] }) === null, 'IPv6 回环放行');
+  check(guardLocalRequest(browser({ method: 'GET', headers: { host: '127.0.0.1:3080', origin: 'null' } }), { methods: ['GET'] }) === null, 'GET 带 Origin: null（/team canvas --watch 的 file:// 页面）仍放行 —— 浏览器不会把无 CORS 头的响应交给它');
+  check(guardLocalRequest({ method: 'GET', url: '/' }, { methods: ['GET'] }) === null, '无 headers/socket 的本地客户端放行（这三条规则只对浏览器有意义）');
+
+  // ── 三条攻击路径 ──
+  const rebind = guardLocalRequest(browser({ headers: { host: 'evil.example:3080', origin: 'http://evil.example:3080', 'content-type': 'application/json' } }), { methods: ['POST'] });
+  check(rebind && rebind.code === 403 && /Host/.test(rebind.error), '① DNS rebinding（Host 非回环）⇒ 403', JSON.stringify(rebind));
+
+  const csrf = guardLocalRequest(browser({ headers: { host: '127.0.0.1:3080', origin: 'http://evil.example', 'content-type': 'application/json' } }), { methods: ['POST'] });
+  check(csrf && csrf.code === 403 && /cross-origin/.test(csrf.error), '② 跨站写（写方法 Origin 非回环）⇒ 403', JSON.stringify(csrf));
+
+  const lan = guardLocalRequest(browser({ socket: { remoteAddress: '192.168.1.9' } }), { methods: ['POST'] });
+  check(lan && lan.code === 403 && /non-loopback client/.test(lan.error), '③ 局域网客户端 ⇒ 403（host: 0.0.0.0 时挡住同网段）', JSON.stringify(lan));
+
+  const form = guardLocalRequest(browser({ headers: { host: '127.0.0.1:3080', origin: 'http://127.0.0.1:3080', 'content-type': 'application/x-www-form-urlencoded' } }), { methods: ['POST'] });
+  check(form && form.code === 415, '④ 简单请求（form/urlencoded，不触发预检）⇒ 415', JSON.stringify(form));
+
+  check(guardLocalRequest({ method: 'POST', url: '/' }, { methods: ['GET'] }).code === 405, '方法不在名单 ⇒ 405（守卫一并承担，注册处不必再写）');
+
+  // ── localOnly 真的把判定写成了响应 ──
+  const res403 = fakeRes();
+  let ran = false;
+  await localOnly(async () => { ran = true; }, { methods: ['POST'] })(browser({ headers: { host: 'evil.example' } }), res403);
+  check(res403._code === 403 && res403.json() && res403.json().ok === false && ran === false, 'localOnly 拒绝时写 403 JSON 且不调用业务处理器', `code=${res403._code}`);
+  const resOk = fakeRes();
+  await localOnly(async () => { ran = true; }, { methods: ['POST'] })(browser(), resOk);
+  check(ran === true && resOk._code === null, 'localOnly 放行时确实调用业务处理器', '');
+}
+
+console.log('\n⑥ 棘轮：每条路由都经过守卫（新加路由不许裸注册）');
+{
+  const src = await readFile(join(here, 'lib', 'command.js'), 'utf8');
+  const bare = (src.match(/wctx\.webServer\.register\(\{/g) || []).length;
+  check(bare === 1, '真正调宿主 register 的地方只有 registerLocal 内部那一处', `命中 ${bare}`);
+  const sites = (src.match(/registerLocal\(\{/g) || []).length;
+  check(sites === 11, '11 条路由全部走 registerLocal（新增路由必须也走它）', `命中 ${sites}`);
+  const methods = (src.match(/^            methods: \[/gm) || []).length;
+  check(methods === 11, '每条注册都声明了 methods（守卫据此决定校验哪些方法）', `命中 ${methods}`);
+  check(/handler: localOnly\(rest\.handler, \{ methods \}\)/.test(src), 'registerLocal 确实套了 localOnly', '');
+  for (const [p, m] of [['state', "['GET']"], ['decide', "['POST']"], ['settings', "['GET', 'POST']"]]) {
+    const at = src.indexOf(`path: '/plugins/dsh-expert-team/${p}',`);
+    check(at !== -1 && src.slice(at, at + 200).includes(`methods: ${m},`), `/${p} 的 methods = ${m}`, '');
+  }
 }
 
 if (fail) { console.error(`\n✗ routes-shared：${fail} 项失败`); process.exit(1); }

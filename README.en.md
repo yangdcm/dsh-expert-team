@@ -128,9 +128,14 @@ npm run check:name      # verify no placeholder package name is left behind
 
 ## Known limitations
 
-- **The local HTTP routes do not yet validate Origin/Host**: the 11 overlay routes (including
-  `/file`, which can only read workspace files) currently check the HTTP method only. Keep `dsh web`
-  bound to `127.0.0.1`; same-origin hardening is planned.
+- **The local routes are guarded, but that is not authentication**: all 11 overlay routes now check
+  `Host` (blocks DNS rebinding), the `Origin` of write requests (blocks cross-site writes), and the
+  client address (blocks non-loopback clients); write requests must also send `application/json`
+  (blocks form / text-plain "simple requests" that never trigger a preflight). `/file` now goes through
+  the host `ctx.fs` policy and reports 403 instead of falling back to a raw read when the policy denies it.
+  **Residual risk, stated plainly**: a local non-browser process can forge any header, and dsh plugins
+  have no authentication model — so do not expose `dsh web` to an untrusted network (with
+  `host: 0.0.0.0` the guard only stops clients without a loopback address).
 - **Web profile only**: the overlay and routes need `webServer`. The command and artifacts still work without it.
 - **Preset drift**: the bundled 「专家团模式」 is a copy of the official `standard` preset plus the role
   tools; upstream preset restructuring needs a matching update here.
