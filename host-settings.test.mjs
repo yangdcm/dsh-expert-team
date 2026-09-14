@@ -38,7 +38,11 @@ function zStub() {
     calls,
     boolean: () => make('boolean'),
     number: () => make('number'),
-    const: (v) => ({ kind: 'const', value: v }),
+    const: (v) => {
+      const node = { kind: 'const', value: v, desc: null };
+      node.description = (text) => { node.desc = text; return node; };
+      return node;
+    },
     union: (of) => ({ kind: 'union', of }),
     object: (shape) => ({ kind: 'object', shape }),
   };
@@ -56,6 +60,14 @@ console.log('① schema 由 SETTINGS_SPEC 生成（单一真源），并刻意�
   check(z.calls.some(([m, v]) => m === 'min' && v === 0) && z.calls.some(([m, v]) => m === 'max' && v === 5000), 'int 的 min/max 取自 spec（0..5000）', JSON.stringify(z.calls.filter(([m]) => m !== 'default').slice(0, 4)));
   check(z.calls.some(([m, v]) => m === 'default' && v === 200), '默认值取自 spec（maxTasks 默认 200）');
   check(schema.shape.identity.shape.profile.kind === 'union', 'enum 映射为 union(const…)', schema.shape.identity.shape.profile.kind);
+  // 1.3.3：枚举成员带上中文描述（值本身仍是标识 —— 值域不变），让别的 UI 也能显示中文
+  {
+    const of = schema.shape.identity.shape.profile.of;
+    check(of.map((c) => c.value).join(',') === 'developer,non-technical,mixed', '枚举**值域不变**（描述只是 meta，不改类型/取值）', of.map((c) => c.value).join(','));
+    check(of.map((c) => c.desc).join('/') === '技术开发者/无技术经验/混合', '每个枚举成员挂上了中文描述', JSON.stringify(of.map((c) => c.desc)));
+    const tg = schema.shape.gates.shape.tierGate.of;
+    check(tg.map((c) => c.desc).join('/') === '软门（建议先生效）/硬门（不选不开工）', '第二个枚举项（档位门）同样带描述', JSON.stringify(tg.map((c) => c.desc)));
+  }
   check(schema.shape.roster.shape.defaultRoles === undefined, 'roles **不上**官方面板（避免表达不当导致宿主拒绝注册）');
   const paths = hs.hostSchemaPaths();
   check(paths.length > 0 && !paths.includes('roster.defaultRoles') && paths.includes('display.pollMs'), `hostSchemaPaths 与 schema 一致（${paths.length} 个字段）`, '');
