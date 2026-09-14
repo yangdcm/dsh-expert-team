@@ -3,6 +3,17 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.3.3
+
+**宿主 schema 的枚举成员带上中文描述**（1.3.2 记录为"跳过"的那条，实测后补上）。
+
+- 1.3.2 记的是"无法核实 schemastery 的可靠写法 ⇒ 跳过"；随后查到其类型定义里
+  `description(text)` 的注释就写着 **"for documentation or form UIs"**，且用真 schemastery 实测：
+  `z.const('developer').description('技术开发者')` 能把标签写进成员的 `meta.description`，
+  schema 照常建成、**值域/类型/默认值完全不变** ⇒ 于是补上（`buildHostSchema` 里按
+  "方法确实存在才调用" 的既定纪律挂描述）。
+- 本版**无功能改动之外的任何行为变化**；对设置页无影响（那一侧用 1.3.2 的 `labels`）。
+
 ## 1.3.2
 
 **诚实性收口：把"点了没反应"的设置项要么接线、要么如实标注。**
