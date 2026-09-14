@@ -13,6 +13,7 @@
 // 运行：node member-registry.test.mjs
 
 import { _live } from './lib/command.js';
+import { rmFixture } from './test-helpers.mjs';
 
 const { deriveMemberEntries, membersFromState } = _live;
 
@@ -305,7 +306,8 @@ console.log('\n⑨ R12 接线：/state 只把**本 run** 的成员写进 STATE.j
   const actD = stD.members || {};
   check(!!actD.backend && actD.backend.active === true && actD.backend.id === 'agent-b-backend', '③ 已登记成员照常显示 active（精确路径不进过滤 ⇒ 不丢）', JSON.stringify(actD.backend && { id: actD.backend.id, active: actD.backend.active }));
 
-  await rm(root, { recursive: true, force: true });
+  // 拆除 fixture：容忍"插件异步写在飞"造成的瞬时 ENOTEMPTY（见 test-helpers.mjs 的说明）
+  await rmFixture(root);
 }
 
 console.log('\n⑩ R12+R13+R17 接线检查：过滤真的接在**角色映射、写盘、显示**之前（不是只写了个没人调的函数）');

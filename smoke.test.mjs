@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { rmFixture } from './test-helpers.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const { apply, name, inject } = await import(join(here, 'lib/command.js'));
@@ -120,4 +121,4 @@ assert.match(foundHtml, /专家团画布/, 'canvas html contains the title');
 assert.match(foundHtml, /任务看板/, 'canvas html has the task board');
 
 console.log('\nSMOKE TEST PASSED ✔  (temp root: ' + root + ')');
-await rm(root, { recursive: true, force: true });
+await rmFixture(root);

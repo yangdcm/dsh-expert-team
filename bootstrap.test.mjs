@@ -14,6 +14,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { rmFixture } from './test-helpers.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 let fail = 0;
@@ -130,7 +131,7 @@ console.log('\n⑦ 命令面：/team uninstall 可解析');
   check(/\/team uninstall/.test((await import(join(here, 'lib', 'command-parse.js'))).USAGE), 'USAGE 里有它');
 }
 
-await rm(root, { recursive: true, force: true });
+await rmFixture(root);
 console.log('');
 if (fail > 0) {
   console.log(`✗ 自举收口测试失败：${fail} 项`);
