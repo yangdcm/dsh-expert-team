@@ -91,12 +91,20 @@ console.log('\n⑤ 卸载：只回收"本插件的副本"，别的都留着');
   const rec = JSON.parse(await readFile(manifestPath, 'utf8'));
   check(rec.preset && rec.preset.path === presetDst, '清单登记了 preset', JSON.stringify(rec.preset && rec.preset.version));
 
+  const stateDir = join(home, 'expert-team');
+  await mkdir(stateDir, { recursive: true });
+  await writeFile(join(stateDir, 'LEARNINGS.md'), '# 跨项目经验\n\n- 一条真实经验（属于用户数据）\n');
+  check(await exists(join(stateDir, 'LEARNINGS.md')), '前置：状态文件已存在（LEARNINGS.md）');
+
   const out = await _live.uninstallInstalled();
   check(out && out.kind === 'success', '返回 success 结果');
   check(!(await exists(presetDst)), '带戳的 preset 副本被回收');
   check(!(await exists(skillDst)), '带戳的 skill 副本被回收');
   check(!(await exists(manifestPath)), '清单本身也被清掉');
   check(/已回收/.test(out.text), '输出里报告了回收项', out.text.split('\n')[2] || '');
+  // 契约：状态文件是**用户数据**（跨项目经验 / 会话→run 记忆），不是安装副本 ⇒ 必须保留，且要说明
+  check(await exists(join(stateDir, 'LEARNINGS.md')), '状态文件被保留（LEARNINGS.md 仍在）');
+  check(/保留/.test(out.text), '输出里写明"状态文件保留"（契约可见，不靠猜）');
 
   // 幂等：再跑一次不该报错
   const again = await _live.uninstallInstalled();

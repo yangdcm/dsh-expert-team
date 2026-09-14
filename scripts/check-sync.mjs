@@ -45,6 +45,12 @@ const MAPPINGS = [
     label: '已装 preset',
     src: join(PKG_ROOT, 'presets', 'expert-team'),
     dst: join(DSH_HOME, '.agent-presets', 'expert-team'),
+    // 「专家团模式」preset 由**首次 `/team`** 铺（`ensurePresetInstalled`）⇒"目标不存在"是正常状态：
+    //   ① 全新安装还没跑过 `/team`；② 刚 `/team uninstall` 回收过；③ 宿主没有 preset 服务的降级场景。
+    // 旧实现把它当硬性目标，会让门禁在"还没用过"的安装上报漂移。
+    // **注意 optional 只豁免"不存在"，不豁免"内容不一致"** —— 副本存在时照旧逐文件比对，
+    // 仍能抓住"改了源码但运行时没同步"这个门禁真正要防的东西。
+    optional: true,
   },
   {
     id: 'runtime',
@@ -150,7 +156,7 @@ function main() {
     process.exit(2);
   }
 
-  const report = { dshHome: DSH_HOME, pkgRoot: PKG_ROOT, mappings: [], driftCount: 0, fixed: [], fixFailures: 0 };
+  const report = { dshHome: DSH_HOME, pkgRoot: PKG_ROOT, mappings: [], driftCount: 0, fixed: [], fixSkipped: [], fixFailures: 0 };
 
   /** 扫描一遍全部映射，重建 report.mappings / driftCount（供初次扫描与修复后复扫共用）。 */
   const scanAll = () => {
@@ -213,7 +219,12 @@ function main() {
   // （会出现"刚修完却仍报漂移并 exit 1"的自相矛盾，让"修完即验证"的工作流不成立）
   if (fix && report.driftCount > 0) {
     for (const m of MAPPINGS) {
-      if (!existsSync(m.dst)) continue;
+      if (!existsSync(m.dst)) {
+        // **不替用户铺一份**：skill 走运行时注册（不落地）、preset 由首次 `/team` 铺。
+        // 主动铺会掩盖"还没用过 / 刚卸载"这两个正常状态，也会让 `/team uninstall` 看起来自我撤销。
+        report.fixSkipped.push({ id: m.id, dst: m.dst });
+        continue;
+      }
       const res = syncTree(m.src, m.dst, m.only);
       report.fixed.push({ id: m.id, copied: res.copied, failed: res.failed });
       report.fixFailures += res.failed.length;
@@ -231,6 +242,17 @@ function main() {
     for (const m of report.mappings) {
       if (m.status === 'MISSING_TARGET') {
         console.log(`✗ [${m.id}] ${m.label} —— 目标不存在：${m.dst}`);
+        continue;
+      }
+      if (m.status === 'ABSENT_OPTIONAL') {
+        // 可选目标缺席 = 正常状态（skill 走运行时注册、不落地；preset 由首次 `/team` 铺）
+        // ⇒ 明确打印一行说明、**不计入漂移**。
+        //
+        // ⚠️ 这条分支必须**显式存在**：早前只特判了 MISSING_TARGET，ABSENT_OPTIONAL 直接落到下面去读
+        // `sameCount / onlySrc / onlyDst / differ` —— 那些字段在这一状态下**根本不存在**，于是
+        // TypeError 让**整个报告一行都打不出来**（skill 恰是第一个映射，所以看起来像"输出被吞了"）。
+        // 教训：状态机里"默认落到底"的分支就是崩溃点，每个状态都要有自己的出口。
+        console.log(`· [${m.id}] ${m.label} —— 目标不存在（可选映射，视为正常）：${m.dst}`);
         continue;
       }
       const icon = m.status === 'IN_SYNC' ? '✔' : '⚠';
@@ -254,6 +276,10 @@ function main() {
         if (f.failed.length > 6) console.log(`      … 另有 ${f.failed.length - 6} 个失败`);
       }
       console.log('  ⚠ `--fix` 用**源**覆盖运行时：运行时副本上未回流的改动会被丢弃。');
+      for (const s of report.fixSkipped) {
+        // 缺席的可选目标**不铺**：说清"跳过了什么、为什么"，而不是静默略过（静默会让人以为已修好）
+        console.log(`  · [${s.id}] 跳过（目标不存在，属正常状态）：${s.dst}`);
+      }
       if (report.fixFailures > 0) {
         console.log('');
         console.log(`✗ 同步未完成：${report.fixFailures} 个文件写入被拒绝（EPERM）。`);
@@ -268,7 +294,7 @@ function main() {
     console.log(
       report.driftCount === 0
         ? '✔ 三副本一致（源码改动已全部进入运行时）'
-        : `⚠ 存在 ${report.driftCount} 处漂移 —— 改了源码但运行时未同步（ensureSkillInstalled 存在即 return，不会自动覆盖）`,
+        : `⚠ 存在 ${report.driftCount} 处漂移 —— 改了源码但运行时未同步（副本带版本戳：插件升级会整目录重铺；skill 走运行时注册、不落地）`,
     );
     if (report.driftCount > 0) console.log('  修复：node scripts/check-sync.mjs --fix（需宽权限，见上）');
   }

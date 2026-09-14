@@ -13,7 +13,7 @@
 //
 // 运行：node sync-gate.test.mjs
 
-import { mkdtemp, mkdir, writeFile, readFile, cp, appendFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, cp, appendFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -86,9 +86,42 @@ check(!/DRIFT_PROBE_SHOULD_BE_CAUGHT/.test(fixed), '漂移内容已被源覆盖�
 const r4 = await gate(home);
 check(r4.code === 0, '复扫仍为绿', `exit=${r4.code}`);
 
+// ── ④⑤⑥ 可选映射的缺席分支（2026-09-14 补）────────────────────────────────
+// 为什么必须有这几条：skill 于 1.2.0 起改走"运行时注册、不落地"，我把它的映射标成 optional 并新增了
+// `ABSENT_OPTIONAL` 状态 —— **但打印分支只特判了 MISSING_TARGET**，于是那个新状态落到底去读
+// `sameCount/onlySrc/...`（该状态下不存在这些字段）⇒ TypeError，**整个报告一行都打不出来**
+// （skill 是第一个映射，所以看起来像输出被吞）。
+// 而上面 ①②③ 的夹具三份副本齐全，**永远走不到新分支** ⇒ 这就是"新分支没有测试"的典型漏网。
+// 下面把三个状态都走一遍：可选缺席 ⇒ 仍绿（且不许崩）；可选存在但不一致 ⇒ 照旧红。
+console.log('\n④ 可选映射缺席（skill）→ 正常状态：exit 0、有说明、且**不许**崩');
+await rm(skillDst, { recursive: true, force: true });
+const r5 = await gate(home);
+check(r5.code === 0, 'skill 目录缺失 → exit 0（可选映射不算漂移）', `exit=${r5.code}`);
+check(!/TypeError/.test(r5.out), '没有 TypeError（ABSENT_OPTIONAL 有自己的打印分支）');
+check(/\[skill\]/.test(r5.out), '打印了 skill 那一行说明', '');
+check(/三副本一致/.test(r5.out), '结论仍是"一致"');
+
+console.log('\n⑤ 两个可选映射同时缺席（skill + preset）→ 仍 exit 0、两行说明都在');
+await rm(presetDst, { recursive: true, force: true });
+const r6 = await gate(home);
+check(r6.code === 0, '两个可选目标都缺失 → exit 0', `exit=${r6.code}`);
+check(!/TypeError/.test(r6.out), '仍然没有 TypeError');
+check(/\[skill\]/.test(r6.out) && /\[preset\]/.test(r6.out), 'skill 与 preset 都有说明行');
+check(/\[runtime\]/.test(r6.out), '非可选的 runtime 行也照常打印（没有被 continue 跳过）');
+
+console.log('\n⑥ 反向：可选目标**存在但内容漂移** → 必须 exit 1 并指出文件（证明 optional 没关掉漂移检测）');
+await cp(join(here, 'presets', 'expert-team'), presetDst, { recursive: true });
+const presetDrift = join(presetDst, 'preset.yml');
+await appendFile(presetDrift, '\n# DRIFT_PROBE_IN_OPTIONAL_TARGET\n');
+const r7 = await gate(home);
+check(r7.code === 1, '可选目标存在且漂移 → exit 1', `exit=${r7.code}`);
+check(/preset\.yml/.test(r7.out), '指出具体是哪个文件漂移', '');
+const presetLine = r7.out.split('\n').filter((l) => l.includes('[preset]')).join('');
+check(/\[preset\]/.test(r7.out) && !/目标不存在/.test(presetLine), 'preset 那行报的是漂移，不是"目标不存在"');
+
 console.log('');
 if (fail > 0) {
   console.log(`✗ 同步门禁元测试失败：${fail} 项`);
   process.exit(1);
 }
-console.log('✔ 同步门禁元测试通过（能抓漂移、能修复、且修复后复扫为绿）');
+console.log('✔ 同步门禁元测试通过（能抓漂移、能修复、可选缺席不误报且不崩、可选存在仍抓漂移）');
