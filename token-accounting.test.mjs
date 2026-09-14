@@ -17,8 +17,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawn, spawnSync } from 'node:child_process';
-import { zstdCompressSync } from 'node:zlib';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
 
 const here = dirname(fileURLToPath(import.meta.url));
 let fail = 0;
@@ -31,9 +30,22 @@ const tokens = await import(join(here, 'lib', 'metrics', 'tokens.js'));
 const tu = await import(join(here, 'lib', 'metrics', 'token-usage.js'));
 const su = await import(join(here, 'lib', 'metrics', 'session-usage.js'));
 
-// ── zstd 是否可用（本机通常有；没有就跳过需要真实解压的那几条，并**如实说明**）──
-const hasZstd = spawnSync('zstd', ['--version'], { stdio: 'ignore' }).status === 0;
-console.log(`# token 记账（P5）\n\n  · zstd CLI：${hasZstd ? '可用（走生产路径）' : '不可用（本机无 zstd，跳过真实解压用例）'}\n`);
+// ── zstd 压缩能力（⑦ 段要用它生成"真实压缩的会话文件"）────────────────────────
+// ⚠ 这里**必须动态探测**，不能写顶层 `import { zstdCompressSync } from 'node:zlib'`：
+//   该导出是 Node ≥ 22.15 / 23.8 才有的，Node 20 上静态导入会在**模块加载阶段**就
+//   SyntaxError("does not provide an export named 'zstdCompressSync'")，连下面的跳过逻辑
+//   都执行不到（2026-09-14 CI Node 20 档即此因）。
+// 顺序：Node 内置 → `zstd` CLI（与生产解压用的是同一个工具）。两者都没有才跳过 ⑦ 段。
+let compressZstd = null;
+try {
+  const zlib = await import('node:zlib');
+  if (typeof zlib.zstdCompressSync === 'function') compressZstd = (buf) => zlib.zstdCompressSync(buf);
+} catch { /* 老 Node 没有内置 zstd：继续找 CLI */ }
+const hasZstdCli = spawnSync('zstd', ['--version'], { stdio: 'ignore' }).status === 0;
+if (!compressZstd && hasZstdCli) {
+  compressZstd = (buf) => execFileSync('zstd', ['-q', '-c'], { input: buf, maxBuffer: 64 * 1024 * 1024 });
+}
+console.log(`# token 记账（P5）\n\n  · zstd 压缩能力：${compressZstd ? `可用（${hasZstdCli ? 'CLI + ' : ''}Node 内置）` : '不可用（Node <22.15 且无 zstd CLI ⇒ 跳过 ⑦ 端到端段）'}\n`);
 
 console.log('① 事件解析：`tokens:<scope>` 与 `role:<角色> … tokens …`');
 {
@@ -144,7 +156,10 @@ console.log('\n⑥ 时间：run 窗口推断（日志优先、目录名兜底、
 }
 
 console.log('\n⑦ 端到端归属：合成一个「假 DSH_HOME + 真会话文件」，断言标记命中与角色归属');
-{
+if (!compressZstd) {
+  // 环境缺失不当失败：本段证明的是"真压缩的遥测文件能被读对"，没有压缩器就没有证据可言。
+  console.log('  · 跳过：本机既无 Node 内置 zstd（Node < 22.15）也无 zstd CLI，无法生成压缩会话文件。');
+} else {
   const root = await mkdtemp(join(tmpdir(), 'dsh-et-token-'));
   const dshHome = join(root, 'dsh');
   const cwd = join(root, 'proj');
@@ -164,7 +179,7 @@ console.log('\n⑦ 端到端归属：合成一个「假 DSH_HOME + 真会话文�
     JSON.stringify({ type: 'assistant/message', data: { message: { role: 'assistant', content: [] }, usage: { inputTokens: 2000, cacheReadTokens: 300000, outputTokens: 800, reasoningTokens: 100, totalTokens: 302800 } } }),
     JSON.stringify({ type: 'assistant/message', data: { message: { role: 'assistant', content: [] }, usage: { inputTokens: 500, cacheReadTokens: 320000, outputTokens: 400, reasoningTokens: 50, totalTokens: 320900 } } }),
   ].join('\n') + '\n';
-  await writeFile(join(sessDir, 'session.v3.jsonl.zstd'), zstdCompressSync(Buffer.from(lines)));
+  await writeFile(join(sessDir, 'session.v3.jsonl.zstd'), compressZstd(Buffer.from(lines)));
 
   await writeFile(join(runDir, 'STATE.json'), JSON.stringify({ runId, phase: 'implement', status: 'running', members: ['sess-child-1:backend'] }, null, 2));
   await writeFile(join(runDir, 'RUN.log.md'), `- [10:00:00] run:started — 目标\n- [10:05:00] tokens:lead — steps=3 in=100 cache=20000 out=50 peak=21000\n`);
