@@ -1,0 +1,3 @@
+name: 专家团模式
+description: 标准模式的全部能力，外加角色化专家 subagent 工具（subagent_pm/architect/researcher/ui/backend/frontend/dba/sec/reviewer/qa/devops/docs），各带独立 persona、toolFilter 与 maxDepth，供「专家团」按角色分工协作。
+order: 5

@@ -1,0 +1,24 @@
+# @yangdcm/dsh-expert-team bundle patch.
+# Applied as a loader patch layer over the profile's composed tree. This bundle
+# contributes only HOST-plane rows (no agent-plane tool rows — those stay behind
+# the preset the session runs; the `standard` preset already exposes the
+# subagent/workflow/ralph/skill tools the team drives through).
+#
+# The team's orchestration brain is NOT code: it is the `expert-team` SKILL,
+# which the `/team` command copies into $DSH_HOME/skills (discovered by the
+# preset's `skill-filesystem`) and which the model loads via the `skill` tool.
+
+- insert:
+    # Host-plane command: `/team <task>` scaffolds the shared workspace run and
+    # enqueues one model-visible message that launches the team through the
+    # expert-team skill. Registered once, available to every session's `/` UI.
+    - id: expert-team-command
+      name: '@yangdcm/dsh-expert-team/command'
+
+    # Client-discovery marker row: dsh-client-modules scans Loader entries whose
+    # name is an EXACT package specifier for a `dsh.client` declaration. The
+    # command row above is a subpath (`.../command`), which the scanner skips, so
+    # we add a bundle-root row (exact `@yangdcm/dsh-expert-team`) that loads the
+    # inert `index` module purely so the live client overlay gets discovered.
+    - id: expert-team-bundle
+      name: '@yangdcm/dsh-expert-team'

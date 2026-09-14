@@ -1,0 +1,123 @@
+# 共享工作区工件 schema
+
+运行目录 `<run-dir>/` 是团队的单一事实来源。工件与 JSON 结构如下，团队只通过它们交接。
+
+## 文件清单
+
+| 文件 | 维护者 | 内容 |
+|---|---|---|
+| `TASK.md` | /team 命令建；lead 更新 | 目标、模式、交付口径、状态、交付结论 |
+| `ROSTER.json` | /team 命令建；lead 更新 | 角色编制、成员映射 |
+| `STATE.json` | lead 每阶段更新 | 当前 phase / status / members |
+| `任务看板.md` | **lead 全程维护**（每个阶段结束写一次） | 任务计划 + 状态表 + 当前阶段（可视化进度，聊天框可点击预览） |
+| `SPEC.md` | pm 产出内容；**lead 落盘** | Ultra Spec：功能目标、验收标准、业务规则、边界 Case、安全边界（三级权限）、测试计划 |
+| `PLAN.md` | pm 骨架 + architect 设计段；**lead 落盘** | 里程碑、接口契约（I/O JSON Schema）、数据流、风险 |
+| `RESEARCH.md` | researcher 产出内容；**lead 落盘** | 代码定位、依赖、环境、存量约束 |
+| `TASKS.json` | pm 初稿 → architect 细化 → lead 更新状态 | 唯一实现事实来源（含 dependsOn 依赖） |
+| `REVIEW-SPEC.md` | reviewer（spec-review 阶段，可选）；**lead 落盘** | 对 Spec 的交叉审查结论 |
+| `REVIEW.md` | reviewer 产出内容；**lead 落盘** | 代码审查：问题清单、严重级、结论 |
+| `TEST.md` | qa/测试补位产出内容；**lead 落盘** | 测试命令、结果、覆盖、结论 |
+| `SUMMARY.md` | lead（deliver 阶段） | **交付总结**：各任务结论/改动/commit/评审测试结论 |
+| `RUN.log.md` | /team 命令建；lead 逐行追加 | 运行轨迹（阶段/角色/决策/卡点，见 LOGGING.md） |
+| `RETRO.md` | lead（deliver 阶段） | 本次复盘：快/慢/卡点/可复用经验 |
+
+> 所有角色产出内容都**由 lead 用 `write` 落盘**（见 ROLES.md）——这样工件成为 lead 本轮产出文件，聊天框可点击预览。
+
+> `team/LEARNINGS.md` 位于 `<cwd>/team/`（跨 run 累积，不在单个 run 目录内）：lead 在 run 开始前读取、deliver 时追加。
+
+## TASKS.json
+
+`TASKS.json` 是 implement 阶段（以及质量门禁）的唯一事实来源。每条任务带 **kind + 合同 + 状态机 + 审查轮次**，让「审查通过」成为**机器可判定**的事实，而不是靠 prompt 说“看起来没问题”。
+
+```json
+{
+  "tasks": [
+    {
+      "id": "be-1",
+      "kind": "implementation",          // requirements | research | design | implementation | verification | review | repair | integration | work | quality
+      "owner": "backend",
+      "title": "实现支付接口",
+      "objective": "一句话目标",
+      "spec": "按 PLAN.md 契约 §3.1 实现 POST /pay",
+      "acceptance": ["SPEC.md 验收项 A1", "A2"],   // 字符串或数组，逐条可测
+      "inScope": ["src/**", "tests/**"],           // 实现/修复任务的合法改动范围（完成时审计）
+      "verify": ["pnpm test", "npm run build"],    // 完成前必须通过的验证命令
+      "changedPaths": [],                          // 完成时由实现者回报，用于越界审计
+      "contract": {},                              // 可选：结构化契约（接口 I/O JSON Schema），实现端只读
+      "dependsOn": [],
+      "attempt": 0,                                // 单调：每次重试/转派 +1
+      "attemptId": null,                           // 每次 attempt 的唯一 id；迟到写入（旧 attemptId）必须被拒绝
+      "round": 1,                                  // 审查轮次（review/requirements 用）
+      "verdict": null,                             // pass | needs_revision | reject（review/requirements）
+      "findings": [],                              // [{severity:"low|medium|high|blocker", title, detail}]
+      "status": "pending"                          // pending|claimed|in_progress|completed|failed|cancelled|rework
+    }
+  ]
+}
+```
+
+### 状态机（自动调度）
+
+`pending → claimed → in_progress → completed | failed | cancelled`；`rework` 是 review 返工的过渡态（重跑后回 `in_progress`）。
+
+- 依赖门控：只有上游 `completed` 才解锁下游；`failed` / `cancelled` **永不解锁**下游。
+- `attempt` + `attemptId`：派工/转派时递增 attempt、设新 attemptId；成员回报时带当前 attemptId，**旧 attemptId 的迟到写入一律拒绝**，转派先使旧 attempt 失效。
+- 空闲自动领题：persist 模式下，成员进入 idle（`list_agents` 显示 idle）后自动领取下一个 `pending` 且依赖已满足的任务；一个成员一次最多持有 1 个未完成任务。
+- 冷启动恢复：run 恢复时，对残留的 `claimed / in_progress`（且本进程未观察过的新 attempt）自动重试一次。
+
+### 质量门禁（直到共识）
+
+“直到共识”的**机器定义**：下列全部满足才算通过，缺一不可：
+
+```
+所有必需门禁 pass
++ 所有 acceptance 通过
++ 无 blocker / high finding
++ 最新 attempt 已被独立 reviewer 审查（reviewer 不得审自己刚写的实现/修复）
++ 声明的 verify 命令已通过
++ changedPaths 落在 inScope 内（完成时越界审计）
+```
+
+- **review / requirements 任务**：只有 `verdict=pass` 才允许 `completed`；`needs_revision` / `reject` 必须 `failed` 且带 ≥1 条 finding，**不解锁下游**。
+- **自动修复链**：某实现被 review 判非 pass 后，lead 自动新建 `repair-N`（依赖指向**被审查的实现任务**，**绝不依赖**那个 failed 的 review 任务）+ 下一轮独立的 `review-N+1`（针对最新 attempt，禁止用 `reassign` 重跑旧 review）。`round` 递增，直到 pass 或达到 `maxReviewRounds`；到顶后**升级到 lead/用户**，停止自动互审，不无限循环。
+- **coverage matrix**：design 阶段，lead 把用户每个显式约束映射到 ≥1 条任务（用户说 5 件事，任务图至少能对上 5 件），在 `PLAN.md` 或看板里锁定。
+- **完成时审计**：implementation/repair 回报 `changedPaths`；lead 对照 `inScope`，越界的改动不得标 `completed`（第一版是完成时审计，不是运行中写拦截）。
+- **reviewer 守界**：reviewer 只读，不给修复任务标 `pass`；先审实现的最新 attempt，再下 verdict。
+
+`kind=work` 兼容旧任务：无质量门禁的普通工作仍可用自由文本 `title` + `status` 完成。
+
+## ROSTER.json
+
+```json
+{
+  "runId": "<run-id>",
+  "roles": ["pm", "architect", "researcher", "ui", "backend", "frontend", "dba", "sec", "reviewer", "qa", "devops", "docs"],
+  "members": { "backend": "<subagentId 或空>", "frontend": "<subagentId 或空>" },
+  "createdAt": "<iso>"
+}
+```
+
+persist 模式下，`members` 记录每个角色的可继续子 agent id，供 resume 时 `send_message` 找回。
+
+## STATE.json
+
+```json
+{
+  "runId": "<run-id>",
+  "phase": "clarify | design | implement | review | test | deliver",
+  "status": "running | complete | failed",
+  "mode": "one-shot | persist",
+  "deliverable": "code+artifacts | artifacts-only",
+  "coverage": [ { "constraint": "<用户约束>", "tasks": ["be-1", "fe-2"] } ],
+  "members": ["backend:<subagentId>", "frontend:<subagentId>"],
+  "updatedAt": "<iso>"
+}
+```
+
+`coverage`：design 阶段由 lead 把用户每个显式约束映射到 ≥1 条任务（见「质量门禁」），客户端浮层的「覆盖率」区展示。
+
+## 交接约定
+
+1. 每个角色的**结构化返回值**与它写的工件内容必须一致（结构化值是给编排脚本/下一阶段的机器可读摘要；工件是持久化事实）。
+2. 下游角色读工件，不读上游的完整对话；跨角色接口一律以 `PLAN.md` 契约为准。
+3. 任何角色改完自己的工件后，由 lead 统一更新 `STATE.json.phase`。

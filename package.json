@@ -1,0 +1,119 @@
+{
+  "name": "@yangdcm/dsh-expert-team",
+  "version": "1.1.0",
+  "description": "dsh「专家团」bundle：一句自然语言自动组建/持久化一支 12 角色多智能体团队，共享工作区协议 + 阶段门控编排 + 结构化交接 + 质量门禁/自动调度，实现者直接改代码并产出持久工件；带 live 团队浮层（质量门禁/覆盖率/工件预览）。 · Role-based multi-agent expert team for DeepSeek Harness: one sentence in, a staged and gated team delivery out.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek",
+    "deepseek-harness",
+    "multi-agent",
+    "ai-agents",
+    "agent-team",
+    "orchestration",
+    "workflow",
+    "subagent",
+    "code-review",
+    "quality-gate"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yangdcm/dsh-expert-team.git"
+  },
+  "homepage": "https://github.com/yangdcm/dsh-expert-team#readme",
+  "bugs": {
+    "url": "https://github.com/yangdcm/dsh-expert-team/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./command": "./lib/command.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "client.js",
+    "cordis.patch.yml",
+    "skills",
+    "presets",
+    "LICENSE",
+    "README.en.md"
+  ],
+  "scripts": {
+    "rename": "node scripts/rename-package.mjs",
+    "check:name": "node scripts/rename-package.mjs --check",
+    "test:regression": "node regression.test.mjs",
+    "test:e2e": "node e2e.test.mjs",
+    "test:all": "node smoke.test.mjs && node regression.test.mjs && node e2e.test.mjs && node flow.test.mjs && node plan-decide.test.mjs && node plan-discard.test.mjs && node models-honesty.test.mjs && node evidence-gate.test.mjs && node sync-gate.test.mjs && node artifact-writer.test.mjs && node dag.test.mjs && node metrics.test.mjs && node broken-chain.test.mjs && node schema-warn.test.mjs && node template-copy.test.mjs && node task-binding.test.mjs && node role-merge.test.mjs && node wf-recovery.test.mjs && node panorama.test.mjs && node run-ownership.test.mjs && node role-identity.test.mjs && node command-parse.test.mjs && node member-registry.test.mjs && node schema-check.test.mjs && node run-health.test.mjs && node cordis-fs-port.test.mjs && node scaffold-fingerprint.test.mjs && node preset-lint.test.mjs && node stranded-tasks.test.mjs && node agent-scope-guard.test.mjs && node schema-warn-noise.test.mjs && node tool-card-status.test.mjs && node dag-status.test.mjs && node capacity-limits.test.mjs && node task-cas.test.mjs && node write-lock.test.mjs && node card-stall.test.mjs && node multi-session-and-confirm.test.mjs && node standing-rules.test.mjs && node scope-overlap.test.mjs && node task-cancel-protect.test.mjs && node wait-run.test.mjs && node rework-loop.test.mjs && node client-css-integrity.test.mjs && node interception.test.mjs && node mutation-catalog.test.mjs && node write-bypass-ratchet.test.mjs && node asi-hazards.test.mjs && node dispatch-contract.test.mjs && node closure-ledger.test.mjs && node rework-nature.test.mjs && node loop-guard.test.mjs && node vocab-consistency.test.mjs && node state-no-write.test.mjs && node routes-shared.test.mjs && node metrics-render.test.mjs && node metrics-collect.test.mjs && node first-runnable.test.mjs && node closing-budget.test.mjs && node scan-single-source.test.mjs && node tier.test.mjs && node dispatch-ledger.test.mjs && node tier-gate.test.mjs && node tier-badge.test.mjs && node validate-module.test.mjs && node settings.test.mjs && node settings-page.test.mjs && node policy.test.mjs && node phase-accounting.test.mjs && node log-parse-module.test.mjs && node command-parse-module.test.mjs && node authority.test.mjs && node write-tracer.test.mjs && node token-accounting.test.mjs && node lead-toolface.test.mjs",
+    "test:toolcard": "node tool-card-status.test.mjs",
+    "test:flow": "node flow.test.mjs",
+    "test:decide": "node plan-decide.test.mjs",
+    "test:discard": "node plan-discard.test.mjs",
+    "test:models": "node models-honesty.test.mjs",
+    "test:evidence-gate": "node evidence-gate.test.mjs",
+    "test:sync-gate": "node sync-gate.test.mjs",
+    "test:artifact-writer": "node artifact-writer.test.mjs",
+    "test:dag": "node dag.test.mjs",
+    "test:metrics": "node metrics.test.mjs",
+    "test:chain": "node broken-chain.test.mjs",
+    "test:schema": "node schema-warn.test.mjs",
+    "test:template": "node template-copy.test.mjs",
+    "test:binding": "node task-binding.test.mjs",
+    "test:role-merge": "node role-merge.test.mjs",
+    "test:wf-recovery": "node wf-recovery.test.mjs",
+    "test:panorama": "node panorama.test.mjs",
+    "test:ownership": "node run-ownership.test.mjs",
+    "gate:preset": "node scripts/validate-agent-preset.mjs",
+    "gate:evidence": "node scripts/check-evidence.mjs",
+    "gate:sync": "node scripts/check-sync.mjs",
+    "gate:bypass": "node scripts/check-write-bypass.mjs",
+    "gate:mutation": "node scripts/mutate.mjs",
+    "fix:sync": "node scripts/check-sync.mjs --fix",
+    "gate": "npm run gate:preset && npm run gate:evidence && npm run gate:sync && npm run gate:bypass && npm run test:all && npm run gate:mutation",
+    "test:identity": "node role-identity.test.mjs",
+    "test:parse": "node command-parse.test.mjs",
+    "test:members": "node member-registry.test.mjs",
+    "test:schema-check": "node schema-check.test.mjs",
+    "test:health": "node run-health.test.mjs",
+    "test:cordis-fs": "node cordis-fs-port.test.mjs",
+    "test:scaffold": "node scaffold-fingerprint.test.mjs",
+    "test:preset-lint": "node preset-lint.test.mjs",
+    "test:stranded": "node stranded-tasks.test.mjs",
+    "test:agent-scope": "node agent-scope-guard.test.mjs",
+    "test:schema-noise": "node schema-warn-noise.test.mjs",
+    "test:dagstatus": "node dag-status.test.mjs",
+    "preview:dag": "node scripts/preview-dag.mjs",
+    "test:capacity": "node capacity-limits.test.mjs",
+    "test:cas": "node task-cas.test.mjs",
+    "test:write-lock": "node write-lock.test.mjs",
+    "test:card-stall": "node card-stall.test.mjs",
+    "test:multi-session": "node multi-session-and-confirm.test.mjs",
+    "test:rules": "node standing-rules.test.mjs",
+    "test:scope": "node scope-overlap.test.mjs",
+    "test:cancel-protect": "node task-cancel-protect.test.mjs",
+    "test:wait": "node wait-run.test.mjs",
+    "test:loop": "node rework-loop.test.mjs",
+    "test:tokens": "node token-accounting.test.mjs",
+    "test:toolface": "node lead-toolface.test.mjs"
+  }
+}

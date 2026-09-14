@@ -1,0 +1,1751 @@
+{
+  "$comment": "可失败样例库（批 1 · N-7）：把本项目**真实修过的 bug** 固化成常驻变异，供 scripts/mutate.mjs 自动验证「测试是否真的能失败」。每个条目都对应一次真实事故——不是假想的。⚠️ 追加条目时：中文正文里**不要用 ASCII 双引号**，一律用「」——2026-09-12 一次会话里因此写坏 JSON 五次（每次都要修一轮）。写完立刻跑 `node mutation-catalog.test.mjs`（它同时检查 JSON 合法性、id 唯一、条数与每个 find 串恰好命中一次）。",
+  "version": 1,
+  "mutations": [
+    {
+      "id": "M1-decide-banner-fields",
+      "title": "横幅拍板链路字段错位（恒 400）",
+      "why": "对话流横幅 choose() 曾发 {sessionId,runId,id} 而 /decide 路由要 {sessionId|workspace,run,choice} ⇒ 恒 400、pendingDecision 永不清除、方案确认门实际不可用。更隐蔽的一半：run 的来源 interact.runId 在 pendingDecision 里根本不存在（恒空串）。",
+      "test": "plan-decide.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "body: JSON.stringify({ sessionId: p.sessionId, workspace: p.workspace || '', run: p.runId || interact.runId || '', choice: id })",
+          "replace": "body: JSON.stringify({ sessionId: p.sessionId, runId: interact.runId || '', id: id })"
+        }
+      ]
+    },
+    {
+      "id": "M2-plandiscarded-unenforced",
+      "title": "planDiscarded 只置位、从不读（用户丢弃可被 lead 推翻）",
+      "why": "SKILL 规则 19 承诺「丢弃后禁止自动重建同目标团队」，但 createRun 从不读该标记；且 /plan 保存草稿时还会主动清除它，让丢弃被任何一次草稿写入复活。",
+      "test": "plan-discard.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "if (gk && !mode.allowRebuild) {",
+          "replace": "if (false) {"
+        }
+      ]
+    },
+    {
+      "id": "M3-models-fake-cost-advantage",
+      "title": "/team models 展示不存在的成本优势",
+      "why": "旧文案恒称「整体成本约为全员顶配的 1/2~1/5」，而 MODEL_DEFAULT 的 heavy/light 同为 deepseek-flash ⇒ 单模型期没有成本差。属于「承诺 ≠ 能力」的失真类，PM 判定带一票否决权。",
+      "test": "models-honesty.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "const tiersDiffer = MODEL_DEFAULT.heavy !== MODEL_DEFAULT.light;",
+          "replace": "const tiersDiffer = true;"
+        }
+      ]
+    },
+    {
+      "id": "M4-evidence-gate-blind",
+      "title": "证据门禁对编造锚点失明",
+      "why": "证据/锚点校验器若不退出非零，就会变成「永远通过」的假门禁——而本 run 的头号交付就是让引用可机器判定（假阳性曾高达 130 条，门禁一旦不可信就会被忽略）。B-08A 起退出条件多了「弱证据棘轮」，故 find 串跟随新表达式（语义不变：把门禁改成永远 exit 0）。",
+      "test": "evidence-gate.test.mjs",
+      "edits": [
+        {
+          "file": "scripts/check-evidence.mjs",
+          "find": "  process.exit(missing.length === 0 && !ratchetBroken ? 0 : 1);",
+          "replace": "  process.exit(0); // MUTANT: 门禁失明"
+        }
+      ]
+    },
+    {
+      "id": "M5-sync-gate-blind",
+      "title": "三副本一致性门禁失明（改了源码但运行时没同步）",
+      "why": "ensureSkillInstalled/ensurePresetInstalled 发现目标存在就 return，不会覆盖 ⇒ 「改了源码 ≠ 改了运行时」，且无任何报错。若门禁不退出非零，这类假完成会静默发生。",
+      "test": "sync-gate.test.mjs",
+      "edits": [
+        {
+          "file": "scripts/check-sync.mjs",
+          "find": "process.exit(report.driftCount === 0 && report.fixFailures === 0 ? 0 : 1);",
+          "replace": "process.exit(0); // MUTANT: 门禁失明"
+        }
+      ]
+    },
+    {
+      "id": "M6-scope-exclusion-off",
+      "title": "范围硬排除被关掉（禁写区可被写）",
+      "why": "L2-3 的核心是「禁写区**拒绝**而不是告警」。若只返回错误但仍落盘、或干脆不检查，密钥/凭据（.env/.git/.ssh/secrets）就会被写进去——这是唯一会不可逆地把错写进仓库的口子。",
+      "test": "artifact-writer.test.mjs",
+      "edits": [
+        {
+          "file": "lib/artifact-writer.js",
+          "find": "    if (violation) {",
+          "replace": "    if (false) { // MUTANT: 关闭范围硬排除"
+        }
+      ]
+    },
+    {
+      "id": "M7-version-fence-off",
+      "title": "版本栅栏被关掉（并发写静默覆盖）",
+      "why": "加栅栏的净效果取决于「失配时是否真的拒绝」。若无论版本是否匹配都直接写，就退回到 node:fs 直写的静默覆盖行为——即批 2-1 要根治的那个问题。",
+      "test": "artifact-writer.test.mjs",
+      "edits": [
+        {
+          "file": "lib/artifact-writer.js",
+          "find": "        if (cur !== intent.version) {",
+          "replace": "        if (false) { // MUTANT: 关闭版本栅栏"
+        }
+      ]
+    },
+    {
+      "id": "M8-dag-graph-check-off",
+      "title": "DAG 图结构校验失明（环路/未知依赖不再报出）",
+      "why": "环状依赖会让 implement 阶段整体死锁（环内任务永远 ready=false），而 /team check 此前不报任何违规 —— 表现为面板「待开始」永久不动、无人知道为什么。未知依赖此前也被静默删除。若图结构校验失明，这两类问题会重新变成静默故障。（2026-09-13 B 线第 8 项第一步：该实现已搬进 `lib/validate.js`，本变异体的目标文件随之改指 —— 搬代码位置会让 find 串命中 0 次，`mutation-catalog.test.mjs` 一次拦下 7 条。）",
+      "test": "dag.test.mjs",
+      "edits": [
+        {
+          "file": "lib/validate.js",
+          "find": "  for (const e of validateTaskGraph(tasks).errors) violations.push(`[图结构] ${e.detail}`);",
+          "replace": "  for (const e of []) violations.push(`[图结构] ${e.detail}`); // MUTANT: 图结构校验失明"
+        }
+      ]
+    },
+    {
+      "id": "M9-metrics-rework-blind",
+      "title": "返工口径失明（有返工证据却报 0%）",
+      "why": "旧实现只看 RUN.log 的 role:result/error 事件，而 LOGGING 约定从不写 role:result ⇒ 返工恒 0、角色结果恒空。用户同时看到「返工率 0%」与 RETRO 里的多轮返工后，会把所有权重信号一起降权（含真违规红条）。",
+      "test": "metrics.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "    if (reworkSources.size > 0) runRework = true;",
+          "replace": "    if (false) runRework = true; // MUTANT: 返工口径失明"
+        }
+      ]
+    },
+    {
+      "id": "M10-broken-chain-blind",
+      "title": "断链失明（评审判不过却无人被派修、也无人被告知）",
+      "why": "质量任务判 failed/needs_revision 后，若既无后继 repair 任务也无 pendingDecision，修复链就断在那里而 /team check 过去不报任何违规 —— 表面安静、实际卡死。（2026-09-13 B 线第 8 项第一步：该实现已搬进 `lib/validate.js`，本变异体的目标文件随之改指 —— 搬代码位置会让 find 串命中 0 次，`mutation-catalog.test.mjs` 一次拦下 7 条。）",
+      "test": "broken-chain.test.mjs",
+      "edits": [
+        {
+          "file": "lib/validate.js",
+          "find": "        if (!QUALITY_KINDS.has(kind) || !bad) continue;",
+          "replace": "        if (true) continue; // MUTANT: 断链失明"
+        }
+      ]
+    },
+    {
+      "id": "M11-schema-guard-off",
+      "title": "写入点 schema 告警失明",
+      "why": "STATE.coverage 被写成角色名字符串数组时，消费端会静默兜底并渲染空行 —— 生产端违约 + 消费端静默吞，没有任何人被告知。告警失明则这类形状违约会重新变成静默伤害。",
+      "test": "schema-warn.test.mjs",
+      "edits": [
+        {
+          "file": "lib/artifact-writer.js",
+          "find": "        if (typeof guard === 'function') {",
+          "replace": "        if (false) { // MUTANT: schema 告警失明"
+        }
+      ]
+    },
+    {
+      "id": "M12-buffer-as-object",
+      "title": "Buffer 被当对象展开（模板写成字节表）",
+      "why": "第 7 轮迁移真实引入过：isObject 用 typeof === \"object\" 判定，而 Buffer/Uint8Array/Array 也是 object，于是模板拷贝被 {...buffer} 展开成 {\"0\":123,…} 的字节表 —— 此后新建的每个 run 的 TASKS.json/SPEC.md/PLAN.md 全是坏的，而测试套件当时没抓到（盲区：未断言模板初始形状）。",
+      "test": "template-copy.test.mjs",
+      "edits": [
+        {
+          "file": "lib/artifact-writer.js",
+          "find": "    const isObject = content !== null && typeof content === 'object' && !Array.isArray(content) && !isBufferLike;",
+          "replace": "    const isObject = content !== null && typeof content === 'object'; // MUTANT: Buffer 也会被当对象"
+        }
+      ]
+    },
+    {
+      "id": "M13-task-binding-blind",
+      "title": "任务绑定退回只认 agentId（全员「未绑定任务」）",
+      "why": "用户实测报障：面板里每个人都是「未绑定任务」。根因是绑定只按 task.agentId 精确匹配，而真实 TASKS.json 不记录 agentId ⇒ 恒不命中。关掉角色推断即复现该报障。",
+      "test": "task-binding.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "      if (!p.role) return null",
+          "replace": "      return null // MUTANT: 关闭角色推断（复现全员未绑定）"
+        }
+      ]
+    },
+    {
+      "id": "M14-wf-label-role-blind",
+      "title": "关闭 workflow 卡 label 的角色兜底（「22 个未匹配」复现）",
+      "why": "用户实测报障：面板列出 22 个活子代理未匹配到角色。根因之一是 host 侧对 workflow 派生子代理解析不出角色（descriptor label 为空、子会话日志读不到）；客户端原本只按 members 建索引，未用对话流 workflow 卡上的成员 label 兜底。关掉该兜底即复现报障。",
+      "test": "role-merge.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "        if (cid2) { byRole[r] = cid2; matched[cid2] = 1; dispatched += 1 }",
+          "replace": "        if (false) { byRole[r] = cid2; matched[cid2] = 1; dispatched += 1 } // MUTANT: 关闭 workflow label 兜底"
+        }
+      ]
+    },
+    {
+      "id": "M15-role-resolve-unguarded",
+      "title": "角色解析去掉形状归一化（畸形 data 会抛错 ⇒ 浮层白屏）",
+      "why": "resolveAgentRoles 在面板渲染路径上。真实 /state 或 workflow 卡数据形状若与预期不符（例如 phases 不是数组），未归一化的 forEach 会抛错并中断整块浮层渲染。该风险无法在本会话用浏览器验证，故以测试固化。",
+      "test": "role-merge.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "      var phaseList = (wfPhases && Array.isArray(wfPhases.phases)) ? wfPhases.phases : []",
+          "replace": "      var phaseList = (wfPhases && wfPhases.phases) || [] // MUTANT: 去掉数组归一化"
+        }
+      ]
+    },
+    {
+      "id": "M16-wf-interrupt-blind",
+      "title": "不再读父会话事件流（被打断的扇出：成员无角色 + 中断不可见）",
+      "why": "用户实测报障：「另有 22 个活子代理未能解析出角色」+「顺序检查一下任务为什么会中断」。两者同源：workflow 派生子代理在活注册表里 label 为空，唯一带角色的地方是父会话事件流的 tool-workflow/agent-start；而回合被用户新消息打断时该工具调用没有结果 ⇒ 没有对话流卡片 ⇒ 卡片 label 兜底也看不到。关掉事件流读取即复现：角色解析不出、且无 run-end 的扇出不再被判为已中断。",
+      "test": "wf-recovery.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "        if (!ev || typeof ev.type !== 'string' || ev.type.indexOf('tool-workflow/') !== 0) continue",
+          "replace": "        if (true) continue // MUTANT: 不再读父会话事件流"
+        }
+      ]
+    },
+    {
+      "id": "M17-wf-role-not-written-back",
+      "title": "事件流解析出角色却只跳过不写回（30 个子代理只有 5 个有角色）",
+      "why": "真实翻车（2026-09-11 重启 dsh web 后实测 /state）：30 个活子代理只有 5 个解析出角色，而那 5 个恰好是 wfLabels **解析不出**的（被下一段子会话日志兜底填上）——能解析的 25 个全空。根因是 resolveSubRoles 里把第三源只当已知就跳过的判据：if (roleOfSub(s, wfLabels)) continue，从不写回 s.role。把写回改回只跳过即复现该反转。",
+      "test": "wf-recovery.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "      const known = roleOfSub(s, wfLabels);\n      if (known) { if (!s.role) s.role = known; continue; }",
+          "replace": "      if (roleOfSub(s, wfLabels)) continue // MUTANT: 只跳过不写回"
+        }
+      ]
+    },
+    {
+      "id": "M18-unmatched-lumped",
+      "title": "把「同角色重复派工」也算成「解析不出角色」（用户看到 22 个未能解析出角色）",
+      "why": "用户报障的原话是面板列出「另有 22 个活子代理未能解析出角色」。实测本会话有 30 个活子代理但只有 14 个角色，而一个角色只展示 1 个成员 —— 所以未匹配里绝大多数是**已知角色的重复 leg**，把它整批说成未能解析出角色是错的。把 roleless 退化成 unmatched 即复现该错报。",
+      "test": "role-merge.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "      var roleless = unmatched.filter(function (a) { return !(a && a.role) })",
+          "replace": "      var roleless = unmatched // MUTANT: 把重复 leg 也算成解析不出"
+        }
+      ]
+    },
+    {
+      "id": "M19-panorama-no-event-timing",
+      "title": "全景图只认会话 header 时间（workflow 子代理全部无法分层 → 退化成一条链）",
+      "why": "用户给出参考图要求多层全景图，实测视图顶部写着「无创建时间记录，无法分批」并退化成竖直列表。根因是分层唯一依据 createdAt，而 workflow 派生子代理没有会话 header、host 只能拿到 0；真实时间只在父会话事件流的 tool-workflow/agent-start 里。关掉事件流那一源即复现该报障。",
+      "test": "panorama.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "        else if (m && typeof m.startedAt === 'number' && m.startedAt > 0) { q.createdAt = m.startedAt; q.timeSource = 'event'; used.event += 1 }",
+          "replace": "        else if (false) { q.createdAt = m.startedAt; q.timeSource = 'event'; used.event += 1 } // MUTANT: 只认会话 header"
+        }
+      ]
+    },
+    {
+      "id": "M20-panorama-fake-timestamp",
+      "title": "拿不到时间就按数组下标合成时间戳（把“不知道”伪装成“知道”）",
+      "why": "同一类静默伤害：为了“让图好看”而给无时间记录的成员合成时间戳，画布会显示出一个看似精确、实则编造的批次结构。测试固化「两源都没有必须保持 0」。",
+      "test": "panorama.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "        else { q.createdAt = 0; q.timeSource = 'none'; used.none += 1 }",
+          "replace": "        else { q.createdAt = 1 + out.length; q.timeSource = 'none'; used.none += 1 } // MUTANT: 按下标编造时间戳"
+        }
+      ]
+    },
+    {
+      "id": "M21-header-live-store-only",
+      "title": "只从活存储读子会话 header（已结束的子代理 createdAt=0 → 全景图无法分批）",
+      "why": "用户报障「新创建的 team 为什么还是没有创建时间 不参与分批」。实测：子会话日志第一行明明有 createdAt/parentSession/delegationDepth，但已结束的子代理会被从活存储 ctx.sessions 里清掉（dsh 自己的 session-query 就拿 ctx.sessions.get(id) !== undefined 判活），于是面板拿到 createdAt=0，流转图判为无法分批。把 durable 回落那一源关掉即复现。",
+      "test": "wf-recovery.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "  if (!out.createdAt) {\n    try {\n      const q = (ctx && typeof ctx.get === 'function') ? ctx.get('sessionQuery') : null;",
+          "replace": "  if (false) {\n    try {\n      const q = (ctx && typeof ctx.get === 'function') ? ctx.get('sessionQuery') : null; // MUTANT: 只认活存储"
+        }
+      ]
+    },
+    {
+      "id": "M22-wideview-dead-button",
+      "title": "「宽视图」开关不参与宽度计算（死按钮，点了没反应）",
+      "why": "实测全屏画布下卡片被挤成一小撮、右侧大片空白。根因是 NODE_W 用\"侧栏宽度偏好 pw（默认 360）\"当画布宽度算，而 wideV（宽视图按钮）当时根本没接进宽度计算 —— 与先前 nativeWfOn 那次\"写了 localStorage 却没订阅\"属于同一类「死按钮」缺陷。把 wideV 从宽度计算里摘掉即复现。",
+      "test": "panorama.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "        var maxNodeW = wideV ? 268 : 200",
+          "replace": "        var maxNodeW = 200 // MUTANT: 宽视图开关不參與宽度计算"
+        }
+      ]
+    },
+    {
+      "id": "M23-cross-session-people-mixup",
+      "title": "列人员用请求会话而不是 run 的归属会话（跨会话查看时两个 run 的人混在一起）",
+      "why": "实测报障：在 dsh 会话的面板里用下拉切到 php/jiu 的 run，runId/tasks 是 jiu 的（17 条），agents 却是 dsh 会话的 30 个子代理（jiu 只有 6 个）。根因是 listSubagentStatusBySession 用的是请求里的 sessionId，而 run 没记录归属会话。把人员解析退回 sid 即复现。",
+      "test": "run-ownership.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "                const owner = sel.stateOwnerSession\n                  ? { sid: sel.stateOwnerSession, ownerResolved: true }\n                  : runOwnerSession(sel.runId);\n                let peopleSid = owner.sid || sid;",
+          "replace": "                const owner = { sid: '', ownerResolved: false }; // MUTANT: 不看归属\n                let peopleSid = sid;"
+        }
+      ]
+    },
+    {
+      "id": "M24-role-tag-not-frontloaded",
+      "title": "角色标签写回句子中段（子代理列表截断后只剩 `（arch` / `【rese` 碎片）",
+      "why": "用户报障原话「没有显示具体角色」。dsh 的子代理列表副标题是子会话首条消息的截断预览（约 28 显示宽度），把角色写成句子里（`你是「专家团」的架构师（architect，…`）会被截成 `（arch`。把通用前缀改回句中写法即复现。",
+      "test": "role-identity.test.mjs",
+      "edits": [
+        {
+          "file": "skills/expert-team/references/ROLES.md",
+          "find": "【{{role-zh}}】你是被委派的专家",
+          "replace": "你是「专家团」中的专家【{{role-zh}}】。你是被委派的专家"
+        }
+      ]
+    },
+    {
+      "id": "M25-bracket-role-unparsed",
+      "title": "解析器不认 `【中文标签】`/`【role】`（前置后的角色反而解析不出，且退回关键词误判）",
+      "why": "修法把角色标签前置成 `【产品经理】` 并靠**精确中文标签表**识别；若解析器不认括号标签，就会退回「按表序先命中先赢」的关键词猜测 —— `【产品经理】产品分析员协作` 被猜成 product-analyst、`【审查官】测试用例复核` 被猜成 qa（用户看得见角色、面板却认错角色）。",
+      "test": "role-identity.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "  const m = src.match(/[（(【[]\\s*([a-z][a-z0-9-]{1,24})\\s*[，,、)）】\\]]/);\n  if (m && KNOWN_ROLES.has(m[1])) return m[1];\n  // 中文标签分支：**只有精确命中标签表才算角色** —— 自由散文里的括号\n  // （「（非实验性）」「（url）」）依旧被拒绝，不与旧行为冲突。\n  const zh = src.match(/[（(【[]\\s*([^，,、()（）【】\\[\\]]{1,32}?)\\s*[，,、)）】\\]]/);",
+          "replace": "  const m = src.match(/[（(]\\s*([a-z][a-z0-9-]{1,24})\\s*[，,、)）]/); // MUTANT: 只认圆括号、不认中文标签\n  if (m && KNOWN_ROLES.has(m[1])) return m[1];\n  const zh = null;"
+        }
+      ]
+    },
+    {
+      "id": "M26-team-help-creates-run",
+      "title": "删掉 `help` 分支（`/team help` 落到 create，建出 help-HHMMSS 空 run）",
+      "why": "实测缺陷：parseTeamCommand 只在空输入时返回 help，没有 help 分支 ⇒ `/team help` 穿过所有子命令判断落到 create，把字面量 help 当任务文本，建出一个 runId 形如 help-HHMMSS 的空 run。删掉该分支即复现。（2026-09-13 B 线第 8 项：`/team` 的 CLI 面已搬进 `lib/command-parse.js`，本变异体的目标文件随之改指。）",
+      "test": "command-parse.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command-parse.js",
+          "find": "  if (lower === 'help' || lower === '?' || lower === '-h' || lower === '--help' || lower === '帮助') return { kind: 'help' };",
+          "replace": "  if (false) return { kind: 'help' }; // MUTANT: 无 help 分支 ⇒ /team help 会建 run"
+        }
+      ]
+    },
+    {
+      "id": "M27-member-registry-always-dirty",
+      "title": "派工登记恒报 changed=true（3s 轮询持续改写 STATE.json）",
+      "why": "登记发生在 /state 路由里、而面板每 3s 轮询一次。若 changed 恒真，就会每 3s 写一次 STATE.json：工件 revision 无意义地自增、归因载体刷屏、并发写风险放大。测试固化\"内容相同必须 changed=false\"。",
+      "test": "member-registry.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "  return { entries: out, changed };",
+          "replace": "  return { entries: out, changed: true }; // MUTANT: 恒报脏"
+        }
+      ]
+    },
+    {
+      "id": "M28-member-registry-wipes-existing",
+      "title": "登记时清空既有 STATE.members 行（抹掉 lead/未知角色的登记）",
+      "why": "注册表是**共享**的：lead 手写的行、host 不认识的角色行都不该被 host 的自动登记抹掉（越权清理=丢数据）。测试固化\"只增不改\"。",
+      "test": "member-registry.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "  const out = cur.slice();",
+          "replace": "  const out = []; // MUTANT: 清空既有登记"
+        }
+      ]
+    },
+    {
+      "id": "M29-schema-check-blind",
+      "title": "`/team check` 不校验存量工件 schema（脏数据永远查不出来）",
+      "why": "DEFAULT_SCHEMA_GUARDS 原先只在**写入那一刻**经 schema-warn 事件上报；/team check 只读文件、从不校验 schema ⇒ 旧 run 或被别的写入路径改脏的工件永远查不出来（实证：STATE.coverage 曾被写成字符串数组，消费端兜底后渲染成空行 —— \"少了东西却没有任何信号\"）。把 check 里的调用摘掉即复现。",
+      "test": "schema-check.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "  const schemaWarns = schemaViolations(state, tasks);\n  violations = violations.concat(schemaWarns);",
+          "replace": "  const schemaWarns = []; // MUTANT: 不查存量 schema\n  violations = violations.concat(schemaWarns);"
+        }
+      ]
+    },
+    {
+      "id": "M30-runlist-swallows-broken",
+      "title": "listRuns 又静默跳过损坏 run（用户看不到\"死掉的 run\"）",
+      "why": "实测 team/ 下 4 个目录里 2 个没有 STATE.json，而 listRuns 的 `catch { /* skip malformed */ }` 把它们全吞掉 ⇒ /team status 与面板 run 下拉里一个都看不到。退回静默跳过即复现。",
+      "test": "run-health.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "      runs.push({ runId: n, phase: '', status: '', mode: '', task: title, members: [], updatedAt: '', health: 'broken', healthReason: String((e && e.message) || 'STATE.json 不可读').slice(0, 80), ageMs: 0 });",
+          "replace": "      /* MUTANT: 静默跳过损坏 run */"
+        }
+      ]
+    },
+    {
+      "id": "M31-stall-false-positive",
+      "title": "终态/无时间戳也判搁浅（告警变噪音，用户会整体降权）",
+      "why": "若把 failed/cancelled/complete 或没有 updatedAt 的 run 也算搁浅，几乎每个历史 run 都会挂上\"搁浅\"标签 ⇒ 用户对这个信号降权（与\"矛盾数字会让用户连真违规一起降权\"同源）。",
+      "test": "run-health.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "  if (st === 'running' && ageMs > stallMs) {",
+          "replace": "  if (ageMs > stallMs) { // MUTANT: 不区分终态，且无时间戳(ageMs=0)时…"
+        }
+      ]
+    },
+    {
+      "id": "M32-cas-stale-no-retry",
+      "title": "宿主 CAS 路径撞到 FS_STALE_VERSION 后不重试（并发落窗即写入失败）",
+      "why": "cordisFsPort 走宿主文件级 CAS：写者在 stat 与 write 之间若被并发写者插队，宿主报 FS_STALE_VERSION。writer 的设计是「重读→重新基线→重试一次」，这是这条路径唯一的自愈能力。把它改成撞到就 break，则任何一次并发落窗都会直接写失败（而对上层表现为 must() 抛错）。此前**全部测试只走 nodeFsPort**，这条宿主路径从未被实跑，本变异体是该路径的第一个守卫。",
+      "test": "cordis-fs-port.test.mjs",
+      "edits": [
+        {
+          "file": "lib/artifact-writer.js",
+          "find": "        if (!stale) break; // 非\"陈旧\"类错误：重试无意义，直接上抛",
+          "replace": "        break; // MUTANT: 陈旧也不重试"
+        }
+      ]
+    },
+    {
+      "id": "M33-selfbuilt-run-unflagged",
+      "title": "自建 run 指纹恒判\"非自建\"（绕过 /team 的 run 不进任何门禁）",
+      "why": "实测真实工作区里多数 run 是 lead 直接 write 出来的，而字段漂移全部出在这条路径。若指纹恒返回 selfBuilt=false，则 /team check 与面板红条对这条路径完全失明 —— schema 校验只剩\"正规建出来的 run\"可覆盖。",
+      "test": "scaffold-fingerprint.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "  return { selfBuilt: missing.length > 0, missing };",
+          "replace": "  return { selfBuilt: false, missing }; // MUTANT: 恒判非自建"
+        }
+      ]
+    },
+    {
+      "id": "M34-preset-typo-key-silent",
+      "title": "预设自检不再拦「近失键名」（拼错键 ⇒ 角色静默失去设置）",
+      "why": "宿主 agentOptions 的 zod object 非 strict：写 reasoning_efforts / modle 这类近失键名既不报错也不被剥掉，配置留着而运行时按\"没这个键\"处理 ⇒ 角色静默失去该设置，只在建新会话时才暴露。把 lint 退回\"只判未知键不判失败\"即复现。",
+      "test": "preset-lint.test.mjs",
+      "edits": [
+        {
+          "file": "scripts/validate-agent-preset.mjs",
+          "find": "        failures++;\n        console.log(`    ✗ agentOptions 键名疑似拼错",
+          "replace": "        /* MUTANT: 近失键名不再判失败 */\n        console.log(`    ✗ agentOptions 键名疑似拼错"
+        }
+      ]
+    },
+    {
+      "id": "M35-strand-ignores-live-owner",
+      "title": "搁浅判定不看存活成员（把\"正常在跑\"的任务也算搁浅 ⇒ 清算会误伤在飞的活）",
+      "why": "清算会把任务回 pending + attempt+1。若搁浅判定不检查 owner 是否还有存活子代理，则**正在被做的任务**也会被清算 ⇒ 同一任务被两个成员同时做（重复劳动 + 覆盖写入）。这是本功能最危险的误伤路径。",
+      "test": "stranded-tasks.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "    if (owner && live.has(owner)) continue; // 还有人在做 → 不算搁浅",
+          "replace": "    // MUTANT: 不看存活成员"
+        }
+      ]
+    },
+    {
+      "id": "M36-settle-wipes-history",
+      "title": "清算把任务**重置**而不是留痕（丢掉 attempt 与原因）",
+      "why": "清算若直接 `{id, status:\"pending\"}` 覆盖，会丢掉 attempt（下一次派工的尝试序号错乱）与 strandedFrom/note（用户看不出\"它曾经在飞、被谁清过\"）。审计链断裂后，同一任务的反复搁浅将无法追溯。",
+      "test": "stranded-tasks.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "    return {\n      ...t,\n      status: 'pending',\n      attempt: (Number.isFinite(t.attempt) ? t.attempt : 0) + 1,\n      strandedAt: at,\n      strandedFrom: prev,\n      note: (note ? note + ' | ' : '') + `${reason}（原状态 ${prev}，已清回 pending 待重派）`,\n    };",
+          "replace": "    return { id: t.id, status: 'pending', owner: t.owner }; // MUTANT: 重置丢历史"
+        }
+      ]
+    },
+    {
+      "id": "M37-agent-tool-in-host-plane",
+      "title": "把 agent-plane 工具行塞进 host 平面 patch（架构评审明确否决的落点）",
+      "why": "L3-6 原方案要往 cordis.patch.yml insert 一个 dsh-tool-* 行。host 平面的 tool 行会把工具注册进**进程全局 tools registry**，对**任何 preset 的任意会话**可见 —— 既是产品可见的行为变更，也正是该文件头部注释写死的反模式（\"contributes only HOST-plane rows (no agent-plane tool rows)\"）。正确落点是 presets/expert-team/agent.cordis.yml（agent-plane、per-agent scoped）。此前该约束**只写在注释里**，本变异体证明它现在是机制。",
+      "test": "agent-scope-guard.test.mjs",
+      "edits": [
+        {
+          "file": "cordis.patch.yml",
+          "find": "    - id: expert-team-command",
+          "replace": "    - id: expert-team-tool-row\n      name: '@deepseek-ai/dsh-tool-subagent'\n\n    - id: expert-team-command"
+        }
+      ]
+    },
+    {
+      "id": "M38-migrate-coverage-shape-blind",
+      "title": "migrate 只判 Array.isArray（真实脏数据本身就是数组 ⇒ 提示修但修不好）",
+      "why": "用户实机触发：/team check 提示「先 /team migrate」，但 migrate 判的是 `if (!Array.isArray(coverage))`，而 [\"pm\",\"architect\",…] 本身就是数组 ⇒ 直接放行，跑了也修不好（migrate 判据比 guard 弱）。退回旧判据即复现。",
+      "test": "schema-warn-noise.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "  const bad = Array.isArray(coverage)\n    ? coverage.filter((c) => c === null || typeof c !== 'object' || Array.isArray(c))\n    : null;\n  if (Array.isArray(coverage) && bad.length === 0) {",
+          "replace": "  const bad = []; // MUTANT: 只看是不是数组，不看元素形状\n  if (Array.isArray(coverage)) {"
+        }
+      ]
+    },
+    {
+      "id": "M39-schema-warn-spam",
+      "title": "schema 告警不去重（C3 回写反复触发同一条 ⇒ 刷屏 ⇒ 用户对告警整体降权）",
+      "why": "C3 的派工登记每次成员变化都会改写 STATE.json，而存量脏字段每次都被重新检查 ⇒ 同一条告警反复打印。噪音会让用户对告警整体降权（本项目反复记录的失败模式）。去掉去重即复现。",
+      "test": "schema-warn-noise.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "    if (SCHEMA_WARN_SEEN.has(sig)) return; // 同一条已喊过：不再刷屏（去重不改口径）\n",
+          "replace": "    // MUTANT: 不去重\n"
+        }
+      ]
+    },
+    {
+      "id": "M40-toolcard-settled-as-done",
+      "title": "角色卡把「工具调用已返回」当完成（运行中的任务显示 ✅完成）",
+      "why": "用户 2026-09-11 报障：卡上 ✅完成，同一角色在子代理列表里 3分39秒 · 正在运行。根因：可继续委派下 subagent_<role> 几乎立刻返回 \"started subagent <id>\"，旧实现用 settled 当完成标记 ⇒ 运行中的任务被标成完成。把「活子代理仍是 running」这条判据去掉即复现。",
+      "test": "tool-card-status.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "      var liveRunning = !!liveAgent && String(liveAgent.activity || '') === 'running'",
+          "replace": "      var liveRunning = false"
+        }
+      ]
+    },
+    {
+      "id": "M41-toolcard-name-hard-slice",
+      "title": "角色卡名称行硬切 90 字符且不补省略号（用户「子代理名称没有显示完」）",
+      "why": "名称行旧实现 String(prompt).slice(0, 90)：硬切且无省略号，label 被一起切掉，句子断在半截。恢复旧实现即复现报障。",
+      "test": "tool-card-status.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "        (label || prompt) ? h('div', { className: 'et-tc-t' }, esc(label ? String(label) + (prompt ? ' — ' + clipText(prompt, 120) : '') : clipText(prompt, 200))) : null,",
+          "replace": "        (label || prompt) ? h('div', { className: 'et-tc-t' }, esc((label ? label + (prompt ? ' — ' : '') : '') + String(prompt).slice(0, 90))) : null,"
+        }
+      ]
+    },
+    {
+      "id": "M42-zh-label-table-missing",
+      "title": "中文标签精确表缺项 ⇒ 退回关键词误判（【产品经理】被认成产品分析员）",
+      "why": "中文标签靠精确表（host ROLE_LABELS_ZH / client roleFromText）判定；表里少一项，就会退回「按表序先命中先赢」的关键词猜测，把 `【产品经理】产品分析员协作` 认成 product-analyst —— 用户看得见角色、面板归属却错。（2026-09-13 B 线 11b：中文标签表已搬进 `lib/vocab.js`，本变异体的目标文件随之改指 —— 搬代码位置会让 find 串命中 0 次，`mutation-catalog.test.mjs` 当场拦下，与 M61/M106 同类。）",
+      "test": "role-identity.test.mjs",
+      "edits": [
+        {
+          "file": "lib/vocab.js",
+          "find": "  '产品经理': 'pm',\n",
+          "replace": ""
+        }
+      ]
+    },
+    {
+      "id": "M43-dag-status-no-flash",
+      "title": "依赖图状态变更不闪（用户「动态的」诉求失效）",
+      "why": "面板每 2.5s 轮询、任务状态是跳变的；去掉\"变更即闪\"后，用户盯着图也看不出刚才谁从待开始变成进行中、谁完成了 —— 正是用户 2026-09-11 报障「状态给一个明显的展示，动态的」要解决的那一半。",
+      "test": "dag-status.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "        if (old.status !== st) { snap[id] = { status: st, at: t0 }; flash[id] = true; return }",
+          "replace": "        if (old.status !== st) { snap[id] = { status: st, at: t0 }; return } // MUTANT: 变更不闪"
+        }
+      ]
+    },
+    {
+      "id": "M44-dag-node-status-text-dropped",
+      "title": "节点状态带只画色块、不写状态文字（状态又变回\"靠颜色猜\"）",
+      "why": "报障前的形态就是\"节点上只有一个色点、状态文字只在图例里\"。把状态带的文字去掉即复现：卡片有颜色但看不出是哪一档状态。",
+      "test": "dag-status.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "          h('text', { className: 'exp-node-status', x: 12, y: NODE_H - 4.5, 'font-size': 10, 'font-weight': 700, fill: '#ffffff' }, esc(meta.icon + ' ' + meta.label)),",
+          "replace": "          h('text', { className: 'exp-node-status', x: 12, y: NODE_H - 4.5, 'font-size': 10, 'font-weight': 700, fill: '#ffffff' }, esc(meta.icon)), // MUTANT: 不写状态"
+        }
+      ]
+    },
+    {
+      "id": "M45-dag-run-bar-no-shimmer",
+      "title": "进行中的状态带不加流光（\"还在跑\"看不出来）",
+      "why": "进行中/已领取是\"活的\"状态：状态带流光 + 描边脉冲是它与\"已完成\"的即时区分。去掉流光后，静态图上两者只差颜色，用户容易误判任务已结束。",
+      "test": "dag-status.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "            h('rect', { className: 'exp-node-bar' + (run ? ' exp-node-bar-run' : ''), x: 4, y: NODE_H - BAR_H, width: NODE_W - 4, height: BAR_H, fill: meta.band })),",
+          "replace": "            h('rect', { className: 'exp-node-bar', x: 4, y: NODE_H - BAR_H, width: NODE_W - 4, height: BAR_H, fill: meta.band })), // MUTANT: 无流光"
+        }
+      ]
+    },
+    {
+      "id": "M46-capacity-silent-truncate",
+      "title": "容量超限改为**静默截断**（而不是 fail loud）—— 用户不知道自己的计划被砍了",
+      "why": "O-3 的核心取向就是\"上限必须有，且超限必须显式报错\"。若改成截断到上限，编排脚本抽风时用户会拿到一份**被悄悄砍过**的任务表/成员表，且没有任何信号 —— 与\"无上限即无护栏\"同类，甚至更糟（有护栏但不说）。（2026-09-13 B 线第 8 项第一步：该实现已搬进 `lib/validate.js`，本变异体的目标文件随之改指 —— 搬代码位置会让 find 串命中 0 次，`mutation-catalog.test.mjs` 一次拦下 7 条。）",
+      "test": "capacity-limits.test.mjs",
+      "edits": [
+        {
+          "file": "lib/validate.js",
+          "find": "  if (roles && roles.length > lim.maxMembers) {",
+          "replace": "  if (false) { // MUTANT: 不报超限（静默）"
+        }
+      ]
+    },
+    {
+      "id": "M47-limit-number-coercion-trap",
+      "title": "上限解析用 `Number(v)` 一把收（`null` 被当成 0 ⇒ 拒绝每一个计划）",
+      "why": "`Number(null) === 0`、`Number(\"\") === 0`、`Number([]) === 0`。JSON 里 \"maxMembers\": null 是极自然的\"未设置\"写法，被判成 0 就会 fail-closed 地拒绝**所有**计划。测试固化\"null/空串/布尔/数组/对象都必须回默认\"。（2026-09-13 B 线第 8 项第一步：该实现已搬进 `lib/validate.js`，本变异体的目标文件随之改指 —— 搬代码位置会让 find 串命中 0 次，`mutation-catalog.test.mjs` 一次拦下 7 条。）",
+      "test": "capacity-limits.test.mjs",
+      "edits": [
+        {
+          "file": "lib/validate.js",
+          "find": "  if (typeof v !== 'number' && typeof v !== 'string') return null;\n  if (typeof v === 'string' && v.trim() === '') return null;\n  const n = Number(v);",
+          "replace": "  const n = Number(v); // MUTANT: 一把收（null → 0）"
+        }
+      ]
+    },
+    {
+      "id": "M48-task-cas-no-fence",
+      "title": "任务写入不带版本栅栏（两个写者各自读 rev N、各自写、后写覆盖先写且无人知晓）",
+      "why": "修复前全仓没有任何 TASKS.json 调用点传 expectedRevision ⇒ 现状只是 read-modify-write。把栅栏摘掉即复现评审实证的\"静默丢更新\"。mutateTasks 的核心就是\"读-改-写带 CAS + 陈旧时重放 mutate\"，摘掉栅栏即回到原状。",
+      "test": "task-cas.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "      await ARTIFACT.must(target, next, { expectedRevision: snap.revision, maxAttempts: 1 });",
+          "replace": "      await ARTIFACT.must(target, next); // MUTANT: 不带版本栅栏（回到静默覆盖）"
+        }
+      ]
+    },
+    {
+      "id": "M49-write-lock-off",
+      "title": "写入不带跨进程锁（两个会话同时写同一工件时互相覆盖）",
+      "why": "实测（本仓竞品分析 run 与刚才的 mutations.json 竞态）：两个 dsh 会话的进程各自持有 ARTIFACT 实例，互不感知 —— 版本栅栏只能拦\"别人已写完\"，拦不住\"别人正在写\"。把写入前的锁摘掉即复现\"两个写者在同一窗口各自读 rev N、各自写、后写覆盖先写\"。",
+      "test": "write-lock.test.mjs",
+      "edits": [
+        {
+          "file": "lib/artifact-writer.js",
+          "find": "    const useLock = fsPort && fsPort.kind === 'node:fs';",
+          "replace": "    const useLock = false; // MUTANT: 不持锁（回到进程间互相覆盖）"
+        }
+      ]
+    },
+    {
+      "id": "M50-skill-loses-narrow-patch-rule",
+      "title": "SKILL 删掉窄补丁纪律（整文件重写又变成\"默认行为\"）",
+      "why": "用户实证的\"子代理卡死\"根因就是整文件重写大工件。若规则 26 被删（或被改写丢关键短语），下一次有人 steer 同一 agent 改大文件时又会卡死 —— 且用户只会看到\"没反应\"。测试用关键短语断言该规则存在。",
+      "test": "card-stall.test.mjs",
+      "file": "skills/expert-team/SKILL.md",
+      "edits": [
+        {
+          "file": "skills/expert-team/SKILL.md",
+          "find": "禁止 `write` 整文件、禁止回读全文",
+          "replace": "（MUTANT: 删除窄补丁禁令）"
+        }
+      ]
+    },
+    {
+      "id": "M51-resume-blind-continue",
+      "title": "resumeRun 回到\"盲目继续\"（不检测在飞/搁浅任务就发 followup）",
+      "why": "断网/重启后用户说\"继续\"，lead 若不先核对在飞任务就派工，会把同一个任务派给两个人或覆盖未完成的活。删除检测段即复现\"盲目续跑\"。",
+      "test": "card-stall.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "      `**中断后先检测，不要直接续跑**",
+          "replace": "      `继续（MUTANT: 不检测直接续跑）"
+        }
+      ]
+    },
+    {
+      "id": "M52-confirm-auto-dispatches",
+      "title": "--confirm 仍然自动派工（\"执行前询问\"形同虚设）",
+      "why": "--confirm 的全部价值就是\"建 run 但**不自动派工**，等用户拍板\"。若 confirm 分支没在 launchMessage 之前 return，团队会在用户还没看方案时就开工 —— 用户看到的\"询问\"是假的。",
+      "test": "multi-session-and-confirm.test.mjs",
+      "file": "lib/command.js",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "  if (mode.confirm) {",
+          "replace": "  if (false) { // MUTANT: confirm 不生效（照旧自动派工）"
+        }
+      ]
+    },
+    {
+      "id": "M53-confirm-ok-but-no-dispatch",
+      "title": "点「执行」只记决策、不派工（\"点了没反应\"）",
+      "why": "批 0-2 记录过同类事故：字段错位导致点「执行」静默失败、pendingDecision 永不清除。这里守的是另一半：即便决策被正确记录，**团队也必须真的开工** —— 否则用户点了按钮却什么都没发生。",
+      "test": "multi-session-and-confirm.test.mjs",
+      "file": "lib/command.js",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "                      agent.followup(await launchMessage(state.goal || '', cwd, dir, mode));",
+          "replace": "                      void agent; // MUTANT: 记录决策但不派工"
+        }
+      ]
+    },
+    {
+      "id": "M54-view-plan-clears-pending",
+      "title": "「查看方案」也发 /decide（看一眼方案就等于确认开工）",
+      "why": "「查看方案」是**查看**动作。若它也走 /decide，会在用户只是想看看的情况下清掉待决 = 等于确认执行，团队随即开工 —— 这正是\"默认执行、不问\"的老毛病换个入口复发。",
+      "test": "multi-session-and-confirm.test.mjs",
+      "file": "client.js",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "        if (/查看方案|view plan/i.test(String(id))) {\n          try { openArtifact('SPEC.md', interact.runId || p.runId, p.workspace || interact.workspace) } catch (e) {}\n          return\n        }",
+          "replace": "        // MUTANT: 查看方案也当决策提交"
+        }
+      ]
+    },
+    {
+      "id": "M55-rules-not-in-launch",
+      "title": "launchMessage 不带常驻规则（规则写了但没人看到）",
+      "why": "常驻规则的全部价值就是\"每次开工都带上\"。把 rules 从消息里拿掉 ⇒ 规则落盘了但模型永远看不到 ⇒ \"改了也不执行\"（用户报的正是这个）。",
+      "test": "standing-rules.test.mjs",
+      "file": "lib/command.js",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "    rules || '',\n    learnings || '',",
+          "replace": "    learnings || '', // MUTANT: 不带常驻规则"
+        }
+      ]
+    },
+    {
+      "id": "M56-rules-not-persisted",
+      "title": "SKILL 删掉\"常驻规则必须落盘\"（回到\"只在对话里说一遍\"）",
+      "why": "用户报的病根就是\"规则只在对话里，压缩后消失\"。删掉规则 28 即复现。",
+      "test": "standing-rules.test.mjs",
+      "file": "skills/expert-team/SKILL.md",
+      "edits": [
+        {
+          "file": "skills/expert-team/SKILL.md",
+          "find": "常驻规则必须落盘",
+          "replace": "常驻规则（MUTANT: 删除落盘要求）"
+        }
+      ]
+    },
+    {
+      "id": "M57-scope-overlap-blind",
+      "title": "写域重叠检测被移除（回到事后才发现撞车）",
+      "why": "O9 的价值就是在派工前报撞车风险。去掉 scopeOverlapWarnings 的调用即回到只有事后越界审计的状态。",
+      "test": "scope-overlap.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "for (const w of scopeOverlapWarnings(arr)) warnings.push",
+          "replace": "for (const w of []) warnings.push // MUTANT: 不检测重叠"
+        }
+      ]
+    },
+    {
+      "id": "M58-cancel-no-dep-protect",
+      "title": "取消有下游依赖的任务不设防（断链后下游永远卡 pending）",
+      "why": "取消一个正在被做的任务会断链 —— 下游任务的 dependsOn 就指向一个不存在的完成态，永远卡 pending 且没有信号。去掉保护即复现。",
+      "test": "task-cancel-protect.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "if (status === 'cancelled' && (hit.status === 'in_progress' || hit.status === 'claimed')) {",
+          "replace": "if (false) { // MUTANT: 取消不设防"
+        }
+      ]
+    },
+    {
+      "id": "M59-wait-blind",
+      "title": "/team wait 不报告在飞任务（回到\"只能 sleep\"的状态）",
+      "why": "O7 的价值就是把\"禁 sleep\"变成\"可观测的等待\"。waitRun 不检查在飞任务就回到了禁令状态。",
+      "test": "wait-run.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "  const inFlight = arr.filter((t) => IN_FLIGHT_STATUSES.includes(t.status));",
+          "replace": "  const inFlight = []; // MUTANT: 不检查在飞任务"
+        }
+      ]
+    },
+    {
+      "id": "M60-metrics-event-family-blind",
+      "title": "事件族归一退化为精确匹配（METRICS 又报「无 error 事件 / 无决策记录」）",
+      "why": "真实 RUN.log 写的是 `error:workflow` / `error:external-write` / `decision:user` / `role:pm`，而旧 aggregate 用 `switch (ev.type)` 精确匹配 `case 'error'` ⇒ 全部漏掉，METRICS 恒报「无 error 事件」「无决策记录」，用户以为团队从没卡过（D1/D2/D3）。eventFamily 一旦原样返回 type，事件族匹配立即失效。（2026-09-13 B 线第 8 项：日志解析已搬进 `lib/log-parse.js`，本变异体的目标文件随之改指 —— 搬代码位置会让 find 串命中 0 次，`mutation-catalog.test.mjs` 当场拦下。）",
+      "test": "metrics.test.mjs",
+      "edits": [
+        {
+          "file": "lib/log-parse.js",
+          "find": "  const i = s.indexOf(':');\n  return i < 0 ? s : s.slice(0, i);",
+          "replace": "  return s; // MUTANT: 事件族归一退化为精确匹配（D1/D2/D3 复发）"
+        }
+      ]
+    },
+    {
+      "id": "M61-runlist-counts-files",
+      "title": "run 目录过滤退化：团队根目录下的文件也被当成 run（「总 run 数：8」而真实 2）",
+      "why": "旧 aggregate 直接 `readdir(root)` 不过滤类型 ⇒ METRICS.md / LEARNINGS.md / REPOWIKI.md / CODEINDEX.json 都进了分母，用户看到的 run 数是真实的好几倍，返工率的分母也一起失真（D4）。 （2026-09-13 更新：采集逻辑已从 `lib/command.js` 搬到 `lib/metrics/collect.js`（B 线 10b），本变异体随之改指新位置 —— **搬家时 `mutation-catalog.test.mjs` 的「find 串恰好命中一次」当场抓到了这个失效**。原计划另加一个同缺陷的新变异体，核对后确认重复，故只保留本历史条目。）",
+      "test": "metrics.test.mjs",
+      "edits": [
+        {
+          "file": "lib/metrics/collect.js",
+          "find": "      if (!ent.isDirectory()) { skipped += 1; continue; }",
+          "replace": "      if (!ent.isDirectory()) { names.push(ent.name); continue; } // MUTANT: 不过滤类型，文件也被当 run（D4 复发）"
+        }
+      ]
+    },
+    {
+      "id": "M62-learnings-append-not-replace",
+      "title": "同日蒸馏块退化为总是追加（LEARNINGS.md 一天堆 N 个当日块）",
+      "why": "旧去重键是「当日日期 + 块内容」，蒸馏内容一变（新卡点/新返工）就再追加一块 ⇒ 同一天反复 learn 后 LEARNINGS.md 堆满重复的当日块，而它又会被注入下一个 run 的启动消息 ⇒ 经验噪声直接污染后续 run（D6）。",
+      "test": "metrics.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "    const start = lines.findIndex((l) => l.trim() === head);",
+          "replace": "    const start = -1; // MUTANT: 找不到同日块 ⇒ 总是走追加（D6 复发）"
+        }
+      ]
+    },
+    {
+      "id": "M63-panel-dead-link-again",
+      "title": "runLogTail 变回死代码（浮层「运行日志（最新）」恒空）",
+      "why": "/state 路由一直在调 runLogTail，但函数曾全仓无定义 ⇒ ReferenceError 被 try/catch 吞掉、logTail 恒为 ''；而旧断言只查 `typeof === 'string'`，死代码下恒过（D7/D8）。让它直接 return '' 即复现「面板永远空白、测试却全绿」。",
+      "test": "regression.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "async function runLogTail(runDir, opts = {}) {",
+          "replace": "async function runLogTail(runDir, opts = {}) {\n  return ''; // MUTANT: 面板运行日志又变死代码（D7 复发）"
+        }
+      ]
+    },
+    {
+      "id": "M64-ask-decision-count-as-rework",
+      "title": "提问/拍板被当成返工证据（返工率虚高、指标失去区分度）",
+      "why": "契约更正 C1：返工的定义是「产出被退回重做」，而 `ask:clarify` 与 `decision:user` 是**正常流程**。若它们也置 runRework，任何问过澄清问题的 run 都会被判「有返工」⇒ 返工率虚高，用户又会把面板信号整体降权。旧实现的 `case 'ask'` / `case 'decision'` 从不设 runRework，本变异即把它加回去。",
+      "test": "metrics.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "      } else if (fam === 'ask') {\n        tallyEvent(asks, ev.type, ev.detail);       // 只收集渲染，不进返工分子（C1）\n      } else if (fam === 'decision') {\n        tallyEvent(decisions, ev.type, ev.detail);  // 只收集渲染，不进返工分子（C1）\n      }",
+          "replace": "      } else if (fam === 'ask') {\n        tallyEvent(asks, ev.type, ev.detail); runRework = true; // MUTANT: 提问也算返工证据（C1 回退）\n      } else if (fam === 'decision') {\n        tallyEvent(decisions, ev.type, ev.detail); runRework = true; // MUTANT: 拍板也算返工证据（C1 回退）\n      }"
+        }
+      ]
+    },
+    {
+      "id": "M65-roleticks-unrendered",
+      "title": "role tick 只统计不渲染（空 TASKS.json 时又报「日志里暂无角色结果」）",
+      "why": "R1：roleTicks 曾只用于把角色从「未参与」里剔除、**从不渲染**。而 workflow 扇出常常不回写 TASKS.json（SKILL §7.22 明示这是常见情况），于是日志里明明有 `role:pm`×4，METRICS 的角色结果节却打印「日志里暂无角色结果」—— D3 要消灭的「指标与日志脱节」原样复发。去掉该行渲染即复现。",
+      "test": "metrics.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "    ...(tickOnly.length ? [`- （仅日志参与：${tickOnly.map(([r, n]) => `${r}×${n}`).join('、')}）`] : []),",
+          "replace": "    // MUTANT: role tick 不渲染（R1 回退 ⇒ 角色结果节又变空白）"
+        }
+      ]
+    },
+    {
+      "id": "M66-verdict-token-blind",
+      "title": "`verdict=` 判决退回 prose 推断（needs_revision 被 detail 里的「通过」提升成 pass）",
+      "why": "R2 · T-04 用真实 php/school run 实测：3 条 `role:reviewer … verdict=needs_revision` 里 **2 条被记成 pass、1 条被整条丢弃**（METRICS 报 pass 5 / rework 3 / fail 3，应为 pass 3 / rework 6 / fail 3）。根因是 extractVerdict 把 token 与整条 detail 拼成 haystack 再跑 prose 正则。两个调用点一起退回 extractVerdict 即复现。",
+      "test": "metrics.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "          const verdict = verdictFromToken(ev.detail); // null（无 verdict=）与 ''（token 不认识）都不计判决",
+          "replace": "          const verdict = /verdict=/.test(ev.detail) ? extractVerdict(ev.detail) : null; // MUTANT: 退回 prose 推断（R2 回退）"
+        },
+        {
+          "file": "lib/command.js",
+          "find": "          const verdict = tok === null ? extractVerdict(ev.detail) : tok;",
+          "replace": "          const verdict = extractVerdict(ev.detail); // MUTANT: role:result 也退回 prose（R2 回退）"
+        }
+      ]
+    },
+    {
+      "id": "M67-sameday-block-kept",
+      "title": "同日蒸馏块在「本次无新经验」时不替换（已修掉的噪声永久留存并被注入后续 run）",
+      "why": "R8：旧实现是 `if (learn.length)` 才写 ⇒ 同日已有块、但本次蒸馏为空时，旧块（含刚修掉的 D5 噪声，例如项目 team/LEARNINGS.md 里那条「researcher 返工/失败最多（1 次）」）**永久留存**，还会被下一次 clarify 当「既往经验」注入 ⇒ 修掉的噪声继续污染后续 run。",
+      "test": "metrics.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "    if (start >= 0) {",
+          "replace": "    if (start >= 0 && learn.length) { // MUTANT: learn 为空则不替换（R8 回退）"
+        }
+      ]
+    },
+    {
+      "id": "M68-role-name-ghost",
+      "title": "角色名不归一（`role:pm(repair)` 成为幽灵桶，带 verdict= 时渲染幽灵角色行）",
+      "why": "R11 · T-04 实测：真实 php/school run 里有 **15** 条 `role:pm(repair)` 这类行。旧的 `ev.type.slice(5).split(':')[0]` 会把 `pm(repair)` 当成独立角色 ⇒ 同一个人的判决被劈成两桶，还多出一行谁也不认识的「幽灵角色」。退回 split 即复现。",
+      "test": "metrics.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "          const role = normalizeRoleName(ev.type.slice(5)) || 'unknown';",
+          "replace": "          const role = ev.type.slice(5).split(':')[0] || 'unknown'; // MUTANT: 不归一角色名（R11 回退）"
+        }
+      ]
+    },
+    {
+      "id": "M69-f1-cross-run-members",
+      "title": "去掉第①道 runId 过滤 ⇒ 跨 run 成员串号复发（上个 run 的成员被写进新 run 的 STATE.json）",
+      "why": "R12（F-1 · P0，已实测复现）：本 run 创建后 50 秒内，`/state` 的「派工即登记」把**上一个 run** 的 8 条成员逐字写进了本 run 的 STATE.json（revision 2），而本 run 当时还没派工。根因是 `wfLabels = workflowChildLabels(ctx, peopleSid)` 是**会话级**的，`workflowChildMeta` 明明返回了 runId 却从不用它过滤。去掉 runId 相等判定即复现。（R17 把过滤从 role→sub 映射改成候选列表后，本 find/replace 同步跟随 `picked.push`，变异语义不变：仍是「去掉第①道 runId 过滤」。）",
+      "test": "member-registry.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "    if (wf) {\n      // ① 会话级 label 必须用 runId 收窄到本 run\n      if (runId && String(wf.runId || '') === runId) picked.push({ sub, at: Number(wf.startedAt) > 0 ? Number(wf.startedAt) : Number.MAX_SAFE_INTEGER });\n      else reject(id);\n      continue;\n    }",
+          "replace": "    if (wf) {\n      picked.push({ sub, at: Number(wf.startedAt) > 0 ? Number(wf.startedAt) : Number.MAX_SAFE_INTEGER }); // MUTANT: 去掉第①道 runId 过滤 ⇒ 会话级 label 直接采纳（F-1 串号复发）\n      continue;\n    }"
+        }
+      ]
+    },
+    {
+      "id": "M70-display-cross-run-members",
+      "title": "显示路径退回未过滤的映射 ⇒ 面板照样把别的 run 的活人显示成本 run 成员",
+      "why": "R13（lead 裁决）：R12 只严了**写盘**，`enrichMembers` 仍吃未过滤的映射 ⇒ 数据污染修好了，但**用户看到的串号现象一点没变**（浮层照样列出上一个 run 的 8 个人），而 `membersUnresolved` 当前 client.js 并不渲染 ⇒ 等于「如实标注」标在了没人看的地方。把 enrichMembers 的参数退回**未过滤**的 `mapRoleToSub(subs, wfLabels)` 即复现（R17 之后 `roleSubAll` 这个中间变量已不存在，故用它等价表达「未过滤映射」）。",
+      "test": "member-registry.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "                sel.members = enrichMembers(sel.runId, sel.roles, sel.members, subById, sel.agents);",
+          "replace": "                sel.members = enrichMembers(sel.runId, sel.roles, sel.members, mapRoleToSub(subs, wfLabels), sel.agents); // MUTANT: 显示路径退回未过滤的映射（R13 回退 ⇒ 面板又串号）"
+        }
+      ]
+    },
+    {
+      "id": "M71-phase-name-unvalidated",
+      "title": "阶段名不按 PHASES 词表校验 ⇒ 任意英文词都成为伪阶段",
+      "why": "R14（REVIEW-2 F2）：R7 只从 detail 里取**第一个 ASCII 词**，于是 `phase:started — 由 backend 开始实现` 会记成阶段 `backend` —— 伪阶段只是从 `started`/`completed` 换成了任意英文词，「阶段覆盖」这一节照样被污染成无意义计数。去掉白名单校验即复现。",
+      "test": "metrics.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "        if (!PHASES.includes(phaseName)) continue;",
+          "replace": "        // MUTANT: 不校验阶段名白名单（R14 回退 ⇒ detail 里第一个英文词就成了伪阶段）"
+        }
+      ]
+    },
+    {
+      "id": "M72-taskroles-global",
+      "title": "taskRoles 退回工作区全局 ⇒ A run 有任务就吞掉 B run 的日志判决与 ticks",
+      "why": "R15（REVIEW-2 F3）：`taskRolesInRun` 曾在 run 循环**外**声明 ⇒ 某角色在 A run 有任务，会让 **B run** 的日志判决被整块吞掉、B run 的 `role:*` ticks 也进不了「仅日志参与」行 —— **正好打掉 R1/R9 要救的场景**（workflow 扇出没回写 TASKS.json）。去掉每轮的 `clear()` 即退回全局口径。",
+      "test": "metrics.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "    taskRolesInRun.clear();",
+          "replace": "    // MUTANT: 不清空 ⇒ taskRoles 退回工作区全局（R15 回退：A run 的任务吞掉 B run 的日志判决/ticks）"
+        }
+      ]
+    },
+    {
+      "id": "M73-logerror-mutually-exclusive",
+      "title": "`log:error` 与 role 判决互斥 ⇒ 有 7 条 error 的真实 run 在口径行里完全不出现",
+      "why": "R16（TEST-2 SG-A）：旧写法 `if (!roleResultRework && !roleTickRework && runRework)` 让 `log:error` 只在「没有任何 role 判决」时才登记 ⇒ 真实 php/school run 有 **7 条 error**，口径行却只有 `log:role×1 · tasks:…`，用户无法审计到 error 这条证据链。退回互斥写法即复现（返工率分子口径不变，只丢可见性）。",
+      "test": "metrics.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "    if (sawError) reworkSources.add('log:error');",
+          "replace": "    if (!roleResultRework && !roleTickRework && runRework) reworkSources.add('log:error'); // MUTANT: 与 role 判决互斥（R16 回退）"
+        }
+      ]
+    },
+    {
+      "id": "M74-filter-after-map",
+      "title": "退回「先角色映射、后过滤」⇒ 外 run 的同角色腿排在前面时，本 run 自己的腿永远注册不上",
+      "why": "R17（TEST-2 SG-B / F1l）：`mapRoleToSub` 是同角色**先到先占**（`if (!m.has(role))`），而过滤**只删不补** ⇒ 当会话索引里外 run 的同角色腿排在前面时，本 run 的腿根本没进入待过滤映射（实测 `members=[]`、`pm.active=false`、`membersUnresolved=true`），而**这正是真实事故的 subs 顺序**（旧 run 的 8 条腿在前）。把过滤的输入换成「已映射后的 values」即复现旧顺序。",
+      "test": "member-registry.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "                    const scoped = filterRunScopedSubs(subs, {",
+          "replace": "                    const scoped = filterRunScopedSubs([...mapRoleToSub(subs, wfLabels).values()], { // MUTANT: 先映射后过滤（R17 回退 ⇒ 只删不补，本 run 的腿进不了映射）"
+        }
+      ]
+    },
+    {
+      "id": "M75-verdict-wrapper-blind",
+      "title": "不剥 token 的包裹字符 ⇒ `verdict=`needs_revision`` 被静默丢弃、返工率虚低为 0%",
+      "why": "R18（TEST-2 SG-C）：`verdictFromToken` 曾要求 token 紧跟 `=`，而真实 `php/school` RUN.log **第 163 行**写的是 ```verdict=`needs_revision` ```（反引号 + markdown 粗体包裹）⇒ 解析失败，而该分支**无 prose 兜底** ⇒ 判决被静默丢弃（3 条 needs_revision 丢 1 条）；若它是唯一返工证据 ⇒ `返工/失败率：0%` + 口径「（无返工证据）」。去掉剥离循环即复现。（2026-09-13 B 线第 8 项：日志解析已搬进 `lib/log-parse.js`，本变异体的目标文件随之改指 —— 搬代码位置会让 find 串命中 0 次，`mutation-catalog.test.mjs` 当场拦下。）",
+      "test": "metrics.test.mjs",
+      "edits": [
+        {
+          "file": "lib/log-parse.js",
+          "find": "  while (rest.length > 0 && VERDICT_TOKEN_WRAPPERS.includes(rest[0])) rest = rest.slice(1);",
+          "replace": "  // MUTANT: 不剥包裹字符（R18 回退 ⇒ 反引号/全角引号包裹的 token 被静默丢弃）"
+        }
+      ]
+    },
+    {
+      "id": "M76-rework-loop-limit-blind",
+      "title": "读侧轮次门禁失明（超上限的返工循环不再被 /team check 报出来）",
+      "why": "M76：`roundLimitViolations` 一开头 `return []` ⇒ 读侧 V1（REWORK_LOOP_UNESCALATED）全线失明。真实事故正是这样：`php/school` 的一个 run —— 68 任务 / 32 条 repair / maxRound=8，评审每轮都在**新增** finding，而系统**不报一个字**，只能靠人喊停。B-01 把上限写进代码后，这道读侧违规是唯一的**持续**信号（写侧只挡面板与 /plan 路由，见 SPEC.md §5 的 C6）⇒ 它失明等于循环又回到没人管的状态。（2026-09-13 B 线第 8 项第一步：该实现已搬进 `lib/validate.js`，本变异体的目标文件随之改指 —— 搬代码位置会让 find 串命中 0 次，`mutation-catalog.test.mjs` 一次拦下 7 条。）",
+      "test": "rework-loop.test.mjs",
+      "edits": [
+        {
+          "file": "lib/validate.js",
+          "find": "function roundLimitViolations(tasks, state, limits) {",
+          "replace": "function roundLimitViolations(tasks, state, limits) {\n  return []; // MUTANT: 读侧轮次门禁失明（V1/V2 恒不产出）"
+        }
+      ]
+    },
+    {
+      "id": "M77-finding-reopen-blind",
+      "title": "同一 finding 连续两轮未闭环不再被判「规格歧义」（循环继续派修复）",
+      "why": "M77：把 V2（FINDING_REOPENED）分支关掉 ⇒ 读侧只剩 V1（**到顶才报**），而到顶之前的每一轮都会安静地继续派修复。SPEC.md §5 的 C4 结论正是：同一 finding 跨轮反复出现说明**规格没写清楚**，正确动作是升级用户裁定而不是再修一轮 —— V2 就是这条规则的机判实现，关掉它这条规则就退回了「文档口号」。（2026-09-13 B 线第 8 项第一步：该实现已搬进 `lib/validate.js`，本变异体的目标文件随之改指 —— 搬代码位置会让 find 串命中 0 次，`mutation-catalog.test.mjs` 一次拦下 7 条。）",
+      "test": "rework-loop.test.mjs",
+      "edits": [
+        {
+          "file": "lib/validate.js",
+          "find": "      const a = g.get(r), b = g.get(r1);",
+          "replace": "      const a = g.get(r), b = g.get(r1);\n      if (true) continue; // MUTANT: V2 失明（FINDING_REOPENED 恒不产出）"
+        }
+      ]
+    },
+    {
+      "id": "M78-round-limit-write-unguarded",
+      "title": "写侧轮次守卫形同虚设（第 N+1 轮照样落盘）",
+      "why": "M78：`reworkLoopWriteGuard` 恒返回 null ⇒ 新增的超轮次质量任务照常写入 TASKS.json（HTTP 200），「未落盘」的承诺消失。写侧拦截的取向就是 fail loud、不静默截断：命中即 400 + REWORK_LOOP_LIMIT 且磁盘**逐字未变**；守卫失效后，落盘前的那道闸门只剩装饰（叠加 SPEC.md §5 的 C6 边界：这条路径本就只覆盖面板与 `/plan`，读侧才是主强制点 —— 所以读侧与写侧各由一条变异体单独守）。",
+      "test": "rework-loop.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "function reworkLoopWriteGuard(input, state, limits) {\n  if (state && state.pendingDecision) return null; // 已升级用户 ⇒ 允许继续（这正是\"到顶的正确动作\"）",
+          "replace": "function reworkLoopWriteGuard(input, state, limits) {\n  return null; // MUTANT: 写侧轮次守卫形同虚设"
+        }
+      ]
+    },
+    {
+      "id": "M79-evidence-placeholder-blind",
+      "title": "路径侧占位符跳过失效 ⇒ 文档里的「引用写法模板」又被当成真引用，门禁对模板误报 RED",
+      "why": "B-07/B-08D：`parseAnchorForm` 里那道「**路径侧**含尖括号占位符 ⇒ 不计入锚点引用」的守卫，是文档模板句（`team/<runId>/TASKS.json · <锚点> @ <行号>`、`<相对路径> · <锚点>`）不被当成证据的唯一闸门。去掉它即复现本 run 连红 4 次的误报（`源文件不存在：team/<runId>/TASKS.json`）⇒ `evidence-gate.test.mjs` 用例⑤必须变红（分母、豁免量、无 MISSING 三条断言一起失效）。注意：B-08D 起占位符判定**只作用于路径侧**（锚点侧改落未校验桶，见 M87），故选它作为「模板误报」的守门变异体。",
+      "test": "evidence-gate.test.mjs",
+      "edits": [
+        {
+          "file": "scripts/check-evidence.mjs",
+          "find": "  if (PLACEHOLDER_RE.test(pathPart)) return null;",
+          "replace": "  // MUTANT: 路径侧占位符不跳过（B-07/B-08D 回退 ⇒ 模板句被当成真引用 ⇒ 对 `team/<runId>/…` 误报 MISSING）"
+        }
+      ]
+    },
+    {
+      "id": "M80-evidence-fragment-rescue",
+      "title": "退回「任一候选片段命中即算命中」（含按空白切分）⇒ QA 的 4 条编造锚点全部变绿",
+      "why": "B-08A：QA 实测旧代码对 4 条**编造**锚点 4/4 全绿（`function QANonexistentProbe` 靠切出的 `function`、`cordis.patch.yml · insert:（expert-team-command @ 15-16）` 靠 `insert:`/`expert-team-command`）—— 门禁的「绿」因此不构成「锚点真实」的证据（约 39 条历史锚点靠片段命中）。两处一起退回即复现：① 结构分隔符重新包含空白；② 命中判定接受任一候选片段（含关键字）。用例⑩ 会逐条变红。（2026-09-13：`weakCandidates()` 是 SG-7 修复后遗留的**死代码**（全仓无调用），已随 P4 清理删除；本变异的第二条编辑改用活着的 `anchorCandidates`，缺陷语义不变。）",
+      "test": "evidence-gate.test.mjs",
+      "edits": [
+        {
+          "file": "scripts/check-evidence.mjs",
+          "find": "  push(anchor); // 主候选 = 整条锚点（最长）\n  for (const piece of anchor.split(ANCHOR_SEP)) push(piece);",
+          "replace": "  push(anchor); // 主候选 = 整条锚点（最长）\n  for (const piece of anchor.split(/[（()）｜|/、,，;；\\s]+/)) push(piece); // MUTANT: 退回按空白切分"
+        },
+        {
+          "file": "scripts/check-evidence.mjs",
+          "find": "        if (primaryHits.length > 0 && isHitBasis(primary)) {",
+          "replace": "        if (anchorCandidates(anchorForm.anchor).some((c) => (findAnchorLines(target.abs, c) ?? []).length > 0) || primaryHits.length > 0) { // MUTANT: 任一候选片段命中即算命中"
+        }
+      ]
+    },
+    {
+      "id": "M81-exemption-count-blind",
+      "title": "豁免计数恒为 0 ⇒ 豁免量（占位符/围栏块）在汇总区失明",
+      "why": "B-08A 要求 5（R22/FIND-6）：门禁跳过多少内容是**可审计性**的一部分 —— 豁免量必须始终渲染且真实。把计数写死成 0（汇总行还在，但数字永远是 0）即复现「豁免静默」⇒ 用例⑭ 的「占位符 1 条 · 围栏块 1 条」变红。",
+      "test": "evidence-gate.test.mjs",
+      "edits": [
+        {
+          "file": "scripts/check-evidence.mjs",
+          "find": "      `- 豁免（不计入校验）：占位符 ${exemptPlaceholder} 条 · 围栏块 ${exemptFenced} 条（棘轮基线 ${baseline.exemptPlaceholder} / ${baseline.exemptFenced} 条）`,",
+          "replace": "      '- 豁免（不计入校验）：占位符 0 条 · 围栏块 0 条（棘轮基线 0 / 0 条）', // MUTANT: 豁免计数失明"
+        }
+      ]
+    },
+    {
+      "id": "M86-verbatim-only",
+      "title": "退回「点号形态各段在文件里各自出现过即算命中」⇒ 编造点号锚点又变绿（FIND-9 复现）",
+      "why": "B-08D 统一规则：**命中只认逐字**。review-2 的 FIND-9（P1）就是靠旧兜底 —— `state.members.round` 因三个词在 command.js 里各自出现过（可跨几百行）而被判「命中」，既不 MISSING 也不进棘轮 ⇒ exit 0。把点号形态的第二种等价写法（`.json` 目标的「带引号键 + ≤50 行窗口」）换回**文件级兜底**即复现 ⇒ 用例⑯ 的「命中 1」变成「命中 2」而变红。",
+      "test": "evidence-gate.test.mjs",
+      "edits": [
+        {
+          "file": "scripts/check-evidence.mjs",
+          "find": "    if (/\\.json$/i.test(abs)) for (const n of jsonKeyWindows(lines, segs)) add(n);",
+          "replace": "    if (segs.every((s) => text.includes(s))) add(1); // MUTANT: 文件级兜底（各段在文件里各自出现过即算命中 ⇒ FIND-9 回退）"
+        }
+      ]
+    },
+    {
+      "id": "M87-anchor-placeholder-silent",
+      "title": "锚点侧尖括号改回静默豁免 ⇒ 引用从分母里消失（SG-7 复现）",
+      "why": "B-08D / SG-7：锚点侧 `<…>` **不得静默豁免** —— 旧代码在路径/锚点切分之前对整条 span 判占位符并 `return null`，于是 `lib/command.js · <QANonexistentAnchor>` 既不判命中、也不判 MISSING、**还不进分母**（分母虚低、审计看不见）。把这道分支改回 `continue`（不推 weak 桶）即复现 ⇒ 用例⑱ 的「锚点引用 1 条 / 未校验 1 条 / fragmentOnlyRefs 里有它」一起变红。",
+      "test": "evidence-gate.test.mjs",
+      "edits": [
+        {
+          "file": "scripts/check-evidence.mjs",
+          "find": "        if (anchorForm.anchorPlaceholder) {\n          fragmentOnly.push({\n            doc: relDoc,\n            raw: span.raw,\n            reason: `未校验（弱证据）：锚点含尖括号占位符「${anchorForm.anchor}」，不可能逐字命中 @ ${target.rel}`,\n          });\n          continue;\n        }",
+          "replace": "        if (anchorForm.anchorPlaceholder) continue; // MUTANT: 锚点侧占位符静默豁免（SG-7 回退 ⇒ 引用从分母消失）"
+        }
+      ]
+    },
+    {
+      "id": "M88-exemption-not-ratcheted",
+      "title": "豁免量不参与棘轮对比 ⇒ 豁免量只渲染、漂移不告警（FIND-11 复现）",
+      "why": "B-08D / FIND-11（B-08E 分级后语义微调）：豁免量虽然**不硬失败**，但必须参与「可见 + 对比 + 告警」——否则模板/反例可以无限增长而门禁照样绿、也没人知道。把两个豁免 key 从棘轮表里摘掉（只剩 fragmentOnly 在表内）即复现：告警行不再出现 ⇒ 用例⑲ 的「⚠ 豁免量增长…」与「点名围栏块超基线」变红。",
+      "test": "evidence-gate.test.mjs",
+      "edits": [
+        {
+          "file": "scripts/check-evidence.mjs",
+          "find": "    { key: 'exemptPlaceholder', label: '占位符豁免', now: exemptPlaceholder, enforced: false },\n    { key: 'exemptFenced', label: '围栏块豁免', now: exemptFenced, enforced: false },",
+          "replace": "    // MUTANT: 豁免量不参与棘轮对比（FIND-11 回退 ⇒ 豁免只渲染、漂移不告警）"
+        }
+      ]
+    },
+    {
+      "id": "M89-exemption-hardfail-restored",
+      "title": "把豁免类改回硬失败 ⇒ 合法文档形态（模板行/围栏示例）被门禁判红（B-08E 裁决一 回退）",
+      "why": "B-08E 裁决一：`exemptPlaceholder` / `exemptFenced` 统计的是**合法的文档形态**（按引用纪律教格式的模板行、作者显式声明的围栏示例），把它们硬拦等于「不许再写示范引用格式的文档」/「一辈子只能有 2 个围栏示例」—— 本仓教训是大量假阳性会让门禁被整体忽略。真正代表债务的只有 `fragmentOnly`。把两个豁免 key 的 `enforced` 改回 `true`（恢复硬失败）即复现 ⇒ 用例⑲ 的「豁免 = 基线+1 → exit 0」变成 exit 1 而变红。",
+      "test": "evidence-gate.test.mjs",
+      "edits": [
+        {
+          "file": "scripts/check-evidence.mjs",
+          "find": "    { key: 'exemptPlaceholder', label: '占位符豁免', now: exemptPlaceholder, enforced: false },\n    { key: 'exemptFenced', label: '围栏块豁免', now: exemptFenced, enforced: false },",
+          "replace": "    { key: 'exemptPlaceholder', label: '占位符豁免', now: exemptPlaceholder, enforced: true }, // MUTANT: 豁免类恢复硬失败\n    { key: 'exemptFenced', label: '围栏块豁免', now: exemptFenced, enforced: true },"
+        }
+      ]
+    },
+    {
+      "id": "M82-revert-rate-wrong-denominator",
+      "title": "撤销率分母退回 `findings.length`（忽略审查者自报的 `retracted`）⇒ 同一个「撤销率」在不同 run 里含义不同",
+      "why": "R20（C11）：规则文本写的是「撤销率 = 撤销数 / **自报数**」（自报数含事后被撤销的疑似项），而 `findings[]` 通常只留**成立的问题** ⇒ 两个分母算出的数完全不同（本 run 实测：findings 口径 10/18≈55.6% vs 自报口径 10/12≈83.3%）。把 `retracted` 判定整段关掉即回到旧口径 ⇒ 用例 ⑧-7 的 `10 / 12（撤销率 83%）` 变成 `10 / 8`，且 ⑧-11a 的 SG-4 提示一并消失。",
+      "test": "rework-loop.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "      const retracted = (Number.isFinite(t && t.retracted) && t.retracted > 0) ? Math.floor(t.retracted) : null;",
+          "replace": "      const retracted = null; // MUTANT: 分母恒取 findings.length（忽略 retracted）"
+        }
+      ]
+    },
+    {
+      "id": "M83-write-guard-skips-no-id",
+      "title": "写侧守卫放行**无 id** 的质量任务（手写 STATE.draft 可绕过轮次闸门）",
+      "why": "R23（FIND-7）：`/plan/approve` 吃的是**可被文件工具手写**的 `STATE.draft`，而 `normalizeDraft` 的补 id 只发生在 `/plan` 路由 ⇒ 一个没有 id 的 `round:4` 质量任务过去能整条穿过写侧闸门（读侧 V1 仍会报，但 message 里 id 为空）。退回 `if (!id || onDisk.has(id)) continue;` 即复现该窄洞 ⇒ 用例 ⑥-b/⑥-c 变红。",
+      "test": "rework-loop.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "    if (rawId && onDisk.has(rawId)) continue;",
+          "replace": "    if (!rawId || onDisk.has(rawId)) continue; // MUTANT: 无 id 被放行（R23 回退）"
+        }
+      ]
+    },
+    {
+      "id": "M84-v2-input-missing-blind",
+      "title": "V2 的「无输入告警」恒不产出 ⇒ 「门禁失明」与「已收敛」又变得完全同形",
+      "why": "R25（SG-3）：V2（FINDING_REOPENED）代码正确且可达，但 14 个真实 run 全部命中 0 —— 事故 run 有 16 个质量任务 / 73 条 finding，却是 73 个互不相同的标题。没有这条提示，用户看到「没有 FINDING_REOPENED」无从判断是**真收敛**还是**V2 没数据可吃**；提示恒不产出即回到那个静默状态 ⇒ 用例 ⑨-1 变红（⑨-2/⑨-3/⑨-4 仍绿，因为它们断言的是「不提示」）。（2026-09-13 B 线第 8 项第一步：该实现已搬进 `lib/validate.js`，本变异体的目标文件随之改指 —— 搬代码位置会让 find 串命中 0 次，`mutation-catalog.test.mjs` 一次拦下 7 条。）",
+      "test": "rework-loop.test.mjs",
+      "edits": [
+        {
+          "file": "lib/validate.js",
+          "find": "function findingReopenInputMissing(tasks) {",
+          "replace": "function findingReopenInputMissing(tasks) {\n  return null; // MUTANT: R25 无输入告警恒不产出"
+        }
+      ]
+    },
+    {
+      "id": "M85-revert-rate-mixed-denominator",
+      "title": "撤销率的 run 级分母退回**混合口径**（无 `retracted` 就拿 `findings.length` 当自报数）",
+      "why": "B-08C：`retracted` 是 **reviewer** 的上报义务，而 QA（`verification`）报的是 `spec-gap`、天然没有这个字段 ⇒ 「无 `retracted` 就用 findings.length」的分母**不是过渡态而是常态**，会系统性稀释这个指标（本 run 实测 10/19=53%，而真实可比的数是 10/12=83%）。让分支 3 恒真（即恢复混合口径）⇒ 用例 ⑧-12 的 `10 / 12（撤销率 83% · 覆盖 1/2 个质量任务）` 变回 `10 / 19（53%）`、且 ⑧-15 的占位句变成 `0 / 8` 之类 ⇒ 目标测试必红。",
+      "test": "rework-loop.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "      } else if (marked > 0 || declared > 0) {",
+          "replace": "      } else if (true) { // MUTANT: 分支 3 退回混合口径（无 retracted 就用 findings.length 当分母）"
+        }
+      ]
+    },
+    {
+      "id": "M90-client-css-asi-silent-drop",
+      "title": "CSS 拼接链漏一个 `+` ⇒ 一段规则被 ASI 断成死表达式、静默不进样式表（`node --check` 仍绿）",
+      "why": "真实事故（2026-09-12 体检发现）：`client.js` 的 `var CSS = …` 是长串 `+` 拼接，§96 新增的 9 行里 7 行漏了行首 `+`、第 258 行因此退化成**一元加**（`+'…'` = NaN）⇒ `.etv-curve`/`.etv-dep-edge`/`.etv-g-node*`/`.etv-link`/`.etv-list`/`.etv-row` 共 10 条规则静默缺席，「任务人员流转树」的贝塞尔曲线、依赖边、节点描边、降级区左脊全部无样式渲染。这是典型 E 类假绿：语法合法、`node --check` exit 0、`test:all` 全绿，只有真实渲染降级。去掉 `.etv-curve` 行的行首 `+` ⇒ 该片段成死表达式、不是求值结果的子串 ⇒ `client-css-integrity.test.mjs` 的不变量（每段写下的 CSS 必须逐字出现在结果里）与回归锚点（10 条规则在场）同时变红。",
+      "test": "client-css-integrity.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "      + '.etv-curve{fill:none;stroke:#8aa8e8;stroke-width:1.4;opacity:.85}'",
+          "replace": "      '.etv-curve{fill:none;stroke:#8aa8e8;stroke-width:1.4;opacity:.85}'"
+        }
+      ]
+    },
+    {
+      "id": "M91-boundary-tasks-rule-blind",
+      "title": "写侧台账硬规则**恒不触发** ⇒ 「规格/契约违规当场顶回」退化成静默通过",
+      "why": "B2-1（O-C 形态）：`lib/interception.js` 把 TASKS.json 的两个**永不合法**的 DAG 不变量（id 重复 / 循环依赖 / 自依赖 / 缺 id）从散文规则搬成了 `tools/post-execute` 的硬阻断。若把过滤结果恒置空（`return []`），违规写入会重新变成**静默通过** —— 这正是该改动要消灭的失败模式（散文规则的失败没有任何信号）。此时 `interception.test.mjs` 的用例组 ④（id 重复 / 循环 / 自依赖三条 `block` 断言）必红。注意：悬空依赖（`missing-dependency`）**本来就不拦**（合法中间态，与 lib/command.js:68 的 L1-4′ 同口径），所以这条变异只能由前三条例外捕获。",
+      "test": "interception.test.mjs",
+      "edits": [
+        {
+          "file": "lib/interception.js",
+          "find": "      return (g.errors || []).filter((e) => HARD_GRAPH_CODES.has(String(e && e.code))).map((e) => String(e.detail || e.code));",
+          "replace": "      return []; // MUTANT: 台账硬规则恒不触发"
+        }
+      ]
+    },
+    {
+      "id": "M92-write-bypass-ratchet-fail-open",
+      "title": "写入绕过棘轮退回 **fail-open**（基线缺失时 `base = total`）⇒ 删掉基线文件即可悄悄关掉门禁",
+      "why": "真实缺陷（2026-09-12 独立审计确认并复现）：`scripts/check-write-bypass.mjs` 旧写法 `const base = baseline && typeof baseline.total === 'number' ? baseline.total : total;` 在**基线文件缺失/损坏**时把 `base` 取成 `total` ⇒ `delta = 0` ⇒ **exit 0**。后果是本门禁唯一要防的动作（删基线绕开棘轮）恰好无人可挡；而 `check-evidence.mjs` 的同类棘轮是**按 0 fail-closed** 的，两处口径不一致。把 `: 0` 改回 `: total` ⇒ `write-bypass-ratchet.test.mjs` 的三条断言（基线缺失 exit 1 / 基线损坏 exit 1 / `--json` 的 baselinePresent=false）必红。",
+      "test": "write-bypass-ratchet.test.mjs",
+      "edits": [
+        {
+          "file": "scripts/check-write-bypass.mjs",
+          "find": "  const base = baseline && typeof baseline.total === 'number' ? baseline.total : 0;",
+          "replace": "  const base = baseline && typeof baseline.total === 'number' ? baseline.total : total; // MUTANT: 退回 fail-open"
+        }
+      ]
+    },
+    {
+      "id": "M93-asi-silent-dead-string",
+      "title": "拼接链漏一个行首 `+` ⇒ 该行成裸字符串语句（死代码）并打断其后所有续行",
+      "why": "真实事故（本仓已发生两次，工作日志 §95/§96）：`client.js` 的 CSS 拼接链里漏写行首 `+`，那一行变成独立表达式语句 ⇒ ① 该段字符串静默丢失；② 链条被打断，其后所有以 `+` 开头的续行退化成**一元加**（`+'…'` = NaN）一并丢失。全仓曾因此丢掉 10 条 CSS 规则，而 `node --check` exit 0、全部测试绿。去掉 `+ '.etv-cards{gap:10px}…'` 这一行的行首 `+` ⇒ 它是裸字符串且上一行以 `'` 结尾 ⇒ `asi-hazards.test.mjs` 的「除白名单外的文件没有裸字符串语句」必红（同时 `client-css-integrity.test.mjs` 也会红，但本变异体声明的目标测试就是 asi-hazards）。",
+      "test": "asi-hazards.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "      + '.etv-cards{gap:10px}.etv-card{min-height:58px}.etv-group{padding:8px 10px 4px}'",
+          "replace": "      '.etv-cards{gap:10px}.etv-card{min-height:58px}.etv-group{padding:8px 10px 4px}'"
+        }
+      ]
+    },
+    {
+      "id": "M94-post-execute-listener-arity",
+      "title": "`tools/post-execute` 监听器**签名错位**（写成 `(exec, next)`）⇒ 每一次工具调用都被打红",
+      "why": "🔴 真实生产事故（2026-09-12，就在本包同步进运行时并重启之后）：宿主的瀑布监听器签名是 **`(exec, result, next)`**（证据：`packages/guard/repeat-tool-reminder/src/index.ts` 的 `ctx.on('tools/post-execute', async (exec, _result, next) => …)`）。写成两参数时 `next` 实际拿到的是 **result 对象**，`await next()` 抛 `next is not a function`；宿主按约定「监听器抛错 ⇒ 归一化为失败」把**每一次工具调用**（bash / read / 编辑 / 浏览器全都在内）变成错误 —— 整个会话的工具链瘫痪，只能盲执行命令去修。**更值得记的是它为什么没被测试拦住**：`interception.test.mjs` 起初是按同一个错误签名写的（`it(exec, next)`），**测试与实现同错** ⇒ 48 套全绿、93 个变异体全被抓住，而真实会话直接瘫痪。本变异体把签名改回两参数 ⇒ 新增的契约断言 `raw.length === 3` 必红（同时所有依赖「应当 block」的用例也会红）。教训：**给宿主挂 waterfall 监听器的插件，等于把自己的 bug 升级成宿主所有工具的 bug** —— 第一版就必须带 `typeof next === 'function'` 降级保护。",
+      "test": "interception.test.mjs",
+      "edits": [
+        {
+          "file": "lib/interception.js",
+          "find": "  return async function boundaryInterceptor(exec, result, next) {",
+          "replace": "  return async function boundaryInterceptor(exec, next) { // MUTANT: 签名错位（next 实为 result）"
+        }
+      ]
+    },
+    {
+      "id": "M95-spec-heading-mention-counts",
+      "title": "规范章节判定退回 `includes()` ⇒ **提到**章节名即算「已定义」，缺失永远发现不了",
+      "why": "2026-09-12 实测发现（活宿主探针）：`specBoundaryState` 旧实现用 `l.includes('边界与禁止项')` 找章节，于是 `# SPEC（探针：故意不写「边界与禁止项」章节）` 这种**标题里提到它**的写法被判成「有章节」⇒ 真正缺失的 SPEC 永远不会被拦。这与本包证据门禁那条「片段命中 ≠ 锚点命中」是同一类错误：**判定必须锚在结构位置，不能锚在「出现过」**。改回 `includes()` ⇒ `interception.test.mjs` 的「提及 ≠ 定义」「近似标题不算」两条必红。 （注：本变异体必须**整段**替换掉 startsWith+后缀校验两行，只把 startsWith 改成 includes 是**等价实现**、抓不住——第一次写这条变异时正是这么写的，被 `gate:mutation` 判为未抓住。）",
+      "test": "interception.test.mjs",
+      "edits": [
+        {
+          "file": "lib/interception.js",
+          "find": "    if (!title.startsWith(SPEC_BOUNDARY_HEADING)) return -1;\n    const rest = title.slice(SPEC_BOUNDARY_HEADING.length);\n    return rest === '' || /^[（(：:]/.test(rest) ? m[1].length : -1;",
+          "replace": "    return title.includes(SPEC_BOUNDARY_HEADING) ? m[1].length : -1; // MUTANT: 提及即算定义（还原旧实现）"
+        }
+      ]
+    },
+    {
+      "id": "M96-boundary-masks-tool-failure",
+      "title": "工具本身失败时拦截器仍插嘴 ⇒ 用**旧内容**的校验理由**掩盖真错因**",
+      "why": "2026-09-12 实测发现：一次「未先 read 就覆盖写」的失败（被 fs 观察策略拒绝）里，本拦截器仍读磁盘上**未变的旧内容**去校验，于是把真实原因替换成「任务 id 重复」。这正是本项目最忌讳的失败模式——用一个错误盖住另一个错误，排查方向被带偏。加 `result.isError/error ⇒ 不干涉` 的早退后修复。去掉这一行 ⇒ `interception.test.mjs` 的「工具已失败 ⇒ 不插嘴」「也不记 blocked 留痕」两条必红。",
+      "test": "interception.test.mjs",
+      "edits": [
+        {
+          "file": "lib/interception.js",
+          "find": "    if (result && (result.isError === true || result.error)) return downstream;",
+          "replace": "    // MUTANT: 工具失败时也插嘴（用旧内容给出误导理由）"
+        }
+      ]
+    },
+    {
+      "id": "M97-dispatch-contract-drift",
+      "title": "派工四字段契约**从模板层被删掉** ⇒ 规范正文与模板脱节（规则只活在文档里）",
+      "why": "2026-09-12 新增（C 线第一步）：派工 prompt 的四个必填字段写在两处 —— `SKILL.md` 规则 30（编排者读的主协议）与 `references/ROLES.md`（构造 prompt 的模板）。只保留一处就会出现本包实测过的脱节形态：**规则只活在文档里 = 等于没有**。本变异体把 `ROLES.md` 里「① 不要再问、不要只给方案」的措辞删掉 ⇒ `dispatch-contract.test.mjs` 的「① 关键措辞 —— ROLES.md 有」必红（SKILL 侧仍在，所以只有一侧变红 —— 这正是「防漂移」要抓的形态）。 （注：第一版把 find 指向**小标题**那句近义说法，而模板正文里还有一处同义原话 ⇒ 断言仍然通过、变异被判未抓住。**必须删掉真正可抄的那句原话**才构成缺陷。）",
+      "test": "dispatch-contract.test.mjs",
+      "edits": [
+        {
+          "file": "skills/expert-team/references/ROLES.md",
+          "find": "prompt 里明写「**不要等待确认，直接改文件并交付代码/工件**」。",
+          "replace": "prompt 里明写「直接改文件并交付」。"
+        }
+      ]
+    },
+    {
+      "id": "M98-closure-ledger-blind",
+      "title": "「有修复但无独立复验」**不记账** ⇒ 未闭环的修复在指标里彻底消失",
+      "why": "2026-09-12 新增（C 线第二步）：返工率只统计「返工」，**不统计「没交付完」**。一次真实会话被叫停后，账面上 9 completed / 4 failed / 2 cancelled / 1 pending，而「最后两处收紧只有实现者自证、没有独立复验」在任何指标里都看不见。去掉这一行 ⇒ `closure-ledger.test.mjs` 的「无独立复验的修复 = 1（B-08D）」必红（其余两项账目仍在 ⇒ 正是「只有这一账被抹掉」的形态）。",
+      "test": "closure-ledger.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "      if (unver.length) closureUnverified.set(n, unver);",
+          "replace": "      // MUTANT: 无独立复验不记账（未闭环的修复在指标里消失）"
+        }
+      ]
+    },
+    {
+      "id": "M99-cancel-reason-blind",
+      "title": "取消原因**不读取** ⇒ 「已取消任务」退回成一个没有解释的数字",
+      "why": "2026-09-12 新增（C 线第二步收尾）：新账目一上线就抓出「9 个已取消任务」，但**数字本身读不出性质** —— 竞品分析 run 的 7 个是按范围决策**主动砍掉**的（`STATE.scopeDecision.deliverableShape` 写着「本轮不写业务代码」），而 run2 的 B-11/B-12 是用户叫停、没有范围决策记录。前者不是缺口，后者值得看一眼。把读 `scopeDecision` 那行换成空串 ⇒ `closure-ledger.test.mjs` 的「有范围决策记录时，把原因原文打出来」必红（只会一直报「未记录取消原因」）。",
+      "test": "closure-ledger.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "        const shape = String((state && state.scopeDecision && state.scopeDecision.deliverableShape) || '').trim();",
+          "replace": "        const shape = ''; // MUTANT: 取消原因不读取（只剩一个没有解释的数字）"
+        }
+      ]
+    },
+    {
+      "id": "M100-review-finding-unverified-dispatch",
+      "title": "「未经复核不得直接派修复」被删掉 ⇒ 幻觉 finding 原样变成一轮返工",
+      "why": "2026-09-12 新增（C 线第三步，规则 31）：实测我们的 reviewer 首轮约**四成** finding 是幻觉（撤回率 87.5% / 88.9% / 90%），原样转发 = 凭空制造一轮返工；而对照的 9 个真实会话里「审查臆测」恒为 0/82，且审查派工的行号引用率 0%→89% 都同样为 0（**无方差**）⇒ 压住它的机制是**编排者派工前自己复核**，不是「要求写行号」。把 SKILL 里「未经复核的 finding 不得直接派成修复任务」这句删掉 ⇒ `dispatch-contract.test.mjs` 的「SKILL 写明未经复核不得直接派修复」必红（模板侧仍写着，所以正是「主协议丢了、模板还在」的漂移形态）。",
+      "test": "dispatch-contract.test.mjs",
+      "edits": [
+        {
+          "file": "skills/expert-team/SKILL.md",
+          "find": "**未经复核的 finding 不得直接派成修复任务**。",
+          "replace": "（此处省略复核要求）"
+        }
+      ]
+    },
+    {
+      "id": "M101-rework-nature-env-blind",
+      "title": "返工性质分解里「环境/平台类」**不识别** ⇒ 全部算成过程类（把环境问题记到团队头上）",
+      "why": "2026-09-12 新增（C 线第 15 项）：返工率把「环境/平台故障」与「团队过程问题」混在一个分子里，就看不出「过程改好了没有」——本仓实测最高频的环境类是 `error:external-write ×9`（另一个进程改了同一文件）。但**剔除出分子会让数字与历史不可比**，所以本包只做**性质分解**、不动那个率。把 `classifyErrorFamily` 恒返回 `'process'` ⇒ `rework-nature.test.mjs` 的「仅环境/平台 = 1」必红（且「未知族不得算成环境类」仍绿 —— 正是「只有环境识别被抹掉」的形态）。（2026-09-13 B 线第 8 项：日志解析已搬进 `lib/log-parse.js`，本变异体的目标文件随之改指 —— 搬代码位置会让 find 串命中 0 次，`mutation-catalog.test.mjs` 当场拦下。）",
+      "test": "rework-nature.test.mjs",
+      "edits": [
+        {
+          "file": "lib/log-parse.js",
+          "find": "  return ENV_ERROR_FAMILIES.has(String(type || '')) ? 'env' : 'process';",
+          "replace": "  return 'process'; // MUTANT: 环境/平台类不识别（全部记到过程头上）"
+        }
+      ]
+    },
+    {
+      "id": "M102-loop-guard-oscillation-blind",
+      "title": "振荡守卫**失明**（A→B→A→B 不判） ⇒ 「一直循环返工」里唯一没人管的那种形态失去拦截",
+      "why": "2026-09-12 新增（C 线第 16 项收窄版）：把「一直循环返工」拆成三种形态后，同工具重复调用由宿主 `@deepseek-ai/dsh-repeat-tool-reminder` 覆盖（dsh-base 默认启用，thresholds [3,5,8]），同一 finding 跨轮未闭环由本包四支柱的 `FINDING_REOPENED` 覆盖，**只剩「A→B→A→B 在互斥方案间来回」没人管**（宿主那份 README 明写 exact-match only、无交替检测；Qoder 平台内核里有专门的 `[ALTERNATING LOOP DETECTED]`）。让 `oscillationPair` 恒返回 null ⇒ `loop-guard.test.mjs` 的「a b a b ⇒ 判定振荡」与「第四条 ⇒ 阻断」必红（而「同工具同参数重复 4 次 ⇒ 放行」仍绿，正是「只有振荡那一种被抹掉」的形态）。",
+      "test": "loop-guard.test.mjs",
+      "edits": [
+        {
+          "file": "lib/loop-guard.js",
+          "find": "  return [x1, x2].sort().join('\\u0001');",
+          "replace": "  return null; // MUTANT: 振荡失明（A→B→A→B 不判）"
+        }
+      ]
+    },
+    {
+      "id": "M103-vocab-client-drift",
+      "title": "host 与 client 的角色关键词表**再次分叉**（client 少词）⇒ 同一段文本 host 能解析、浮层解析不出",
+      "why": "2026-09-12 新增（B 线第一步 · 报告 04 的 R4 前半）：角色解析在两侧各有一份实现（client 是 `__ModuleLoader__` 工厂、不能 import），长期靠注释「请保持同步」维系 —— 实测已分叉：client 的 `WF_ROLE_WORDS` 比 host 的 `SUB_ROLE_WORDS` 少了 `chief`/`investigate`/`database`/`designer`/`design`，于是同一段文本能在 host 解析出角色、在浮层却列成「未匹配到角色」。已补齐并把一致性钉成测试。本变异体把 client 的 `ui` 词表退回缺 `designer`/`design` 的旧形态 ⇒ `vocab-consistency.test.mjs` 的「host 的每个关键词 client 都有」必红（标签表与顺序两项仍绿 —— 正是「只有关键词表分叉」的形态）。",
+      "test": "vocab-consistency.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "      ['ui', ['ui', '视觉', '界面', '走查', '设计', 'designer', 'design']],",
+          "replace": "      ['ui', ['ui', '视觉', '界面', '走查', '设计']],"
+        }
+      ]
+    },
+    {
+      "id": "M104-state-get-writes-artifacts",
+      "title": "`GET /state` **又去写 run 工件** ⇒ 读接口不幂等，并在 `LEARNINGS.md` 上制造并发写面",
+      "why": "2026-09-13 修（B 线小切片）：浮层每 3 秒轮询 `GET /state`，而该 handler 原先有一段「≤1/5 分钟触发一次 autoAggregate」的节流 ⇒ **读接口周期性改写 team/METRICS.md 与 team/LEARNINGS.md**；而 LEARNINGS.md 同时是 lead 在 run 里写的 ⇒ 真实并发写面（本仓最高频的环境类卡点正是 `error:external-write ×9`）。把聚合调用放回 GET 路径 ⇒ `state-no-write.test.mjs` 的「GET /state 未改动 METRICS.md」必红（显式 `/team learn` 仍写、POST 刷新入口仍在，所以另两条保持绿）。",
+      "test": "state-no-write.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "                persistSessionRuns();\n                json(200, { ok: true, runs, workspaces, cwd, agents: sel.agents, ...sel });",
+          "replace": "                if (Date.now() > 0) { autoAggregate(sel.workspace); } // MUTANT: 读接口又写盘\n                persistSessionRuns();\n                json(200, { ok: true, runs, workspaces, cwd, agents: sel.agents, ...sel });"
+        }
+      ]
+    },
+    {
+      "id": "M105-route-405-with-body",
+      "title": "共享路由件的 405 **带上了 JSON 体** ⇒ 与既有 9 条路由的可观察行为不一致",
+      "why": "2026-09-13 新增（B 线第 9 项 · 抽路由层）：9 条路由原本各自手写 405，且**一律是空体**（`res.writeHead(405); res.end()`）。抽共享件时最容易「顺手改好一点」——比如让 405 也返回 JSON ——但那会让新老路由在同一状态码下行为分叉，且轮询方/测试可能按空体判断。本变异体把 405 改成带体 ⇒ routes-shared.test.mjs 的「方法不在名单 ⇒ 405 且空体」与「POST ⇒ 405 空体」两条必红（其余契约项保持绿）。",
+      "test": "routes-shared.test.mjs",
+      "edits": [
+        {
+          "file": "lib/routes/shared.js",
+          "find": "      if (!allow.has(method)) { res.writeHead(405); res.end(); return; }",
+          "replace": "      if (!allow.has(method)) { json(res, 405, { ok: false, error: 'method not allowed' }); return; } // MUTANT: 405 带体"
+        }
+      ]
+    },
+    {
+      "id": "M106-metrics-render-field-dropped",
+      "title": "渲染解构里**少了一个字段** ⇒ 报告里静默印出 `undefined`（闭包变量改成对象后的新风险）",
+      "why": "2026-09-13 新增（B 线 10b 第一刀 · 渲染切出）：把 METRICS 渲染从 `aggregate` 的闭包局部变量改成数据对象之后，**写错/少传字段不再当场 ReferenceError，而是静默变成 `undefined` 印进用户看的报告**。（2026-09-13 E 线 E3 追加 `scanLines` 时，本变异体的 find 串**当场命中 0 次**，被 `mutation-catalog.test.mjs` 拦下并已改指新行 —— 这正是那道自检存在的理由，与 M61 同类。）本变异体从 `render.js` 的解构里去掉 `revertLine` ⇒ 两条机器检查同时变红：metrics-render.test.mjs 的「渲染结果里没有 undefined」与「渲染要的字段，调用点都传了」。这正是这次提取必须配的安全网 —— 提取本身削弱了编译器的保护，测试要补回来。",
+      "test": "metrics-render.test.mjs",
+      "edits": [
+        {
+          "file": "lib/metrics/render.js",
+          "find": "    errLines, askLines, decLines, scanLines, maxReviewRound, maxTestRound, revertLine,",
+          "replace": "    errLines, askLines, decLines, scanLines, maxReviewRound, maxTestRound,"
+        }
+      ]
+    },
+    {
+      "id": "M107-first-runnable-wiring-dropped",
+      "title": "首产物事件读到了但**没记下来** ⇒ 指标静默退化成「暂无登记」占位句（接线断了，不是数据空）",
+      "why": "2026-09-13 新增（E 线 E1 · 首产物 ≤10 分钟）：`first-runnable` 事件只在一个 `else if` 分支里被记下（`firstRunnableClock = ev.time`），而 B 线第 8 项马上要把 `command.js`（5000+ 行 / 170 个顶层函数）拆成域模块 —— 拆函数时**分支还在、赋值丢了**正是本仓已登记的 D7「函数写出来了但没人调用」，也在搬采集层时真实踩过（历史变异体 M61 的 find 串当场命中 0 次）。这个赋值一丢，代码**不报错**：`firstRunnableClock` 恒为 null ⇒ METRICS 印出的是「暂无 first-runnable 登记」占位句，读者会把它读成「还没有 run 登记过」，而真相是**度量坏了**。本变异体去掉那条赋值 ⇒ first-runnable.test.mjs 的端到端断言（有登记的 run 数与分母 / 跨午夜 131 分钟 / 超阈值点名）必红。",
+      "test": "first-runnable.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "        if (firstRunnableClock === null) firstRunnableClock = ev.time;",
+          "replace": "        // MUTANT: 事件读到了但没记下来（首产物指标静默退化成「暂无登记」）"
+        }
+      ]
+    },
+    {
+      "id": "M108-closing-budget-missing-merged",
+      "title": "「缺 review/test 记账」被并进「未登记」⇒ 两种缺失混成一类（正是本仓反复复发的病）",
+      "why": "2026-09-13 新增（E 线 E2 · 收尾预算）：E2 把「有 implement 但没有 review/test 阶段事件」单列成 ⚠️ 项 —— 因为这是**真实 run 的形态**（那条 run 的 3h35m 收尾就是这样在指标上隐形的）。它与「一条阶段事件都没写」是**两件不同的事**：前者说明**记账缺一段**（要补 `phase:review`/`phase:test`），后者说明**压根没记账**。本变异体把前者的分支改成 `false` ⇒ 「分不开」的 run 掉进「未登记」桶：METRICS 里那句 ⚠️ 消失、未登记数从 1 变 2。这正是本仓在撤销率上吃过的亏（两种零被合成一个数就再也分不开，SG-4）。closing-budget.test.mjs 的「分不开的那个 run 被单列」与「未登记数 = 1」两条必红。（2026-09-13 改指：分类逻辑从\"两桶\"扩成\"四桶\"——缺起点 / 缺冻结点 / 缺交付 / 零阶段事件。本变异体原来的靶子 `} else if (tl.firstImplement !== null) {` 已随重写消失；现改为让「缺冻结点」这一支不可达 ⇒ 那些 run 落进「缺交付」桶，**两类缺失又混成一类**（与变异体的原意一致），由 `closing-budget.test.mjs` 的「『分不开』有独立警示」抓住。）",
+      "test": "closing-budget.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "      } else if (tl.firstClosing === null) {",
+          "replace": "      } else if (false) { // MUTANT: 「缺 review/test」不再单独成类，混进「缺交付」"
+        }
+      ]
+    },
+    {
+      "id": "M109-scan-divergence-blind",
+      "title": "单源化扫描的**分叉检测失效** ⇒ 同一事实的两份拷贝已经不一致，报告依然说「没问题」",
+      "why": "2026-09-13 新增（E 线 E3 · 见一个扫全部）：这个脚本的全部价值就在「多处定义写法不一致时报出来」——没这一条它就只是个 grep。而「分叉检测失效」是最容易发生的退化：把 `variants.length > 1` 写成恒 false（或漏掉右值归一），代码照样跑、报告照样出，读者看到「定义 2 处」会以为**已核对**。实测里那批返工 14/29 就是这种形态（白名单 10→11→12→13 漂移）。本变异体把分叉判定钉死为 false ⇒ scan-single-source.test.mjs 的「两份定义写法不同 ⇒ 报分叉」「报告里出现分叉告警」「两种写法各自列出」三条必红。",
+      "test": "scan-single-source.test.mjs",
+      "edits": [
+        {
+          "file": "skills/expert-team/scripts/scan-single-source.mjs",
+          "find": "    divergent: variants.length > 1,",
+          "replace": "    divergent: false, // MUTANT: 分叉检测失效（两份拷贝不一致却报「没问题」）"
+        }
+      ]
+    },
+    {
+      "id": "M110-tier-unknown-falls-back",
+      "title": "认不出的档位**静默退回默认** ⇒ 用户以为自己的选择生效了，实际跑的是另一档",
+      "why": "2026-09-13 新增（G 线 · 流程档位）：`--tier` 的取值来自人手（`严格档` / `strict` / 打错字 / 中文全角），而「认不出来」最常见的处置就是 `|| DEFAULT_TIER` 一句带过 —— 代码不报错、run 照样建，用户看到的是「已按 X 档开工」，跑的却是标准档。这正是本仓反复复发的「沉默 ≠ 允许」（SKILL §7.29）在参数上的形态：**默认值会让错误看起来像成功**。本变异体把非法档位的拦截去掉 ⇒ tier.test.mjs 的「非法档位 ⇒ 直接拒绝（不静默退回默认）」「拒绝文案列出全部合法值」「被拒绝时没有建出半个 run」三条必红。",
+      "test": "tier.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "  if (mode.tierRaw && !pickedTier) {",
+          "replace": "  if (false) { // MUTANT: 认不出的档位不再拒绝，静默退回默认档"
+        }
+      ]
+    },
+    {
+      "id": "M111-tier-narrow-ignores-custom-roles",
+      "title": "按档定班底时**无视用户点过名的角色** ⇒ 用户写了 `--roles` 却被档位删掉",
+      "why": "2026-09-13 新增（G 线 · 按档定班底）：档位要真正省派工就得改编制，而「改编制」离「删掉用户点的角色」只有一行之隔。`narrowedRoles` 的规则是**只有当前班底仍等于未定制的基线时才改写**；把这条判定去掉（或写成恒真），`--tier 快速档 --roles pm,backend,frontend,qa,dba` 会被静默砍成 `pm,backend,qa` —— 用户看着自己的编制消失，而且**没有任何报错**。这正是本仓「沉默 ≠ 允许」（§7.29）在编制上的形态。tier.test.mjs 的「用户定制过 ⇒ 返回 null，一个都不删」「显式 --tier + --roles ⇒ 尊重用户的编制」「定制班底原样保留」三条必红。",
+      "test": "tier.test.mjs",
+      "edits": [
+        {
+          "file": "lib/tier.js",
+          "find": "  if (!cur || cur !== base) return null; // 用户定制过（或没有班底）⇒ 不动",
+          "replace": "  if (false) return null; // MUTANT: 无视「用户定制过」，照样按档改写班底"
+        }
+      ]
+    },
+    {
+      "id": "M112-dispatch-ledger-substring-match",
+      "title": "派工标签的任务 id 用**子串**匹配 ⇒ `T2` 命中 `T24`，把没派的任务也标成「在做」",
+      "why": "2026-09-13 新增（C 线第 17 项 · 派工即回写）：`taskIdsInLabel` 是这套自动记账的**唯一入口**，而「取子串」是最自然的写法（`text.includes(id)`）。一旦按子串匹配，标签 `【后端工程师】实现 T24` 会把台账里的 `T2` 一起认领 —— 代码在**没有任何报错**的情况下把没派出去的任务标成 in_progress，随后 `/team check` 与浮层看到的是「依赖已就绪却仍 pending」的**反面**（凭空多出一个在做的人）。它还会连带污染任务归属与 DAG 判定。本变异体把词边界正则退化成子串 ⇒ dispatch-ledger.test.mjs 的「`T2` **不**命中 `T24`」与「`repair-3` 不命中 `repair-30`」两条必红。",
+      "test": "dispatch-ledger.test.mjs",
+      "edits": [
+        {
+          "file": "lib/dispatch-ledger.js",
+          "find": "    if (new RegExp(`(^|[^\\\\w-])${escapeRegExp(id)}($|[^\\\\w-])`).test(text)) { out.push(id); seen.add(id); }",
+          "replace": "    if (new RegExp(escapeRegExp(id)).test(text)) { out.push(id); seen.add(id); } // MUTANT: 子串匹配（T2 会命中 T24）"
+        }
+      ]
+    },
+    {
+      "id": "M113-allowed-kinds-zh-hardcoded-again",
+      "title": "把**推导**出来的 `ALLOWED_KINDS_ZH` 又抄成手写字符串 ⇒ 第三份拷贝回来了，且当场就漏了一项",
+      "why": "2026-09-13 新增（B 线 11b · 词表真源）：收拢前「合法 kind」这一个事实有**三份** —— 英文 `ALLOWED_KINDS`、手写中文串 `ALLOWED_KINDS_ZH`、以及 `KIND_ZH` 的键；三者必须一致，却没有任何东西保证一致。11b 把中文串改成 `Object.values(KIND_ZH).join('/')`（推导），于是它**不可能**再与 `KIND_ZH` 分叉。本变异体把它改回手写字符串并漏掉最后一项「质量自检」—— 这正是历史上真实发生过的形态（加了一个 kind，诊断文案里没有它，而诊断文案恰恰是排查时被信任的那份）。vocab-consistency.test.mjs 的「`ALLOWED_KINDS_ZH` 与 `KIND_ZH` 的取值逐字一致」与「源码里不再有那份手写中文清单」两条必红。",
+      "test": "vocab-consistency.test.mjs",
+      "edits": [
+        {
+          "file": "lib/vocab.js",
+          "find": "export const ALLOWED_KINDS_ZH = Object.values(KIND_ZH).join('/');",
+          "replace": "export const ALLOWED_KINDS_ZH = '需求/调研/设计/编码实现/验证测试/代码审查/返工修复/集成/任务'; // MUTANT: 又抄了一份，且漏了「质量自检」"
+        }
+      ]
+    },
+    {
+      "id": "M114-terminal-skip-disables-gate",
+      "title": "把「终态 run 放行」写成**恒真** ⇒ 整道写侧门禁被静默关掉，而测试全绿",
+      "why": "2026-09-13 新增（F · 边界拦截器对已完成 run 误报的修复）：修一个误报最容易顺手犯的错，就是把新加的判定写成恒真或恒假 —— 那样「已完成 run 放行」是满足了，代价是**所有 run 都放行**，DAG 不变量（重复 id / 环 / 自依赖）与 SPEC 边界检查一起失效，而**没有任何测试会红**（除非专门钉一条「非终态必须照旧拦」）。本变异体把判定改成 `if (true)` ⇒ interception.test.mjs 的「非终态（running）⇒ 照旧 block」「非终态下的 DAG 不变量照旧 block」以及 ④/⑤ 两节的既有断言必红。",
+      "test": "interception.test.mjs",
+      "edits": [
+        {
+          "file": "lib/interception.js",
+          "find": "      if (TERMINAL_RUN_STATUSES.has(status)) {",
+          "replace": "      if (true) { // MUTANT: 所有 run 都按「已终止」放行（门禁被整体关掉）"
+        }
+      ]
+    },
+    {
+      "id": "M115-tier-gate-hard-never-holds",
+      "title": "硬档位门**说「等待」却不真的拦**（或恒不生效）⇒ 不选也开工，用户以为自己在选",
+      "why": "2026-09-13 新增（B · 档位硬门禁）：`hard` 门的全部意义就是**不选不开工**。最容易的写法错误是判定恒假（配置读错、条件写反、把 `config` 混进 `ctx` 里读不到）—— 那时回执可能仍然写着「等待你选档位」，而**派工消息已经投出去**（createRun 末尾的 soft 路径照跑）。本变异体让 `heldForTier` 永不落盘 ⇒ tier-gate.test.mjs 的「STATE 记下 heldForTier」「真的没派工（followup 0 次）」「选完立刻投递」等断言必红。（同一个坑第一次跑这个测试时真实踩到：`apply(ctx, config)` 被我写成单参数 ⇒ hard 门静默不生效，只是当时还没有断言兜它。）",
+      "test": "tier-gate.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "        if (TIER_GATE === 'hard' && !mode.confirm) st.heldForTier = true;",
+          "replace": "        if (false) st.heldForTier = true; // MUTANT: 硬门永不生效（不选也开工）"
+        }
+      ]
+    },
+    {
+      "id": "M116-client-tier-labels-drift",
+      "title": "client 的档位标签表**漏一项** ⇒ 浮层把「严格档」显示成没档位（host 那份搬不动就又分叉了）",
+      "why": "2026-09-13 新增（C · 档位徽标）：client 是 `__ModuleLoader__` 工厂、**不能 import** `lib/tier.js`，所以档位标签在浮层侧必然还有一份副本 —— 与本仓角色词表当年真实分叉（client 少 `chief`/`investigate`/`database`/`designer`/`design`）是同一处境。副本一漏项，`tierBadge('strict')` 返回空串 ⇒ 浮层对严格档**什么都不显示**，用户以为没设档位；而 host 侧依旧按严格档跑 —— 显示与执行不一致。本变异体从 client 的 `TIER_LABELS_ZH` 去掉 `strict` ⇒ tier-badge.test.mjs 的「键集合一致」「同一档位两侧中文标签逐字相同」「host 的每一档 client 都认识」三条必红。",
+      "test": "tier-badge.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "    var TIER_LABELS_ZH = { quick: '快速档', standard: '标准档', strict: '严格档' }",
+          "replace": "    var TIER_LABELS_ZH = { quick: '快速档', standard: '标准档' } // MUTANT: 漏了严格档"
+        }
+      ]
+    },
+    {
+      "id": "M117-graph-errors-silently-dropped",
+      "title": "`checkTasks` 不再把**图结构错误**并入违规 ⇒ 重复 id / 环 / 自依赖在 `/team check` 里静默消失",
+      "why": "2026-09-13 新增（B 线第 8 项第一步 · 校验器搬进 `lib/validate.js`）：`checkTasks` 开头那句 `for (const e of validateTaskGraph(tasks).errors) violations.push(...)` 是**唯一**把 DAG 结构错误接进 `/team check` 的地方；把它去掉（或注释掉），`validateTaskGraph` 仍然存在、仍然被写侧拦截器调用，于是**读侧看起来一切正常**：面板不报违规、`/team check` 也不报 —— 而环内任务会永远 ready=false（面板「待开始」永久不动）。这类「搬完家少接一根线」正是本仓已登记的 D7（函数写出来了但没人调用）。本变异体删掉那行 ⇒ validate-module.test.mjs 的「checkTasks 仍把图结构错误并入违规」必红。",
+      "test": "validate-module.test.mjs",
+      "edits": [
+        {
+          "file": "lib/validate.js",
+          "find": "  for (const e of validateTaskGraph(tasks).errors) violations.push(`[图结构] ${e.detail}`);",
+          "replace": "  // MUTANT: 图结构错误不再并入 violations（DAG 校验形同虚设）"
+        }
+      ]
+    },
+    {
+      "id": "M118-settings-partial-apply",
+      "title": "设置补丁**部分生效**（非法项被跳过、合法项照写）⇒ 用户以为保存失败，实际盘上已经变了",
+      "why": "2026-09-13 新增（F 线 · 设置控制台）：`mergeSettings` 的纪律是**全有或全无** —— 任何一项非法就整体拒绝、**不写盘**。最自然的错误写法是 `errors.push(...); continue;`（跳过非法项、把合法的写进去），于是：① 界面报 400「有错误」，用户以为没保存；② 盘上却已经改了合法的那些项；③ 下次重启后行为与用户认知不符，而且**没有任何地方能看出是「半套」**。本变异体让错误累积后仍然返回 `ok:true` ⇒ settings.test.mjs 的「一项非法 ⇒ 整体拒绝」「被拒绝时返回的是原值」「POST 非法补丁 ⇒ 400」「被拒绝时磁盘未变」多条必红。",
+      "test": "settings.test.mjs",
+      "edits": [
+        {
+          "file": "lib/settings.js",
+          "find": "  if (errors.length) return { ok: false, value: base, errors };",
+          "replace": "  // MUTANT: 非法项只是被记下，合法的照写（半套生效）\n  if (false) return { ok: false, value: base, errors };"
+        }
+      ]
+    },
+    {
+      "id": "M119-client-settings-tab-unlisted",
+      "title": "设置页签**注册了却不在 tab 列表里** ⇒ 界面照常渲染，但那个页签永远点不开",
+      "why": "2026-09-13 新增（F 线第 3 项 · 设置页签）：浮层的标签表 `TAB_ZH` 与真正渲染的 tabs 数组是**两处**（历史写法如此）。只加了标签、忘了加进数组，或反之，结果都是「设置页看起来做好了，用户却点不到」—— 这正是本仓已登记的 D7（写出来了但没人调用）在 UI 上的形态。本变异体把 `settings` 从 tab 数组里去掉 ⇒ settings-page.test.mjs 的「tab 列表含 settings（否则那个页签永远不会被渲染）」必红。",
+      "test": "settings-page.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "          ['team', 'tasks', 'info', 'board', 'settings'].map(function (tb) {",
+          "replace": "          ['team', 'tasks', 'info', 'board'].map(function (tb) { // MUTANT: 设置页签不在列表里"
+        }
+      ]
+    },
+    {
+      "id": "M120-policy-profile-ignored",
+      "title": "身份策略**忽略 profile**（一律按技术开发者）⇒ 不懂技术的人照样收到术语问题",
+      "why": "2026-09-13 新增（F 线第 4 项 · 身份策略）：整个身份策略的价值就在「同一个问题按不同身份用不同口径问」。最容易的退化是 `compilePolicy` 只读 spec 默认值、不读那一次调用传进来的设置（或把 profile 分支写漏）⇒ 三种身份输出**完全一样**，而 POLICY.md 照样生成、界面照样显示「无技术经验」，用户以为生效了。本变异体让 profile 分支恒走默认 ⇒ policy.test.mjs 的「无技术经验：禁止术语 + 人话版」「技术开发者：不代决」「混合：两段式」等必红。",
+      "test": "policy.test.mjs",
+      "edits": [
+        {
+          "file": "lib/settings.js",
+          "find": "  const prof = POLICY_PROFILES[id.profile] || POLICY_PROFILES.developer;",
+          "replace": "  const prof = POLICY_PROFILES.developer; // MUTANT: 忽略 profile（三种身份输出一样）"
+        }
+      ]
+    },
+    {
+      "id": "M121-phase-accounting-noisy",
+      "title": "阶段记账判据**不分阶段地报** ⇒ clarify 刚起步就被判违规（门禁变噪声，最后被整体忽略）",
+      "why": "2026-09-13 新增（1b · 阶段记账可机判）：这条判据的价值在于**只报无歧义的**两类（R1 冻结点缺失、R2 零记账）。最容易的写法错误是把 R1 的「已进入 review/test/deliver」这个前提去掉（或写成恒真）——那时任何还有 task 在跑的 run 都会被报「收尾预算算不出来」，而它其实**还没到冻结那一步**。本仓有明确教训：**大量假阳性会让门禁被忽略**（比没有门禁更糟）。本变异体去掉 R1 的阶段前提 ⇒ phase-accounting.test.mjs 的「同一份日志在 implement 阶段不报（还没冻结）」必红；同节里那条「只有 run:started ⇒ 不报」也钉住「刚起步不算漏记」。",
+      "test": "phase-accounting.test.mjs",
+      "edits": [
+        {
+          "file": "lib/validate.js",
+          "find": "  if (frozen && seen.size > 0 && !seen.has('review') && !seen.has('test')) {",
+          "replace": "  if (seen.size >= 0 && !seen.has('review') && !seen.has('test')) { // MUTANT: 不分阶段（clarify 也报）"
+        }
+      ]
+    },
+    {
+      "id": "M122-workflow-dispatch-uncovered",
+      "title": "`workflow` 扇出又变回**不记账** ⇒ one-shot（`/team` 的默认路径）上这个功能等于没有",
+      "why": "2026-09-13 新增（1a · 覆盖 one-shot）：这条缺口是**真实数据点名**的 —— 一个 `mode=one-shot` 的真实 run 跑了 29 个任务，带自动认领记号的**0 个**，因为 `dispatch-ledger` 当时只听 `subagent*`，而 SKILL §5 规定 one-shot 用 `workflow` 扇出。本变异体把监听器退回成「只认 subagent」⇒ dispatch-ledger.test.mjs ⑤ 节（脚本抽 label / 逐腿归属 / 4 类不写盘）整节必红。",
+      "test": "dispatch-ledger.test.mjs",
+      "edits": [
+        {
+          "file": "lib/dispatch-ledger.js",
+          "find": "      if (!isSub && !isWf) return downstream;",
+          "replace": "      if (!isSub) return downstream; // MUTANT: workflow 扇出不被记账（退回只认 subagent）"
+        }
+      ]
+    },
+    {
+      "id": "M123-error-family-all-env",
+      "title": "错误归类**把未列出的族也算环境类** ⇒ 返工性质分解里「过程类」被清空、指标系统性美化",
+      "why": "2026-09-13 新增（B 线第 8 项 · log-parse.js）。`classifyErrorFamily` 是返工性质分解（METRICS「仅环境/平台 vs 仅过程」两桶）的唯一分类点。最容易的退化是把「未列出的族默认算过程类」写成「默认算环境类」（或干脆恒返回 env）—— 那样任何过程类返工（质量环/角色/台账）都会被算进「环境/平台」，指标看起来像「都是基础设施的锅」，把真正该改的过程问题盖住。本仓的取向是**宁可算过程、不美化指标**。本变异体让所有错误都归 env ⇒ log-parse-module.test.mjs 的「未列出的族算过程类」与「列出的族算环境类」两条必红。",
+      "test": "log-parse-module.test.mjs",
+      "edits": [
+        {
+          "file": "lib/log-parse.js",
+          "find": "  return ENV_ERROR_FAMILIES.has(String(type || '')) ? 'env' : 'process';",
+          "replace": "  return 'env'; // MUTANT: 未列出的族也算环境类（返工性质分解被系统性美化）"
+        }
+      ]
+    },
+    {
+      "id": "M124-documented-flag-silently-dead",
+      "title": "`--deep` **文档在、解析恒 false** ⇒ 用户照着敲、静默无效（源码文本级检查抓不到这一类）",
+      "why": "2026-09-13 新增（B 线第 8 项 · command-parse.js）。这一段先挖出两个假绿：① 旧的 USAGE 断言用 `/const USAGE = \\[[\\s\\S]*?\\n\\];/`，而 USAGE 其实以 ` ].join('\\\\n');` 收尾 ⇒ 它从来没匹配到 USAGE，只是惰性匹到后面某处的 `];`、抓了一大坨恰好含所有 flag 的文本；② 我新写的「实现侧 flag 枚举」第一版只认 `flag === '--x'` 写法，漏掉 `/(^|\\\\s)--watch(\\\\s|$)/` 这种正则写法 ⇒ 空集合让断言**恒真**。修好之后立刻抓到真缺陷：`--deep` 已实现却**没写进 USAGE**。但双向枚举仍是**源码文本级**的 —— 它抓不到「文本里有、解析恒 false」这一类，所以补了行为断言，并用本变异体钉住它。⇒ command-parse-module.test.mjs 的「`/team learn --deep` ⇒ deep=true」必红。",
+      "test": "command-parse-module.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command-parse.js",
+          "find": "  if (lower.startsWith('learn ')) return { kind: 'learn', deep: /--deep/.test(input) };",
+          "replace": "  if (lower.startsWith('learn ')) return { kind: 'learn', deep: false }; // MUTANT: 文档还在，解析恒 false"
+        }
+      ]
+    },
+    {
+      "id": "M125-closing-budget-boundary-shifted",
+      "title": "收尾比值的**边界被挪**（把 pre-code 算进实现期）⇒ 同一份数据从 51% 变 48%，跨过 50% 红线",
+      "why": "2026-09-13 新增（真实验收时发现）：`docs/专家团-开发计划.md` 里这个指标**本来就有两种写法** —— §九 是绝对值（冻结后收尾 ≤ 1h30m），§四 E2 是比值（≤ 实现期 × 0.5）。比值的分母取哪一段**没人写死**，而实测同一个真实 run（liangge 的 有一个系统需要重构-141003）：**首产物→冻结 = 100 分钟** ⇒ 51/100 = **51%（超）**；**run:started→冻结 = 102 分钟**（含澄清/调研/设计）⇒ 50/102 = **48%（不超）**。红线是 50% ⇒ **边界一挪，结论翻转**。最自然的错法就是 `clockDeltaMinutes(started, closingStart)`（顺手用 run 起点当实现期起点）。⇒ closing-budget.test.mjs 的「实现期 203 不含 pre-code 131」必红。",
+      "test": "closing-budget.test.mjs",
+      "edits": [
+        {
+          "file": "lib/metrics/timing.js",
+          "find": "    implementMinutes: clockDeltaMinutes(implement, closingStart),",
+          "replace": "    implementMinutes: clockDeltaMinutes(started, closingStart), // MUTANT: 把 pre-code 也算进实现期（边界被挪）"
+        }
+      ]
+    },
+    {
+      "id": "M126-implement-start-ignores-first-runnable",
+      "title": "实现期起点**退回只认 `phase:implement`** ⇒ 有 review/test 却漏写 implement 的 run 整段算不出（真实 bug 回归）",
+      "why": "2026-09-13 新增（真实数据修正）：这是**实际发生过的缺陷** —— liangge 那个跑完的 run 明明写了 `phase:review`/`phase:test`，却**从没写 `phase:implement`**，而 `runTimeline` 当时只认 `phase:implement` ⇒ 收尾预算整段算不出来，还被误报成「一条阶段事件都没写」（同一份 METRICS 的「阶段覆盖」小节却显示 review/test 各 1 次，自相矛盾）。根因是**口径与代码不一致**：SKILL §7.33 ⓿ 与 METRICS 标题写的是「实现期 = **首产物** → 冻结」，代码却用 `phase:implement`。本变异体把起点退回旧写法 ⇒ closing-budget.test.mjs ⑦ 组的「两个都有 ⇒ 用首产物」「有首产物、无 phase:implement ⇒ 仍然算得出（100 / 51）」必红。",
+      "test": "closing-budget.test.mjs",
+      "edits": [
+        {
+          "file": "lib/metrics/timing.js",
+          "find": "  const implement = firstRunnable ?? first.implement ?? null;",
+          "replace": "  const implement = first.implement ?? null; // MUTANT: 退回只认 phase:implement（真实 bug）"
+        }
+      ]
+    },
+    {
+      "id": "M127-cjk-fact-invisible-again",
+      "title": "中文事实名退回 `\\b` 匹配 ⇒ **命中 0 而实际有 8 处**（真实 run 登记过的 `scan:limitation` 回归）",
+      "why": "2026-09-13 新增（设计稿第 1 步 · 中文事实名）。`\\b` 的词边界依赖 `\\w`（`[A-Za-z0-9_]`），**汉字是非单词字符** ⇒ `\\b变现体系\\b` 左右两侧永远不构成转换、**永远匹配不到**。这不是理论问题：那个跑完的真实 run 自己登记了 `scan:limitation` —— 「`变现体系` 命中 0，而实际 SPEC.md 有 8 处」。后果比「少扫一个词」严重得多：**单源化检查会假绿**（扫描器看不见的东西，等于「没有分叉」）。本变异体让中文事实名退回 `\\b` ⇒ scan-single-source.test.mjs ⑨ 组的「**能命中**中文事实名」与端到端「8 行以上能扫到」必红。",
+      "test": "scan-single-source.test.mjs",
+      "edits": [
+        {
+          "file": "skills/expert-team/scripts/scan-single-source.mjs",
+          "find": "  if (isCjkFact(f)) return new RegExp(escapeRegExp(f)); // 中文：子串（见上方取舍说明）",
+          "replace": "  if (false) return new RegExp(escapeRegExp(f)); // MUTANT: 中文退回 \\b（汉字非单词字符 ⇒ 命中 0）"
+        }
+      ]
+    },
+    {
+      "id": "M128-authority-two-writers-blind",
+      "title": "权威表**不再检查「同一文件两个写者」** ⇒ T29 那种「并发事故收敛」的形状失去唯一的事前拦阻点",
+      "why": "2026-09-13 新增（设计稿 §十二 · 工件单源化）。真实数据：14 条返工里 9 条（64%）来自「同一事实多份拷贝 / 多写者」，其中 T29 原文是「CONTRACT 单写者收口（**并发事故收敛** + 6 处已核实缺陷）」—— 事故已经发生才收口。权威表的六条校验里，「同一权威文件声明了 ≥2 个写者」是**唯一**能在事前抓住「两个角色会并发改同一份文件」的一条（其余几条查的是格式与覆盖）。去掉它，声明表就只剩「格式对不对」，而那 64% 的根因**不再有任何事前信号**。本变异体去掉这条 ⇒ authority.test.mjs 的「同一权威文件两个写者 ⇒ 违规」必红。",
+      "test": "authority.test.mjs",
+      "edits": [
+        {
+          "file": "lib/validate.js",
+          "find": "  for (const [f, writers] of byFile) {\n    if (writers.size > 1) {",
+          "replace": "  for (const [f, writers] of byFile) {\n    if (false) { // MUTANT: 不再检查「同一文件两个写者」（事前唯一拦阻点被去掉）"
+        }
+      ]
+    },
+    {
+      "id": "M129-authority-divergence-self-clearing",
+      "title": "分叉检测**自证清白**（在「声明的权威文件集合内部」找分叉）⇒ 永远报 0 条，看起来「项目很干净」",
+      "why": "2026-09-13 新增（设计稿 §十二）。**这是我真实写错过的版本**，被 authority.test.mjs 当场抓住：权威文件**本来就该定义**这个事实，所以在「声明为权威的这几个文件之间」找分叉，**结构上永远找不出违规**。正确判据是「**权威文件之外**还有谁在定义它」。这类错误特别隐蔽：报告照样生成、显示「分叉 0 条」，读者会以为检查通过了。本变异体让「权威之外」永不产生条目 ⇒ authority.test.mjs 的「权威(SPEC)之外还有人定义(CONTRACT) ⇒ 判分叉」与退出码 1 那条必红。",
+      "test": "authority.test.mjs",
+      "edits": [
+        {
+          "file": "skills/expert-team/scripts/scan-authority.mjs",
+          "find": "  const defsElsewhere = defs.filter((d) => d.file !== authorityFile);",
+          "replace": "  const defsElsewhere = []; // MUTANT: 自证清白 —— 权威之外的一律不看（永远报 0 条分叉）"
+        }
+      ]
+    },
+    {
+      "id": "M130-single-source-share-counts-everything",
+      "title": "「单源化类返工占比」把**所有任务**都算进来 ⇒ 指标被稀释，永远看起来达标",
+      "why": "2026-09-13 新增（设计稿 §十二 第 3 步 · 验收指标）。这一格是 §十二 唯一的验收尺子（真实基线：工具口径 **8/14 = 57%**，目标 ≤30%）。最容易的错法是不筛 `kind === repair`：那样分母变成全部任务（含 work/spec/review），真实那次的 57% 会被稀释成 8/40 = **20%** —— 看起来已经达标，而实际返工一点没少。这类错误特别危险：**指标达标 ≠ 问题解决**，而没人会去复核分母。本变异体去掉 `kind === repair` 过滤 ⇒ authority.test.mjs ⑥ 组的「只数 `kind=repair`」必红。",
+      "test": "authority.test.mjs",
+      "edits": [
+        {
+          "file": "lib/validate.js",
+          "find": "  const reps = (Array.isArray(tasks) ? tasks : []).filter((t) => t && t.kind === 'repair');",
+          "replace": "  const reps = (Array.isArray(tasks) ? tasks : []).filter((t) => t); // MUTANT: 分母变成全部任务（指标被稀释）"
+        }
+      ]
+    },
+    {
+      "id": "M131-token-unknown-field-silently-dropped",
+      "title": "token 事件里**一个字段名写错**时不再判坏 ⇒ 那个字段静默消失，数字少一块而没人知道",
+      "why": "2026-09-14 新增（P5 线 · token 记账）。真实诱因：`tokens:<scope>` 的字段名有 5 个近似拼法（`in` / `cache` / `out` / `steps` / `peak`），而宿主该处**不校验键名**（本包在 preset 的近失键名 `modle`/`reasoning_efforts` 上吃过同一个亏）。最容易写出的错法是 `steps=62 in=2 typo_x=5`（一个错、其余对）：若 `ok` 只要求「有合法字段」，这一行会被当成**合法**接受，写错的那个字段**静默丢掉** —— 报告照常生成、数字看起来正常，只是少了一块。本变异体把 `ok` 放宽成 `Object.keys(vals).length > 0` ⇒ token-accounting.test.mjs 的「一个字段写错 + 其余合法 ⇒ 整行判坏」必红。",
+      "test": "token-accounting.test.mjs",
+      "edits": [
+        {
+          "file": "lib/metrics/tokens.js",
+          "find": "  const ok = Object.keys(vals).length > 0 && unknownKeys.length === 0;",
+          "replace": "  const ok = Object.keys(vals).length > 0;"
+        }
+      ]
+    },
+    {
+      "id": "M132-lead-toolface-no-name-intersection",
+      "title": "lead 工具面**不与宿主真实工具名求交** ⇒ 名单里带上本平台不存在的 shell，`restrict()` **当场抛错**（不是降级）",
+      "why": "2026-09-14 新增（A 线 · lead 工具面）。真实诱因：本 preset 的 shell 工具是**平台二选一**的 —— `tool-bash` 写死 `disabled: process.platform === 'win32'`，`tool-pwsh` 反之。而宿主 `dsh-tools` 的 `restrict()` 对**该作用域不认识的名字是抛错**：`const unknown = [...].filter((name) => !known.has(name)); if (unknown.length > 0) throw new Error(...)`。⇒ 名单里同时写 `bash` 与 `pwsh`，在 macOS 上会因为 `pwsh` 不存在而**直接崩**。这类失败特别危险：它在开发机上可能完全不出现（名字恰好都在），换平台才炸；而且崩的是插件初始化，用户看到的是「专家团没反应」。本变异体去掉求交 ⇒ lead-toolface.test.mjs 的「posix **不**收 `pwsh`」与「win32 反向」必红。",
+      "test": "lead-toolface.test.mjs",
+      "edits": [
+        {
+          "file": "lib/lead-toolface.js",
+          "find": "    if (known.has(name)) { deny.push(name); continue; }",
+          "replace": "    if (true) { deny.push(name); continue; }"
+        }
+      ]
+    },
+    {
+      "id": "M133-lead-toolface-missing-root-gate",
+      "title": "去掉 `roots()` 安全闸门 ⇒ **角色子代理的 bash 被一起收掉**（能力故障，不是成本回退）",
+      "why": "2026-09-14 新增（A 线 · lead 工具面）。这是本线唯一一条**失败模式是「干不了活」而不是「没省钱」**的变异，所以必须钉死。真实诱因：识别 lead 的第一条判据是 `agentPresets.composedPreset(agent.ctx)`，而**角色子代理是用同一个 preset 组合出来的**（宿主 `dsh-subagent:543` 的 `composeFrom(childCtx, parent.ctx)`），所以它们的 composedPreset **同样是 `expert-team`**。只靠 presetId 判别，就会把 backend/qa/devops 等角色的 bash 一起收掉 —— 它们整条流水线都靠执行。第二条判据 `agents.roots().includes(agent)`（宿主文档：created without an owning agent context）就是拦这件事的。本变异体把它换成恒真 ⇒ lead-toolface.test.mjs ⑦「安全闸门在场：真的查了 roots()」必红。",
+      "test": "lead-toolface.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "const isRoot = agents?.roots?.().includes(agent) === true;",
+          "replace": "const isRoot = true;"
+        }
+      ]
+    }
+  ]
+}

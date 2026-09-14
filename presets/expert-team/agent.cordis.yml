@@ -1,0 +1,542 @@
+# The `standard` agent preset: the full coding agent, mounted once per process.
+#
+# This file is an AGENT-PLANE composition. The roster mounts it ONCE under a
+# standing scope; every session naming it joins by scope parentage, so the
+# tools and prompt sections registered here cover each joined agent while a
+# session's own state stays keyed per Session/Agent inside the plugins. The
+# host composition (`base.cordis.yml` + `web.cordis.yml`) keeps everything a
+# preset must not own: the registries themselves, the sandbox and approval
+# stack, persistence, and the model route.
+#
+# A service row here MUST sit inside a group carrying an `isolate` realm.
+# Without one it publishes into the root realm, where it is process-global —
+# another preset publishing the same name collides, and a host reader would
+# resolve one preset's instance for every session; `dsh-agent-presets` rejects
+# that at mount. `true` means an entry-local realm: this standing mount's own
+# private instance, apart from every other preset's. (A shared label does NOT
+# pool instances — `provide()` throws on the second registration under the
+# same realm symbol; labels join REALMS, and are not what this file needs.)
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+# The preset's own persona, shadowing the deployment default for this agent.
+# `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    prefix: >-
+      You are a coding agent powered by the {{model}} model.
+    suffix: Your working directory is {{cwd}}.
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+
+# `shell-env` stays in the HOST composition: `apps/cli/src/web.ts` injects it to
+# publish `DSH_WEB_URL`/`DSH_WEB_MODE`, and a host row that injects a service is
+# the criterion for host-plane ownership — injection resolves before any session
+# exists, so there is no agent to key by. Behind a preset realm those variables
+# never reached the model's shell at all. Both shell tools consume the host
+# registry from here; their executors (`bash-sandbox`/`pwsh-sandbox`) are
+# host-plane too.
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+# Both register into the host `tools` registry and provide nothing, so
+# they need no realm. The `fs` service and its policy stay in the host.
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── background jobs ────────────────────────────────────────────────────────
+
+# Only the model-facing controls. The task REGISTRY stays on the host plane:
+# its producers sit outside any realm this file could put it in — `tool-bash`
+# above resolves it with `ctx.get`, and an entry-local realm here is invisible
+# to every sibling row, so `run_in_background` would answer "background jobs
+# unavailable" while these controls sat in the catalog. The registry is keyed by
+# owning agent anyway, so one host instance serves every session. What a preset
+# chooses is whether its agent can collect and stop background work at all.
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── skills ──────────────────────────────────────────────────────────────────
+
+# The skill REGISTRY lives in the host composition and is layered per scope:
+# these rows register into THIS preset's layer of it, so they need no realm.
+# `skill-filesystem` contributes local-root discovery for agents on this preset, and
+# `tool-skill` gives them the catalog and loader; the merged catalog also
+# carries whatever the deployment registered globally (repository plugins).
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── goals ───────────────────────────────────────────────────────────────────
+
+# Only the model-facing tool. The goal SERVICE, its session driver, and the
+# `/goal` command stay on the host plane: the Gateway serves the goal domain as
+# Remote endpoints whose receiver comes from a generated descriptor, so it
+# resolves `goals` on the host and an entry-local realm here would hide it. The
+# registry is keyed by session anyway, so one host instance serves every
+# session. What a preset chooses is whether its agent can call the goal tool.
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+# ── plan mode ───────────────────────────────────────────────────────────────
+
+# Plan state is per-agent by nature, so an entry-local realm is not a
+# workaround here — it is the correct lifetime.
+- id: planning
+  name: cordis:group
+  group: true
+  isolate:
+    planMode: true
+  config:
+    - id: plan-mode
+      name: '@deepseek-ai/dsh-plan-mode'
+      config:
+        section: |
+              You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+              Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
+
+              The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+
+              Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+              Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
+
+              When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+
+# ── compaction ──────────────────────────────────────────────────────────────
+
+# `compaction-basic` reads `toolResultPrune` through `ctx.get`, so the pruner must
+# share this realm rather than sit outside it.
+#
+# `tokenMeter` is deliberately NOT in this realm: the meter stays on the HOST
+# plane, and the rows here resolve that one instance. It takes no configuration,
+# keys every fold by Session, and owns the context-meter projection units the
+# browser reads for every session — behind a realm those units would come and go
+# with whichever presets happen to be mounted. What a preset chooses is whether
+# its agent compacts at all, which is `compaction-basic` below.
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── delegation and workflows ────────────────────────────────────────────────
+
+# The `subagents` registry and its spawn/fork backends live in the HOST
+# composition: the registry is a process singleton whose cross-session queries
+# the api-proxy serves to the browser, and a provider name may only be
+# registered once. This preset contributes the delegation TOOLS, which resolve
+# that host registry.
+#
+# `workflows` is different — nothing outside an agent reads it — so every row
+# that reaches it shares one entry-local realm here, and a consumer left
+# outside would resolve a host registry this preset does not populate.
+#
+# `tool-subagent-report` is host-plane for the same reason as the registry,
+# not because a preset may not want it: it registers a CONTINUABLE SETUP on
+# that singleton rather than a tool this agent calls, and the setup list is
+# not scope-aware — one copy per mounted preset means every child gets
+# `report` registered once per live session, which throws on the second.
+- id: delegation
+  name: cordis:group
+  group: true
+  isolate:
+    workflowEngine: true
+  config:
+    - id: tool-subagent-control
+      name: '@deepseek-ai/dsh-tool-subagent-control'
+
+    - id: tool-subagent-list-agents
+      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+
+    - id: tool-subagent
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent
+        modelSelectionSettings: true
+        backgroundMode: continuable
+
+    - id: tool-subagent-fork
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: fork
+        toolName: subagent_fork
+        backgroundMode: continuable
+
+    # Production dsh does not install these optional providers. Install the
+    # matching Bundle in this Profile and restart the Host, then copy this
+    # preset and remove `disabled` from the matching tool row. Host availability
+    # alone grants no tool.
+    - id: tool-subagent-codex
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: true
+      config:
+        provider: codex
+        toolName: subagent_codex
+        backgroundMode: one-shot
+        maxDepth: provider-managed
+
+    - id: tool-subagent-claude-code
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: true
+      config:
+        provider: claude-code
+        toolName: subagent_claude_code
+        backgroundMode: one-shot
+        maxDepth: provider-managed
+
+    - id: workflow-worker-thread
+      name: '@deepseek-ai/dsh-workflow-worker-thread'
+      config:
+        provider: spawn
+
+    - id: tool-workflow
+      name: '@deepseek-ai/dsh-tool-workflow'
+
+    - id: tool-ralph
+      name: '@deepseek-ai/dsh-tool-ralph'
+      config:
+        subagentProvider: spawn
+        maxRounds: 64
+
+    # ── 推理等级「自动判断」策略（2026-09-10 定案 A）──────────────────────────
+    # 不再所有角色一律继承会话档位，而是**按角色写基线 + 由 lead 按任务动态升降**：
+    #   基线 high（契约/质量/实现关键）：pm、architect、reviewer、sec、dba、backend、frontend、qa
+    #   基线 low （机械/读取/写作）    ：researcher、ui、docs、devops
+    # 运行时升降：派工调用里传 `reasoning_effort: off|low|high|max`（合法值仅这 4 个；
+    # DeepSeek 适配器只认 off/low/high/max，传 medium 会报 UNSUPPORTED_REASONING_EFFORT）。
+    # 该覆盖需要宿主的「子代理模型选择」opt-in（设置命名空间 `subagent-model-selection`，
+    # Plugins 页可开）在新会话中被采样；否则只生效上面的角色基线。
+    # 注意：刻意**不 pin provider/model** —— 让角色继承会话的路由（auto 路由的 failover 才对角色生效）。
+    # 代价：若会话模型是未声明 reasoningEfforts 的手写模型（如 qwen/qvq/kimi 手写条目），
+    #      带 effort 的角色派工会因 effort 不受支持而报错，此时请把会话切回 deepseek-official 或 auto。
+    #
+    # ── L3-4b：异构交叉评审（角色级 provider/model pin）——**已探针证实，但有前置条件** ──
+    # 探针结论（2026-09-11 实读宿主源码，不是推测）：
+    #   ① 包在：`@deepseek-ai/dsh-tool-subagent` 存在于装树。
+    #   ② schema 收：`lib/index.js` 约 258-263 行 `agentOptions: z.object({ provider, model,
+    #      reasoningEffort, maxTokens })` ⇒ **确实可以按角色 pin provider/model**。
+    #   ③ 但有**两道运行期门襟**（不满足会在派工那一刻**直接抛错**，不是降级）：
+    #      · 第 378 行：`config.agentOptions !== undefined` 要求该 subagent provider 声明
+    #        `capabilities.agentOptions`（`spawn` provider 满足）；
+    #      · 第 379 行：**模型选择**还要求 `modelSelectionCapable` —— 即宿主的
+    #        「子代理模型选择」opt-in（设置命名空间 `subagent-model-selection`）**必须已开
+    #        且在新会话中被采样**。
+    #   ⇒ 所以本文件**默认不写 provider/model**：写了但你没开 opt-in，会让**每个角色工具报错**。
+    #
+    # 想启用异构交叉评审（让 review 跑在与实现者**不同的模型**上，避免"自己批自己"）：
+    #   1) 先在 Plugins 页开启「子代理模型选择」并至少允许一个 provider/model；**新建会话**使其生效。
+    #   2) 再给需要独立的角色（建议 reviewer / qa / sec）加 pin，例如：
+    #        agentOptions:
+    #          reasoningEffort: high
+    #          provider: deepseek-official      # ← 与实现者不同的路由
+    #          model: deepseek-v4-pro           # ← 与实现者不同的模型
+    #   3) 改动后**必跑** `node scripts/validate-agent-preset.mjs`（`npm run gate:preset`）——
+    #      它按插件真实 schema 校验，并能抓住 `reasoning_efforts` / `modle` 这类**近失键名**：
+    #      宿主该 object **非 strict**，写错键名既不报错也不被剥掉，配置留着但运行时按"没这个键"处理
+    #      ⇒ 角色**静默失去**该设置（本插件最危险的一类失败）。
+    # 代价（务必知情）：pin 了 provider/model 的角色**不再享受 `auto` 路由的 failover** ——
+    #   该路由抖动时这个角色会直接失败，而不是自动切到下一个目标。
+
+    # ── expert-team role experts ────────────────────────────────────────────
+    # Each role is a DISTINCT, continuable subagent tool instance with its own
+    # persona (system identity), toolFilter (lane enforcement), and maxDepth
+    # (no runaway delegation). All run on the in-process `spawn` provider and
+    # resolve the host `subagents` registry, exactly like `tool-subagent` above.
+    #
+    # `toolFilter.deny` uses GLOBAL tool names.
+    #
+    # `maxDepth` is an ABSOLUTE cap on the child's depth, not "how many more
+    # levels the child may delegate": `dsh-subagent` computes
+    # `childDepth = parentDepth + 1` and rejects when `childDepth > maxDepth`
+    # (resolveChildDepth → SubagentDepthError "subagent depth 1 exceeds maxDepth 0").
+    # A top-level lead is depth 0, so its roles are depth 1 and **maxDepth must be
+    # ≥ 1** — `0` makes every role tool fail. `1` keeps roles as leaves (a role
+    # delegating again would need depth 2 > 1, refused even if a deny list were
+    # bypassed); the `toolFilter.deny` lists below are the first line of defence.
+    - id: tool-subagent-pm
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent_pm
+        backgroundMode: continuable
+        maxDepth: 1
+        # cost/model auto-select: heavy tier. Since DeepSeek-V4.1-Flash
+        # (`deepseek-flash`, 2026-09-10) beats V4-Pro and V4-Pro is retired on
+        # 2026-09-14, both tiers use `deepseek-flash`; a future V4.1-Pro can take
+        # the heavy slots. Provider is omitted so children inherit the session's
+        # provider route (failover still applies).
+        agentOptions:
+          reasoningEffort: high
+        persona: >-
+          You are the Product Manager on an expert team. Clarify requirements,
+          write acceptance criteria into SPEC.md, and break work into TASKS.json.
+          Always fill the mandatory "boundaries and prohibitions" section:
+          self-reference, ownership/cross-parent, terminal state, authorization,
+          idempotency, cardinality, cascade counts, concurrent same-key, role
+          changes, visibility — each with the expected rejection. Spec silence
+          means "allowed" and WILL be implemented, so silence is a defect.
+          Read and write planning artifacts only — never edit or run code.
+        toolFilter:
+          deny: [bash]
+
+    - id: tool-subagent-architect
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent_architect
+        backgroundMode: continuable
+        maxDepth: 1
+        agentOptions:
+          reasoningEffort: high
+        persona: >-
+          You are the Chief Architect on an expert team. Define interfaces,
+          architecture, tradeoffs, and risks in PLAN.md (I/O contracts as JSON
+          Schema). Read and write planning artifacts only — never edit or run code.
+        toolFilter:
+          deny: [bash]
+
+    # 调研员 (researcher): locate code, trace dependencies, check the environment.
+    # A "light" role — default model is `deepseek-flash` (V4.1 Flash, 2026-09-10;
+    # natively multimodal and cheaper than the retired V4 Flash).
+    - id: tool-subagent-researcher
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent_researcher
+        backgroundMode: continuable
+        maxDepth: 1
+        agentOptions:
+          reasoningEffort: low
+        persona: >-
+          You are the Researcher on an expert team. Locate code, trace dependencies,
+          check the environment, and produce a research report (调研报告) into
+          RESEARCH.md. Read code and run read-only environment checks only —
+          never implement or edit business code.
+        toolFilter:
+          deny: [subagent_fork, workflow, ralph]
+
+    - id: tool-subagent-backend
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent_backend
+        backgroundMode: continuable
+        maxDepth: 1
+        agentOptions:
+          reasoningEffort: high
+        persona: >-
+          You are the Backend Engineer on an expert team. Implement only your own
+          TASKS.json items against the PLAN.md contract, and self-check with
+          build/tests. Do not delegate further.
+        toolFilter:
+          deny: [subagent_fork, workflow, ralph]
+
+    - id: tool-subagent-frontend
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent_frontend
+        backgroundMode: continuable
+        maxDepth: 1
+        agentOptions:
+          reasoningEffort: high
+        persona: >-
+          You are the Frontend Engineer on an expert team. Implement only your own
+          TASKS.json items against the PLAN.md contract, and self-check with
+          build/tests. Do not delegate further.
+        toolFilter:
+          deny: [subagent_fork, workflow, ralph]
+
+    # 代码审查员 (reviewer): read-only code review, SEPARATE from QA. A "heavy"
+    # role — default model is `deepseek-flash` (V4.1 Flash; V4-Pro retired
+    # 2026-09-14).
+    - id: tool-subagent-reviewer
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent_reviewer
+        backgroundMode: continuable
+        maxDepth: 1
+        agentOptions:
+          reasoningEffort: high
+        persona: >-
+          You are the Code Reviewer on an expert team. Review changes against
+          SPEC.md and PLAN.md for correctness, security, performance, and
+          architecture consistency; write REVIEW.md (issues/severity/verdict).
+          In spec review always produce a "silence list": behaviours the spec
+          does not cover but the implementation may allow — silence must never
+          count as approval. Verify every suspected finding against the source
+          and retract the false ones BEFORE any rework is dispatched; report your
+          retraction rate. Only P1/P2 and machine-checkable items block a pass.
+          Read-only: never edit code or run tests — focus on logic, not style.
+        toolFilter:
+          deny: [bash, subagent_fork, workflow, ralph]
+
+    - id: tool-subagent-qa
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent_qa
+        backgroundMode: continuable
+        maxDepth: 1
+        agentOptions:
+          reasoningEffort: high
+        persona: >-
+          You are the QA Engineer on an expert team. Run tests and builds, collect
+          verification results and evidence, and write TEST.md (commands/results/
+          verdict). Derive cases from the spec's boundary table too, not only from
+          acceptance criteria: at least one NEGATIVE assertion per boundary family.
+          If you observe behaviour the spec does not cover, report a "spec-gap"
+          instead of passing. Never report lint/build success as runtime success.
+          Never edit business code; do not delegate further.
+        toolFilter:
+          deny: [subagent_fork, workflow, ralph]
+
+    # UI 设计师 (ui): design tokens/interaction flows/visual QA. Read+plan
+    # only (UI.md) — implementation stays with frontend. A "light" role.
+    - id: tool-subagent-ui
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent_ui
+        backgroundMode: continuable
+        maxDepth: 1
+        agentOptions:
+          reasoningEffort: low
+        persona: >-
+          You are the UI Designer on an expert team. Define design tokens,
+          layout/interaction specs and visual QA checklists into UI.md, aligned
+          with SPEC.md acceptance criteria. Read files and design only — never
+          edit business code or run build/tests.
+        toolFilter:
+          deny: [bash, subagent_fork, workflow, ralph]
+
+    # 数据工程师 (dba): data contract/DDL/migration/data-quality plan. Read-only
+    # design plus read-only data checks. A "heavy" role (contract-critical).
+    - id: tool-subagent-dba
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent_dba
+        backgroundMode: continuable
+        maxDepth: 1
+        agentOptions:
+          reasoningEffort: high
+        persona: >-
+          You are the Data Engineer on an expert team. Own the data contract:
+          schema/DDL/migration plan, indexes, and data-quality rules into PLAN.md
+          and DATA.md. Read files and run read-only queries only — never write
+          business code or mutate data.
+        toolFilter:
+          deny: [subagent_fork, workflow, ralph]
+
+    # 安全审计员 (sec): security review (authz/privilege/injection/sensitive
+    # data). Read-only. A "heavy" role.
+    - id: tool-subagent-sec
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent_sec
+        backgroundMode: continuable
+        maxDepth: 1
+        agentOptions:
+          reasoningEffort: high
+        persona: >-
+          You are the Security Auditor on an expert team. Review design and code
+          for authz boundaries, privilege escalation, injection, and sensitive
+          data handling; write SECURITY.md (issues/severity/verdict). Read-only
+          — never edit code or run build/tests.
+        toolFilter:
+          deny: [bash, subagent_fork, workflow, ralph]
+
+    # 运维/发布 (devops): build/deploy/CI/environment. May run build/deploy
+    # commands, never writes business code. A "light" role.
+    - id: tool-subagent-devops
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent_devops
+        backgroundMode: continuable
+        maxDepth: 1
+        agentOptions:
+          reasoningEffort: low
+        persona: >-
+          You are the DevOps engineer on an expert team. Own build/deploy/CI:
+          verify builds, produce deployment notes and CI configs (RELEASE.md).
+          Run build/deploy/read-only checks only — never write business code or
+          alter production data; report blockers instead of forcing changes.
+        toolFilter:
+          deny: [subagent_fork, workflow, ralph]
+
+    # 文档工程师 (docs): README/user manual/API docs. A "light" role.
+    - id: tool-subagent-docs
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent_docs
+        backgroundMode: continuable
+        maxDepth: 1
+        agentOptions:
+          reasoningEffort: low
+        persona: >-
+          You are the Technical Writer on an expert team. Produce README, user
+          manual, and API docs (DOCS.md) from the shipped artifacts. Read files
+          and write docs content in your structured return — never edit
+          business code or run build/tests.
+        toolFilter:
+          deny: [bash, subagent_fork, workflow, ralph]
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+# The `web` service and its search provider stay in the host composition; only
+# the model-facing tool is per-session.
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000
