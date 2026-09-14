@@ -83,6 +83,14 @@ pnpm install && dsh web
 > runtime API to add a preset scan root), but it carries a version stamp and is re-materialised in full on
 > upgrade instead of silently going stale. `/team uninstall` reclaims the copies this plugin laid down —
 > it only removes directories carrying our stamp, and never touches content you authored yourself.
+>
+> **Where settings live**: on load the plugin registers its settings as the host namespace `expert-team`,
+> so they appear under **Settings → Plugins → Plugin configuration** and take effect immediately (limits,
+> round caps and the tier gate are recomputed in-process — no restart), and they travel with the plugin
+> market's **backup and restore**. **Honest boundary**: the default roster (an array of role ids) is *not*
+> on the official page — its value type cannot be expressed reliably in the host schema, so it stays with
+> the overlay's settings tab and `$DSH_HOME/expert-team/settings.json`. On a host with no settings service
+> every setting falls back to that file.
 
 ## Quick start
 
