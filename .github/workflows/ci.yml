@@ -27,6 +27,21 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - name: 全套测试（75 个测试文件，零依赖）
-        run: npm run test:all
+        run: |
+          set -o pipefail
+          npm run test:all 2>&1 | tee "$RUNNER_TEMP/test.log"
+      # 为什么要有这一步：job 日志的 REST 下载需要仓库 admin 权限（无鉴权拿 403），
+      # 所以失败时必须让**注解**带上关键输出 —— 注解经 /commits/<sha>/check-runs 可无鉴权读取，
+      # 排查方（含 AI 助手）不必登录浏览器翻日志。（2026-09-14 两次红都是靠这个才被看见的。）
+      - name: 失败时把测试输出尾部贴成注解
+        if: failure()
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const p = process.env.RUNNER_TEMP + "/test.log";
+            if (!fs.existsSync(p)) { console.log("::error::没有找到 test.log"); process.exit(0); }
+            const lines = fs.readFileSync(p, "utf8").split(/\r?\n/).filter((l) => l.trim() !== "").slice(-15);
+            for (const l of lines) console.log("::error::" + l.replace(/%/g, "%25"));
+          '
       - name: 占位包名残留检查
         run: node scripts/rename-package.mjs --check
