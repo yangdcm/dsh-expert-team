@@ -16,9 +16,9 @@ English | [中文](README.md)
 A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh):
 **zero runtime dependencies, no build step, no install hooks.**
 
-| 12 roles | 9 phases | 83 test files | 0 runtime deps | 0 build steps |
+| 12 roles | 9 phases | 84 test files | 0 runtime deps | 0 build steps |
 |---|---|---|---|---|
-| own persona / `toolFilter` / `maxDepth: 1` | 1 hard gate + 1 approval gate | incl. a 137-entry mutation catalog and several ratchets | `dependencies: {}` | no bundler, no `prepare` hook |
+| own persona / `toolFilter` / `maxDepth: 1` | 1 hard gate + 1 approval gate | incl. a 138-entry mutation catalog and several ratchets | `dependencies: {}` | no bundler, no `prepare` hook |
 
 > Zero runtime dependencies. Recommended: also install **Hindsight** (cross-project memory) — see [Dependencies and recommended plugins](#dependencies-and-recommended-plugins).
 
@@ -111,7 +111,7 @@ answer them:
 |---|---|
 | **Role separation** | 12 roles, each with its own persona, tool boundary (`toolFilter`) and delegation depth (`maxDepth: 1`); product/architecture roles only read and write planning artifacts, review/security are read-only, only implementers touch code |
 | **Phase gates** | 9 phases; every hand-off travels two channels — a structured return value **and** an artifact file. State never rides on chat history |
-| **Quality gates** | State-machine consistency is **enforced by plugin code**, not requested in a prompt: a task cannot be marked completed while unfinished, quality issues must be adjudicated by qa/reviewer, coverage gaps and over-budget rework are caught — violations show up **live** in the overlay and in `/team status` |
+| **Quality gates** | State-machine consistency is **enforced by plugin code**, not requested in a prompt: a task cannot be marked completed while unfinished, quality issues must be adjudicated by qa/reviewer, coverage gaps and over-budget rework are caught — violations show up **live** in the overlay and in `/team status`; **write-side ownership gate**: overwriting an artifact owned by another role is **rejected outright** on the `write`/`edit` channel (mounted on `tools/pre-execute`; creating is allowed; a role holding `bash` could still bypass — see the honest boundary in `lib/artifact-ownership.js`) |
 | **Convergence & accounting** | Every run records tokens, elapsed time, time-to-first-artifact and a closing budget; `/team learn` distills cross-run experience and feeds it back before the next run starts |
 
 ## What it looks like in action
@@ -158,9 +158,12 @@ A persistent status bar also sits directly above the chat input box (client slot
   that is the number-one source of rework.**
 - **Zero runtime dependencies, zero devDependencies, no build step, no `prepare`/`postinstall` hooks.**
   What you install is exactly what runs; there is no "unknown script at install time" layer.
-- **83 test files plus a 137-entry mutation catalog.** `npm run test:all` needs no `install` (it is what CI runs);
-  the mutation catalog requires every mutant to be killed by at least one test — the suite is not "green",
-  it is *able to catch errors*.
+- **84 test files plus a 138-entry mutation catalog.** `npm run test:all` needs no `install` (it is what CI runs).
+  ⚠️ **What the catalog actually guarantees (honest version)**: in CI, `mutation-catalog.test.mjs` validates the catalog SHAPE —
+  unique ids, each mutant `find` string matching exactly once in its target file, the target test file existing, and the entry count
+  matching the constant. **Mutants themselves must be injected by hand** (swap `find` for `replace` and run the target test to see if it
+  turns red); **CI does not execute mutants today**. So it is a guard against drift and typos, not an automatic proof that the suite
+  catches errors — please do not read it as the latter.
 - **Several ratchet tests** pin down rules that were already thought through, so they cannot quietly regress:
   `vocab-consistency` (one source for vocabulary and role labels), `scan-single-source` (no fact with two homes),
   `write-bypass-ratchet` (no write path may bypass interception), `settings-consumers`
@@ -388,7 +391,7 @@ evolve with the skill, without shipping a new package.
 ## Development
 
 ```sh
-npm run test:all        # 83 test files, zero dependencies, no install needed (this is what CI runs)
+npm run test:all        # 84 test files, zero dependencies, no install needed (this is what CI runs)
 npm run rename <name>   # after forking: syncs 4 package-name spellings across 13 files
 npm run check:name      # check for leftover placeholder package names
 ```

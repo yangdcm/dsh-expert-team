@@ -14,9 +14,9 @@
 
 装在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 上的 dsh 插件：**零运行时依赖、无构建步骤、无安装钩子**。
 
-| 12 角色 | 9 阶段 | 83 个测试文件 | 0 运行时依赖 | 0 构建步骤 |
+| 12 角色 | 9 阶段 | 84 个测试文件 | 0 运行时依赖 | 0 构建步骤 |
 |---|---|---|---|---|
-| 各带人设 / `toolFilter` / `maxDepth: 1` | 含 1 道硬门 + 1 道确认门 | 含 137 条变异目录与多组棘轮 | `dependencies: {}` | 无 bundler、无 `prepare` 钩子 |
+| 各带人设 / `toolFilter` / `maxDepth: 1` | 含 1 道硬门 + 1 道确认门 | 含 138 条变异目录与多组棘轮 | `dependencies: {}` | 无 bundler、无 `prepare` 钩子 |
 
 > 零运行时依赖。推荐同时装 **Hindsight**（跨项目记忆）—— 见[依赖与推荐插件](#依赖与推荐插件--dependencies-and-recommended-plugins)。
 
@@ -102,7 +102,7 @@ $ /team 做一个带登录的支付模块
 |---|---|
 | **角色分工** | 12 个角色各带独立人设、工具边界（`toolFilter`）、委派深度（`maxDepth: 1`）；产品/架构只读写计划工件，审查/安全只读，实现者才动代码 |
 | **阶段门控** | 9 个阶段，每次交接走「结构化返回值 + 工件文件」双通道 —— 状态不靠聊天记录传递 |
-| **质量门禁** | 状态机一致性由**插件代码强制**（不是提示词请求）：任务未完成不能标 completed、质量问题必须由 qa/reviewer 裁决、覆盖率缺口、超轮次返工 —— 违规**实时**显示在浮层并计入 `/team status` |
+| **质量门禁** | 状态机一致性由**插件代码强制**（不是提示词请求）：任务未完成不能标 completed、质量问题必须由 qa/reviewer 裁决、覆盖率缺口、超轮次返工 —— 违规**实时**显示在浮层并计入 `/team status`；**写侧归属门禁**：非负责人覆写他人工件在 `write`/`edit` 通道**当场拒绝**（挂在 `tools/pre-execute`，创建放行；持 `bash` 的角色仍可能绕过，见 `lib/artifact-ownership.js` 的诚实边界） |
 | **收敛与记账** | 每 run 记 token/耗时/首产物时间/收尾预算；`/team learn` 跨 run 蒸馏经验，并在下次开工前回注 |
 
 ## 看一眼它在干什么
@@ -140,8 +140,8 @@ $ /team 做一个带登录的支付模块
   （`SPEC_COMPLETE_PHASES`）。**规格沉默等于允许，那正是头号返工源。**
 - **零运行时依赖、零 devDependencies、无构建步骤、无 `prepare`/`postinstall` 钩子。** 装完就是能跑的那份代码，
   没有"安装时执行未知脚本"这一层。
-- **83 个测试文件 + 137 条变异目录。** `npm run test:all` 无需 `install` 即可跑（CI 跑的就是它）；
-  `mutation-catalog` 要求每个变异体都至少被一个测试杀掉 —— 测试不是"跑绿了"，而是"能抓到错"。
+- **84 个测试文件 + 138 条变异目录。** `npm run test:all` 无需 `install` 即可跑（CI 跑的就是它）。
+  ⚠️ **变异目录的实际保障范围（如实说）**：`mutation-catalog.test.mjs` 在 CI 里校验的是目录**形状** —— id 唯一、每个变异体的 `find` 串在目标文件里**恰好命中一次**、目标测试文件存在、条数与常量一致；**变异体本身需要手动注入**（把 `find` 换成 `replace` 再跑对应测试，看它是否变红），**CI 目前不执行变异体**。所以它是"防呆 + 防漂移"，不是"自动证明测试能抓错" —— 别把它读成后者。
 - **多组棘轮（ratchet）测试**，把"已经想清楚的规矩"钉住，防止悄悄退化：
   `vocab-consistency`（术语与角色标签单一真源）、`scan-single-source`（同一事实不许有两个家）、
   `write-bypass-ratchet`（写侧不许绕过拦截）、`settings-consumers`（**每个设置项都必须有消费者**，白名单集合相等 ⇒ 只减不增）、
@@ -346,7 +346,7 @@ presets/expert-team/   「专家团模式」preset：12 个角色 subagent 工�
 ## 开发
 
 ```sh
-npm run test:all        # 83 个测试文件，零依赖、无需 install（CI 跑的就是它）
+npm run test:all        # 84 个测试文件，零依赖、无需 install（CI 跑的就是它）
 npm run rename <新包名>  # fork 后改名：自动同步 13 个文件里 4 种包名写法
 npm run check:name      # 检查占位包名残留
 ```

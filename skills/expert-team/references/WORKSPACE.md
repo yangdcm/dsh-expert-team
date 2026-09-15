@@ -109,7 +109,7 @@ persist 模式下，`members` 记录每个角色的可继续子 agent id，供 r
   "mode": "one-shot | persist",
   "deliverable": "code+artifacts | artifacts-only",
   "coverage": [ { "constraint": "<用户约束>", "tasks": ["be-1", "fe-2"] } ],
-  "members": ["backend:<subagentId>", "frontend:<subagentId>"],
+  "members": ["<agentSessionId>:backend", "<agentSessionId>:frontend"],   // 形状 = <agentId>:<role>（真源：lib/command.js 的 roleOfAgent / membersFromState）
   "updatedAt": "<iso>"
 }
 ```

@@ -22,7 +22,8 @@
 - 落盘位置：工件在 `<你的工作区>/team/<run-id>/`；本机偏好与跨项目经验在 `$DSH_HOME/expert-team/`
 - 推荐插件：Hindsight（跨项目/跨会话长期记忆）— 不装也能跑完整个流程
 - 可选插件：`dsh-cost-meter`（会话费用视图）
-- 测试：83 个测试文件（`npm run test:all`，零依赖、无需 `install`），含 137 条变异目录与多组棘轮（ratchet）测试
+- 测试：84 个测试文件（`npm run test:all`，零依赖、无需 `install`），含 138 条变异目录与多组棘轮（ratchet）测试（变异目录在 CI 里只校验形状；变异体需手动注入验证）
+- 写侧门禁：`write`/`edit` 通道有工件归属硬门禁（`tools/pre-execute`；创建放行、覆写他人工件当场拒绝；持 `bash` 的角色仍可能绕过）
 - 设置页：官方 `设置 →「专家团」`（宿主命名空间 `expert-team`，改动即时生效，随插件市场备份/恢复）
 - 关键词：dsh 插件 · DeepSeek Harness · 多智能体 · multi-agent · agent team · orchestration · 角色化 subagent · 依赖 DAG 并行 · 阶段门控 · 质量门禁 · 工件留痕 · role-based subagents
 
