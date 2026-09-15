@@ -18,6 +18,32 @@
 |---|---|---|---|---|
 | 各带人设 / `toolFilter` / `maxDepth: 1` | 含 1 道硬门 + 1 道确认门 | 含 136 条变异目录与多组棘轮 | `dependencies: {}` | 无 bundler、无 `prepare` 钩子 |
 
+## 为谁而做
+
+**给中小团队与个人接单者的一支「完整技术部」** —— 不用招人、不用攒团队：一句话拉起产品、架构、调研、
+UI/UX、前后端、数据、安全、评审、测试、运维、文档这 12 个岗位，按 9 阶段门控流程交付，
+实现者直接改你的代码库，全程留痕成可复核的工件。
+
+| 技术部岗位 | 角色 | 在这个流程里做什么 |
+|---|---|---|
+| 产品经理 | `pm` | 澄清需求、写 `SPEC.md`，把边界与禁止项**前置** |
+| 架构师 | `architect` | 方案与模块划分、依赖 DAG、`AUTHORITY.md` 单源 |
+| 技术调研 | `researcher` | 取舍与出处，给结论不给流水账 |
+| UI/UX | `ui` | 界面结构与交互 |
+| 后端 / 前端 | `backend` / `frontend` | **只有实现者动代码**，各改自己那份文件 |
+| 数据 | `dba` | schema / 迁移 / 查询 |
+| 安全审计 | `sec` | 越权、注入、密钥与依赖风险 |
+| 代码评审 | `reviewer` | 独立评审，**不能自批自过** |
+| 测试 | `qa` | 覆盖缺口、边界用例、验收判据 |
+| 运维 | `devops` | 构建、发布、环境与配置 |
+| 技术文档 | `docs` | README / 手册 / 变更记录 |
+| **你** | lead | 只拍板产品级与范围级决策，其余由团队推进 |
+
+**典型场景**：中小公司内部工具与产品迭代 · 个人接单 / 外包交付 · 独立开发者做完整项目 ·
+任何"需要有人独立验证"的长任务。
+
+<sub>一句诚实边界：它**不是**人类团队 —— 产品级与范围级决策仍由你拍板。</sub>
+
 ![9 阶段门控流水线](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/pipeline.svg)
 
 <sub>图 1：9 阶段门控流水线。「规格评审」是**硬门** —— SPEC.md 的「边界与禁止项」没填就不放行（`lib/interception.js`）；「方案确认」是默认开启的**确认门**（`identity.keepPlanGate`，可在设置里关掉）；「实现」阶段按依赖 DAG **并行扇出**，多个实现者同时开工、各自只改自己那份文件。</sub>
@@ -59,21 +85,25 @@ $ /team 做一个带登录的支付模块
 
 ## 看一眼它在干什么
 
+![全屏画布：阶段条与团队编制](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/canvas.png)
+
+<sub>图 2：**全屏画布**。看阶段条与进度、团队编制（谁在跑、用哪个模型）、以及 `人 / 事 / 料 / 盘` 四个视角 —— 比浮层更完整的一层视图。</sub>
+
 ![质量门禁违规实时可见](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-gate.png)
 
-<sub>图 2：**门禁违规**。看顶部那条横幅 —— 违规项与拒绝理由（例如"SPEC.md 的边界章节已进入 `implement` 但仍无任何一行填写"）由 `lib/interception.js` 挂在宿主 `tools/post-execute` 上当场判出后推出，不是提示词提醒。</sub>
+<sub>图 3：**门禁违规**。看顶部那条横幅 —— 违规项与拒绝理由（例如"SPEC.md 的边界章节已进入 `implement` 但仍无任何一行填写"）由 `lib/interception.js` 挂在宿主 `tools/post-execute` 上当场判出后推出，不是提示词提醒。</sub>
 
 ![成员模型与任务详情](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-live.png)
 
-<sub>图 3：**角色编制**。看成员列表 —— 谁在跑、用哪个模型、当前在做什么；展开任一成员可看它的任务与产物。模型可按角色分别配置，异构模型用于交叉验证。</sub>
+<sub>图 4：**角色编制**。看成员列表 —— 谁在跑、用哪个模型、当前在做什么；展开任一成员可看它的任务与产物。模型可按角色分别配置，异构模型用于交叉验证。</sub>
 
 ![阶段推进与工件预览](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-flow.png)
 
-<sub>图 4：**阶段与工件**。看阶段条与预览区 —— 当前阶段、已过阶段、以及该阶段真正写下的工件正文（工件是唯一真源，浮层只是它的视图）。</sub>
+<sub>图 5：**阶段与工件**。看阶段条与预览区 —— 当前阶段、已过阶段、以及该阶段真正写下的工件正文（工件是唯一真源，浮层只是它的视图）。</sub>
 
 ![官方设置页里的专家团分节](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
 
-<sub>图 5：**设置**。看官方 `设置 →「专家团」` 这一页 —— 18 个设置项、中文标签、**改动即保存并即时生效**（上限/轮次/档位门/振荡检测在进程内重算）；值存在宿主命名空间 `expert-team`，随插件市场的备份/恢复一起走。</sub>
+<sub>图 6：**设置**。看官方 `设置 →「专家团」` 这一页 —— 18 个设置项、中文标签、**改动即保存并即时生效**（上限/轮次/档位门/振荡检测在进程内重算）；值存在宿主命名空间 `expert-team`，随插件市场的备份/恢复一起走。</sub>
 
 ## 它为什么可靠
 

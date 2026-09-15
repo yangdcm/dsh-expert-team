@@ -20,6 +20,33 @@ A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 |---|---|---|---|---|
 | own persona / `toolFilter` / `maxDepth: 1` | 1 hard gate + 1 approval gate | incl. a 136-entry mutation catalog and several ratchets | `dependencies: {}` | no bundler, no `prepare` hook |
 
+## Who it is for
+
+**A complete engineering department for small teams and solo builders** — no hiring, no assembling a team:
+one sentence spins up the twelve seats (product, architecture, research, UI/UX, backend, frontend, data,
+security, review, QA, devops, docs) and delivers through a 9-phase gated pipeline. Implementers edit your
+codebase directly, and everything is logged as reviewable artifacts.
+
+| Department seat | Agent | What it does in the pipeline |
+|---|---|---|
+| Product manager | `pm` | Clarifies the ask, writes `SPEC.md`, **front-loads** boundaries and prohibitions |
+| Architect | `architect` | Approach and module split, dependency DAG, `AUTHORITY.md` as the single source |
+| Technical research | `researcher` | Trade-offs with sources; conclusions, not a running commentary |
+| UI/UX | `ui` | Interface structure and interaction |
+| Backend / frontend | `backend` / `frontend` | **Only implementers touch code**, each editing its own files |
+| Data | `dba` | Schema, migrations, queries |
+| Security audit | `sec` | Privilege escalation, injection, secrets and dependency risk |
+| Code review | `reviewer` | Independent review — **cannot approve its own work** |
+| QA | `qa` | Coverage gaps, boundary cases, acceptance criteria |
+| DevOps | `devops` | Build, release, environments and configuration |
+| Technical docs | `docs` | README, manual, changelog |
+| **You** | lead | You only decide product-level and scope-level questions; the team drives the rest |
+
+**Typical uses**: internal tools and product iteration in small companies · freelance and outsourced delivery ·
+solo developers shipping a complete project · any long task where "someone independent must verify" matters.
+
+<sub>One honest boundary: this is **not** a human team — product-level and scope-level decisions remain yours.</sub>
+
 ![The 9-phase gated pipeline](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/pipeline.svg)
 
 <sub>Figure 1: the 9-phase gated pipeline. `spec-review` is a **hard gate** — if the SPEC.md
@@ -67,26 +94,30 @@ answer them:
 
 ## What it looks like in action
 
+![The full-screen canvas: phase bar, progress and roster](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/canvas.png)
+
+<sub>Figure 2: **the full-screen canvas**. Look at the phase bar and progress, the roster (who is running, on which model), and the four views (people / tasks / artifacts / board) — one layer above the floating panel.</sub>
+
 ![Quality-gate violations surfaced live](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-gate.png)
 
-<sub>Figure 2: **gate violations**. Look at the banner at the top — the violation and its refusal reason
+<sub>Figure 3: **gate violations**. Look at the banner at the top — the violation and its refusal reason
 (e.g. "SPEC.md's boundary section has entered `implement` but still has no 'expected rejection' row")
 is decided by `lib/interception.js`, hooked onto the host's `tools/post-execute` waterfall, and surfaced
 immediately. This is code, not a prompt reminder.</sub>
 
 ![Members, models and task detail](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-live.png)
 
-<sub>Figure 3: **the roster**. Look at the member list — who is running, on which model, and what it is doing;
+<sub>Figure 4: **the roster**. Look at the member list — who is running, on which model, and what it is doing;
 expand a member for its tasks and artifacts. Models are configurable per role; heterogeneous models are used for cross-checking.</sub>
 
 ![Phase progress and artifact preview](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-flow.png)
 
-<sub>Figure 4: **phases and artifacts**. Look at the phase bar and the preview pane — the current phase, the phases
+<sub>Figure 5: **phases and artifacts**. Look at the phase bar and the preview pane — the current phase, the phases
 already passed, and the actual body of the artifact written in that phase (artifacts are the single source of truth; the overlay is just a view of them).</sub>
 
 ![The expert-team section inside the official settings page](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
 
-<sub>Figure 5: **settings**. Look at the official `Settings → Expert team` page — 18 settings, Chinese labels,
+<sub>Figure 6: **settings**. Look at the official `Settings → Expert team` page — 18 settings, Chinese labels,
 **saved on change and applied immediately** (caps, rounds, the tier gate and the oscillation detector are recomputed
 in-process). Values live in the host namespace `expert-team`, so they travel with the plugin market's backup/restore.</sub>
 
