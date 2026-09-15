@@ -76,4 +76,4 @@
 - **工具守界**：非实现角色（pm/architect/researcher/ui/reviewer/sec/docs）在 preset toolFilter 里不得有写业务代码/改文件工具，只读；qa/devops 只跑测试/构建/部署命令，dba 只做只读查询。越权工具已从 preset 移除；若遇通用 subagent 回退，写进 prompt 的 ROLES.md 守界条款同样适用。
 - **实现者只动 `inScope`**：每条实现/修复任务的 `inScope` 写清合法改动范围；实现者不得改 `outOfScope` 文件；完成时回报 `changedPaths`，lead 对照 `inScope` 审计，越界不得 `completed`。
 - **高危命令**：成员（尤其实现者）禁止执行 `rm -rf`、`sudo`、`chmod 777`、`git push --force` 等破坏性/生产命令；这些只由 lead 在**沙箱/受控终端**里跑（dsh sandbox 已启用时），且需用户确认。
-- **审计**：lead 把关键工具/文件变更链路记入 `RUN.log`（`tool:bash <cmd>`、`fs:write <path>`），形成可追溯审计；`/team learn` 会聚合高频错误/越界。
+- **审计**：lead 把关键工具/文件变更链路记入 `RUN.log`（`tool:bash <cmd>`、`fs:write <path>`）——§2 口径：lead 无 `write`，内容由 lead 口述、指派的有 `write` 角色落盘——形成可追溯审计；`/team learn` 会聚合高频错误/越界。

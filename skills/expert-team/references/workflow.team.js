@@ -23,7 +23,7 @@ const spec = await agent(
   `3) 产出 PLAN.md 骨架内容（设计段留空给 architect）。\n` +
   `4) 产出 TASKS.json 任务数组（id/owner/title/spec/acceptance/dependsOn/status=pending）。\n` +
   `★ 用 write 把 SPEC.md 完整内容写到 {{run-dir}}/SPEC.md、PLAN 骨架写到 {{run-dir}}/PLAN.md；\n` +
-  `   TASKS.json 数组因体量小可只放进返回值（lead 落盘），也可一并 write。\n` +
+  `   TASKS.json 数组因体量小可只放进返回值（由产出角色自己 write 到 run-dir；见 SKILL.md §2），也可一并 write。\n` +
   `返回值只回：specPath、planPath、tasks（小）、openQuestions（小）。不要在返回值里塞 SPEC/PLAN 全文。\n` +
   `目标：{{task}}`,
   { label: "pm", phase: "clarify", schema: { type: "object", properties: { specPath: { type: "string" }, planPath: { type: "string" }, tasks: { type: "array", items: { type: "object" } }, openQuestions: { type: "array", items: { type: "string" } } }, required: ["specPath", "tasks"] } }
@@ -47,14 +47,14 @@ const implementers = await parallel([
   () => agent(
     `【后端工程师】运行目录：{{run-dir}}。\n` +
     `只实现 TASKS.json 里 owner=backend 的任务，以 PLAN.md 契约为准（读 {{run-dir}}/PLAN.md 的设计段）。\n` +
-    `直接改代码；每完成一个任务，在返回值里给出 status/改动文件/一行说明（不要自己改 TASKS.json，由 lead 统一更新）。\n` +
+    `直接改代码；每完成一个任务，在返回值里给出 status/改动文件/一行说明（TASKS.json 的写者按 §2：由产出它的角色落盘；lead 没有 write，用 /team task <id> <状态> 命令回写状态）。\n` +
     `「此能力是否被真正调用并回流到前端」属你的自检项，未接线必须上报（不要等评审/QA 才暴露）。契约/枚举分歧写进 blockers。`,
     { label: "backend", phase: "implement", schema: { type: "object", properties: { tasks: { type: "array", items: { type: "object" } }, blockers: { type: "array", items: { type: "string" } } }, required: ["tasks"] } }
   ),
   () => agent(
     `【前端工程师】运行目录：{{run-dir}}。\n` +
     `只实现 TASKS.json 里 owner=frontend 的任务，以 PLAN.md 契约为准（读 {{run-dir}}/PLAN.md 的设计段）。\n` +
-    `直接改代码；每完成一个任务，在返回值里给出 status/改动文件/一行说明（不要自己改 TASKS.json，由 lead 统一更新）。\n` +
+    `直接改代码；每完成一个任务，在返回值里给出 status/改动文件/一行说明（TASKS.json 的写者按 §2：由产出它的角色落盘；lead 没有 write，用 /team task <id> <状态> 命令回写状态）。\n` +
     `「此能力是否被真正调用并回流」属你的自检项，未接线必须上报。契约/枚举分歧写进 blockers。`,
     { label: "frontend", phase: "implement", schema: { type: "object", properties: { tasks: { type: "array", items: { type: "object" } }, blockers: { type: "array", items: { type: "string" } } }, required: ["tasks"] } }
   ),
@@ -84,9 +84,9 @@ const test = await agent(
 
 phase("deliver");
 
-// workflow 返回后，lead 落盘说明（大工件由角色已写盘，此处只回路径 + 小字段）：
-//   如需聊天框可点击预览，lead 用 read 读回 {{run-dir}}/SPEC.md 等再 write 一次（可选，
-//   也可直接引用文件名）。TASKS.json 用 design.tasks（lead 用 write 落盘）。
+// workflow 返回后，工件由产出角色自己落盘（见 SKILL.md §2）；此处只回路径 + 小字段：
+//   如需聊天框可点击预览，lead 用 read 读回 {{run-dir}}/SPEC.md 等（read 在 lead 工具面内，
+//   write 不在 ⇒ lead 不落盘）。TASKS.json 取 design.tasks（同样由产出角色 write 落盘）。
 return {
   runDir: "{{run-dir}}",
   spec: { specPath: spec.specPath, planPath: spec.planPath, tasks: spec.tasks, openQuestions: spec.openQuestions },

@@ -6,24 +6,24 @@
 
 | 文件 | 维护者 | 内容 |
 |---|---|---|
-| `TASK.md` | /team 命令建；lead 更新 | 目标、模式、交付口径、状态、交付结论 |
-| `ROSTER.json` | /team 命令建；lead 更新 | 角色编制、成员映射 |
-| `STATE.json` | lead 每阶段更新 | 当前 phase / status / members |
-| `任务看板.md` | **lead 全程维护**（每个阶段结束写一次） | 任务计划 + 状态表 + 当前阶段（可视化进度，聊天框可点击预览） |
-| `SPEC.md` | pm 产出内容；**lead 落盘** | Ultra Spec：功能目标、验收标准、业务规则、边界 Case、安全边界（三级权限）、测试计划 |
-| `PLAN.md` | pm 骨架 + architect 设计段；**lead 落盘** | 里程碑、接口契约（I/O JSON Schema）、数据流、风险 |
-| `RESEARCH.md` | researcher 产出内容；**lead 落盘** | 代码定位、依赖、环境、存量约束 |
-| `TASKS.json` | pm 初稿 → architect 细化 → lead 更新状态 | 唯一实现事实来源（含 dependsOn 依赖） |
-| `REVIEW-SPEC.md` | reviewer（spec-review 阶段，可选）；**lead 落盘** | 对 Spec 的交叉审查结论 |
-| `REVIEW.md` | reviewer 产出内容；**lead 落盘** | 代码审查：问题清单、严重级、结论 |
-| `TEST.md` | qa/测试补位产出内容；**lead 落盘** | 测试命令、结果、覆盖、结论 |
-| `SUMMARY.md` | lead（deliver 阶段） | **交付总结**：各任务结论/改动/commit/评审测试结论 |
-| `RUN.log.md` | /team 命令建；lead 逐行追加 | 运行轨迹（阶段/角色/决策/卡点，见 LOGGING.md） |
-| `RETRO.md` | lead（deliver 阶段） | 本次复盘：快/慢/卡点/可复用经验 |
+| `TASK.md` | /team 命令建（宿主执行）；lead 口述 + 指派的有 `write` 成员落盘（§2） | 目标、模式、交付口径、状态、交付结论 |
+| `ROSTER.json` | /team 命令建/更新（宿主执行；lead 无 `write`，§2） | 角色编制、成员映射 |
+| `STATE.json` | **运行时**（唯一写者） | 当前 phase / status / members |
+| `任务看板.md` | lead 口述 + 指派的有 `write` 成员落盘（每个阶段结束一次） | 任务计划 + 状态表 + 当前阶段（可视化进度；工件以 `path` 可核验，交付时由 lead 用 `dsh_im_return_file` 发给用户） |
+| `SPEC.md` | **pm 自己落盘** | Ultra Spec：功能目标、验收标准、业务规则、边界 Case、安全边界（三级权限）、测试计划 |
+| `PLAN.md` | **architect 自己落盘**（pm 骨架 + architect 设计段） | 里程碑、接口契约（I/O JSON Schema）、数据流、风险 |
+| `RESEARCH.md` | **researcher 自己落盘** | 代码定位、依赖、环境、存量约束 |
+| `TASKS.json` | pm 初稿 → architect 细化 → lead 用 `/team task` 回写状态 | 唯一实现事实来源（含 dependsOn 依赖） |
+| `REVIEW-SPEC.md` | **reviewer 自己落盘**（spec-review 阶段，可选） | 对 Spec 的交叉审查结论 |
+| `REVIEW.md` | **reviewer 自己落盘** | 代码审查：问题清单、严重级、结论 |
+| `TEST.md` | **qa/测试补位角色自己落盘** | 测试命令、结果、覆盖、结论 |
+| `SUMMARY.md` | lead 口述 + 指派的有 `write` 成员落盘（deliver 阶段） | **交付总结**：各任务结论/改动/commit/评审测试结论 |
+| `RUN.log.md` | /team 命令建；事件由产出该事件的角色落盘（lead 口述、指派有 `write` 的成员执行） | 运行轨迹（阶段/角色/决策/卡点，见 LOGGING.md） |
+| `RETRO.md` | lead 口述 + 指派的有 `write` 成员落盘（deliver 阶段） | 本次复盘：快/慢/卡点/可复用经验 |
 
-> 所有角色产出内容都**由 lead 用 `write` 落盘**（见 ROLES.md）——这样工件成为 lead 本轮产出文件，聊天框可点击预览。
+> run 工件一律由**产出它的角色自己 `write` 到 `<run-dir>/`**；角色只回 `path` + 摘要 + `verdict`；**lead 没有 `write`**，只读工件做门控与裁决（唯一权威表述见 `SKILL.md` §2）——工件因此是产出角色本轮的产出文件，以 `path` 可核验；交付时由 lead 用 `dsh_im_return_file` 发给用户（「聊天框可点击产出文件行」的机制未独立证实，不作为承诺）。
 
-> `team/LEARNINGS.md` 位于 `<cwd>/team/`（跨 run 累积，不在单个 run 目录内）：lead 在 run 开始前读取、deliver 时追加。
+> `team/LEARNINGS.md` 位于 `<cwd>/team/`（跨 run 累积，不在单个 run 目录内）：lead 在 run 开始前**只读**；deliver 时由 lead 口述、指派的有 `write` 成员追加。
 
 ## TASKS.json
 
@@ -120,4 +120,4 @@ persist 模式下，`members` 记录每个角色的可继续子 agent id，供 r
 
 1. 每个角色的**结构化返回值**与它写的工件内容必须一致（结构化值是给编排脚本/下一阶段的机器可读摘要；工件是持久化事实）。
 2. 下游角色读工件，不读上游的完整对话；跨角色接口一律以 `PLAN.md` 契约为准。
-3. 任何角色改完自己的工件后，由 lead 统一更新 `STATE.json.phase`。
+3. `STATE.json` 的**唯一写者是运行时**（本 run 实测 `revision=1`、`members` 被运行时增补）；角色与 lead **只读**，任何角色改完自己的工件后都不回写 `STATE.json.phase`。

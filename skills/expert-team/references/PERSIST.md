@@ -8,7 +8,7 @@
 
 - **优先用角色工具**（会话运行在「专家团模式」preset 时可用）：`subagent_pm` / `subagent_architect` / `subagent_researcher` / `subagent_ui` / `subagent_backend` / `subagent_frontend` / `subagent_dba` / `subagent_sec` / `subagent_reviewer` / `subagent_qa` / `subagent_devops` / `subagent_docs`。它们的 persona、toolFilter、maxDepth 已由配置保证——`prompt` 里只需给「本阶段任务 + 要读写/更新的工件」，`description` 用角色名。
 - **退回通用 `subagent`**（未运行 expert-team preset 时）：`prompt` 用 `ROLES.md` 里该角色的完整模板（含通用前缀，并把 `{{run-dir}}` 替换为真实路径、`{{role}}` 替换为角色名），`description` 用角色名。
-- `run_in_background` 默认 true。返回 `{ subagentId }` 后，把该 id 记进 `ROSTER.json.members[role]` 与 `STATE.json.members`。
+- `run_in_background` 默认 true。返回 `{ subagentId }` 后：`ROSTER.json` 的写入按 §2 由产出角色执行（lead 只读），`STATE.members` 由运行时回写。
 
 ## 2. 指挥成员
 
@@ -27,20 +27,20 @@
 
 ## 3. 阶段推进（persist 版流水线）
 
-仍按 clarify→design→implement→review→test→deliver 推进，只是每一步由你向对应成员 `send_message` 派活。**成员只把工件内容 report 回来，你（lead）收到后立即用 `write` 落盘对应工件**（这样工件成为你本轮产出文件，聊天框可点击预览）：
+仍按 clarify→design→implement→review→test→deliver 推进，只是每一步由你向对应成员 `send_message` 派活。**run 工件一律由产出它的角色自己 `write` 到 `<run-dir>/`；角色只回 path + 摘要 + verdict，你（lead）只读工件做门控与裁决**（唯一权威表述见 `SKILL.md` §2）：
 
-1. 给 `pm` 成员派 clarify，等其 report `specMarkdown/planSkeleton/tasks` → 你落盘 SPEC.md / PLAN.md 骨架 / TASKS.json。
-2. 给 `architect` 成员派 design，等其 report `designMarkdown/tasks` → 你落盘 PLAN.md 设计段 / TASKS.json 细化。
-3. 给 `backend`/`frontend` 成员**同时**派 implement（并行），等其 report 各任务 status → 你统一更新 TASKS.json。
-4. 给 `reviewer` 成员派 review，等其 report `reviewMarkdown` → 你落盘 REVIEW.md；需返工时只给受影响实现成员派 rework。
-5. 给 `qa` 派 test，等其 report `testMarkdown` → 你落盘 TEST.md。
-6. 你亲自 deliver：汇总 + 最终校验 + 更新 STATE.json + 写 RETRO.md。
+1. 给 `pm` 成员派 clarify，等其 report path + 摘要 + verdict → SPEC.md / PLAN.md 骨架 / TASKS.json 由它自己 `write`，你只读做门控。
+2. 给 `architect` 成员派 design，等其 report path + 摘要 + verdict → PLAN.md 设计段 / TASKS.json 细化由它自己 `write`，你只读做门控。
+3. 给 `backend`/`frontend` 成员**同时**派 implement（并行），等其 report 各任务 status + path → 各自把自己任务在 TASKS.json 里的 status 由自己 `write` 更新，你只读做门控核对。
+4. 给 `reviewer` 成员派 review，等其 report path + 摘要 + verdict → REVIEW.md 由它自己 `write`，你只读做门控；需返工时只给受影响实现成员派 rework。
+5. 给 `qa` 派 test，等其 report path + 摘要 + verdict → TEST.md 由它自己 `write`，你只读做门控。
+6. 你亲自 deliver：汇总 + 最终校验 + 由你裁决交付结论；`RETRO.md` 的内容由你口述、由指派的有 `write` 成员落盘，`STATE.json` 只由运行时写（见 `SKILL.md` §2 唯一权威表述）。
 
 ## 4. 跨会话恢复
 
 - 成员是可继续子 agent，会话持久化后仍可恢复；`/team resume <run>` 会再次把你唤起，并让你读 `team/<run>/` 与 `STATE.json`。
 - resume 时：读 `STATE.json.phase` 与 `ROSTER.json.members`；若成员 `ready`（仅存于存储），用 `send_message` 冷恢复它并从当前阶段继续；不要从头重跑。
-- 每次阶段推进都写 `STATE.json`，保证中断后能续。
+- 每次阶段推进**读** `STATE.json`（写入由运行时负责），保证中断后能续。
 
 ## 5. 收尾
 

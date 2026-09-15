@@ -6,9 +6,9 @@
 
 | 文件 | 谁写 | 何时 | 用途 |
 |---|---|---|---|
-| `<run-dir>/RUN.log.md` | 编排者（lead）逐行追加 | 每完成一个阶段/角色/决策/卡点 | 单次运行的可回放轨迹 |
-| `<run-dir>/RETRO.md` | lead | deliver 阶段 | 本次复盘：快/慢/卡点/经验 |
-| `<cwd>/team/LEARNINGS.md` | lead 追加 | deliver 阶段（**run 开始前先读**） | 跨运行累积的可复用经验 |
+| `<run-dir>/RUN.log.md` | 产出该事件的角色落盘；lead 口述内容、指派有 `write` 的成员执行 | 每完成一个阶段/角色/决策/卡点 | 单次运行的可回放轨迹 |
+| `<run-dir>/RETRO.md` | lead 口述 + 指派的有 `write` 成员落盘 | deliver 阶段 | 本次复盘：快/慢/卡点/经验 |
+| `<cwd>/team/LEARNINGS.md` | lead 口述 + 指派的有 `write` 成员追加 | deliver 阶段（**run 开始前先读**） | 跨运行累积的可复用经验 |
 
 ## 事件约定（RUN.log.md 每行一条）
 
@@ -38,7 +38,7 @@
 - **判决只认 `verdict=<token>`，合法 token 词表固定为：`pass` / `needs_revision` / `rework` / `fail` / `conditionally-pass`（等价写法 `conditional`、`conditionally` 也记 pass）**。三条硬规则：① **允许 markdown / 全角包裹**（`` verdict=`needs_revision` ``、`verdict=「needs_revision」`、`**verdict=needs_revision**` 都会被剥掉包裹后识别）；② **无法识别的 token 一律不计判决**（`verdict=foo`、`verdict=pass_unverified` 既不记 pass 也不记 rework，且**绝不回落**到从中文散文里猜判决 —— 那正是把 `needs_revision` 误判成 `pass` 的老 bug）；③ **只认 `verdict=`，`verdict:` 不算**。判决请按 token 写，别把结论只写在散文里。
 - **时间戳必须是实际时刻 `HH:MM:SS`，禁止 `[now]`**——`[now]` 会让聚合器丢事件（历史 run 全用 `[now]`，决策/阶段统计全部漏掉）。**E1 的「首个可运行产物耗时」直接依赖这条**：它 = `first-runnable` 的时间戳 − `run:started` 的时间戳，写成 `[now]` 就**算不出**（聚合器按「登记了但算不出」单列，不会退化成 0——退化成 0 会把"没测到"读成"很快"）。
 - **质量任务用 `kind: verification` 或 `kind: quality`，归属 `qa`/`reviewer`**，不要挂给实现者（历史 run 把 Q1 安全自检挂了 backend，被判归属违规）。写状态用 `/team task <id> <状态>` 一条命令回写。
-- **RETRO.md deliver 必填**（结果/时间与卡点/做得好的/做得慢的/可复用经验）——`/team check` 在 deliver/complete 时会检测模板占位并提示；复盘是自我学习的输入。
+- **RETRO.md deliver 必填**（结果/时间与卡点/做得好的/做得慢的/可复用经验），由 lead 口述、指派的有 `write` 成员落盘——`/team check` 在 deliver/complete 时会检测模板占位并提示；复盘是自我学习的输入。
 
 ### token 记账（P5 线 · 通常**不必写**）
 
@@ -65,9 +65,9 @@
 
 1. **run 开始前**：lead 读 `<cwd>/team/LEARNINGS.md`（若存在），把相关经验融入本次编排（例如「上次前端接口契约不清导致返工，这次 design 阶段先把契约写到签名级」）。
 2. **run 过程中**：按上面事件约定持续记 RUN.log.md。
-3. **deliver**：写 RETRO.md（快/慢/卡点），并把「可复用经验」沉淀。经验**分两层**，写到不同文件（避免项目私有知识污染跨项目复用）：
-   - **团队/流程级**（跨项目可复用的编排教训，如「大工件别塞 workflow 聚合返回」「并行前先冻结契约」）→ 追加到**全局** `~/.dsh/expert-team/LEARNINGS.md`。
-   - **项目级**（本项目专属坑/环境/约定，如「本项目签名是 HMAC 非 RSA」「该模块测试环境要看 X」）→ 追加到 `<cwd>/team/LEARNINGS.md`。
+3. **deliver**：写 RETRO.md（快/慢/卡点），并把「可复用经验」沉淀——两者均由 lead 口述、指派的有 `write` 成员落盘/追加（lead 自己不做 `write`）。经验**分两层**，写到不同文件（避免项目私有知识污染跨项目复用）：
+   - **团队/流程级**（跨项目可复用的编排教训，如「大工件别塞 workflow 聚合返回」「并行前先冻结契约」）→ 由被指派的有 `write` 成员追加到**全局** `~/.dsh/expert-team/LEARNINGS.md`。
+   - **项目级**（本项目专属坑/环境/约定，如「本项目签名是 HMAC 非 RSA」「该模块测试环境要看 X」）→ 由被指派的有 `write` 成员追加到 `<cwd>/team/LEARNINGS.md`。
 4. **落 Hindsight（跨项目召回）**：deliver 时用 `hindsight_ingest_document` 把本次「可复用经验」（RETRO 要点 + 蒸馏的 LEARNINGS，标题 `专家团经验 · <runId>`）保存一次，供其它会话召回；不要倒大段原始输出。
 
 LEARNINGS 每层都分两类沉淀（这是自我优化的核心）：

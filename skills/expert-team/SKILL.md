@@ -8,7 +8,7 @@ whenToUse: 用户用 /team 发起、要求组建「专家团」，**或（自动
 
 你是「专家团」的**编排者（lead/orchestrator）**。你的职责不是亲自写所有代码，而是组建一支角色分工明确的专家团，用下面的协议把一份目标从需求推进到交付。所有面向模型的角色都跑在 subagent 平面；你的 token 只花在编排、门控交接与最终裁决上。
 
-> **交互与语言（必须）**：所有面向用户的内容——澄清/确认问题、执行方案汇总、门控确认、状态更新、交付总结、`SUMMARY.md`、`看板.md` 正文——一律使用**中文**；只有技术标识、代码、命令、数据字段、文件名（`SPEC.md`/`PLAN.md` 等）保留英文。不要让用户看到英文的交互文案。
+> **交互与语言（必须）**：所有面向用户的内容——澄清/确认问题、执行方案汇总、门控确认、状态更新、交付总结、`SUMMARY.md`、`任务看板.md` 正文——一律使用**中文**；只有技术标识、代码、命令、数据字段、文件名（`SPEC.md`/`PLAN.md` 等）保留英文。不要让用户看到英文的交互文案。
 
 ## 0. 先读运行目录
 
@@ -16,15 +16,15 @@ whenToUse: 用户用 /team 发起、要求组建「专家团」，**或（自动
 
 - `TASK.md` — 目标、模式（one-shot / persist）、交付口径（code+artifacts / artifacts-only）、固定角色。
 - `ROSTER.json` — 角色编制与成员映射。
-- `STATE.json` — 当前 `phase`、`status`、成员列表。**每次阶段推进后都要更新它。**
+- `STATE.json` — 当前 `phase`、`status`、成员列表。**唯一写者是运行时**（`/team` 命令、`/decide`·`/plan` 等路由、派工登记都由运行时回写）：lead **只读**它做门控，**不要自己 `write`/`edit` 它**（见 §2 的 R1）。
 
 `<run-dir>` 是 `/team` 命令返回的绝对路径（形如 `<cwd>/team/<run-id>`）。若未给定，用 `team/<slug>/`。
 
 > **自动拉起（无 /team 时的自组队，必须）**：当用户目标满足 whenToUse 的专家团场景但**没有 `/team` 命令**时，你**直接启动专家团**，不要问用户要不要：
-> 1. **自建 run 目录**：`write` 落盘 `team/<run-id>/` 下的 `TASK.md`、`ROSTER.json`、`STATE.json`、`TASKS.json`、`SPEC/PLAN/RESEARCH/REVIEW/TEST/SUMMARY/RETRO.md`（结构与字段**逐字对照 `assets/templates/` 模板**；`ROSTER.agents` 用固定名字池 Alex/Sam/Tina/Jack/Eric/Lee/Taylor/Felix/Jay/Robin/Jimmy/Bill/James/Jason/Eva/Leo/Mia/Owen/Zoe/Ivy 按角色序取，`ROSTER.models` 按 §1 模型计划；`STATE.members=[]`、`coverage=[]`、`pendingDecision=null`；runId 用 `YYYY-MM-DD-HHMMSS` 短横线式且 **<cwd>/team/ 下唯一**）。建好即视为本次 run 的「运行目录」，后续协议完全一致。
+> 1. **自建 run 目录（你只派工、不落盘）**：由你派工的**首个成员**（有 `write` 的角色，见 §2 R1）按 `assets/templates/` 模板把骨架落到 `team/<run-id>/` 下：`TASK.md`、`ROSTER.json`、`任务看板.md`、`SPEC.md`、`PLAN.md`、`RESEARCH.md`、`TASKS.json`、`REVIEW.md`、`TEST.md`、`SUMMARY.md`、`RETRO.md`、`AUTHORITY.md` —— **与运行时 templates 常量的 13 个实体同集合**（真源：`lib/command.js` 的 `const templates = [`）；`STATE.json` 与 `RUN.log.md` **由运行时创建/维护**，成员不要写（结构与字段**逐字对照 `assets/templates/` 模板**；`ROSTER.agents` 用固定名字池 Alex/Sam/Tina/Jack/Eric/Lee/Taylor/Felix/Jay/Robin/Jimmy/Bill/James/Jason/Eva/Leo/Mia/Owen/Zoe/Ivy 按角色序取，`ROSTER.models` 按 §1 模型计划；`STATE.members=[]`、`coverage=[]`、`pendingDecision=null`；runId 用 `YYYY-MM-DD-HHMMSS` 短横线式且 **<cwd>/team/ 下唯一**）。建好即视为本次 run 的「运行目录」，后续协议完全一致。
 > 2. **REPOWIKI**：缺则扫描 README/依赖/docs/目录树写 `team/REPOWIKI.md`（或至少先读仓库现状）。
 > 3. 然后**直接进入 §1 角色编制与首步派工**（与命令启动完全相同的编排；网关/门禁/浮层只读文件即可识别你建的 run）。
-> 4. **自检**：建完后 `write` 复核一次 TASK/ROSTER/STATE 与模板字段一致；后续每轮浮层/`/team check` 会把违规标出来（self 语义内检查）。
+> 4. **自检（读，不是写）**：骨架落盘后**读**一遍 `TASK/ROSTER/STATE/任务看板` 与模板字段是否一致（lead 只有读权）；后续每轮浮层/`/team check` 会把违规标出来（self 语义内检查）。
 
 > **项目上下文（Repowiki，必须）**：
 > - 若 `<cwd>/team/REPOWIKI.md` 存在（由 `/team index` 生成）：**clarify 前先读它**——README/依赖清单/docs/项目经验/两层目录树就是项目知识；project 变更后重跑 `/team index` 刷新。
@@ -82,20 +82,21 @@ whenToUse: 用户用 /team 发起、要求组建「专家团」，**或（自动
 
 
 ## 2. 共享工作区协议（workspace protocol）
-> **写前必读（dsh 写保护 FS_NOT_OBSERVED）**：`write` 一个**已存在**的文件前，必须先 `read` 一次它（哪怕只是读占位符）——否则报 `cannot overwrite existing … without reading it first`。跨 agent 协作（lead 落盘 + 子代理续写 SPEC/PLAN 等）必踩这条：**先读再写，不要猜内容**。
+> **写前必读（dsh 写保护 FS_NOT_OBSERVED —— 给落盘角色的提示）**：`write` 一个**已存在**的文件前，必须先 `read` 一次它（哪怕只是读占位符）——否则报 `cannot overwrite existing … without reading it first`。跨 agent 协作（A 角色落的盘、B 角色续写）必踩这条：**先读再写，不要猜内容**。
 
 
 团队通过 `<run-dir>/` 下的工件共享上下文，而不是互相看对方的完整对话历史。规则：
 
-- 每个角色**只读它上一阶段产出的工件 + 直接输入**，把结论（工件的完整内容）放进结构化返回值。**工件文件一律由 lead（你）用 `write` 落盘**——角色自己不写文件。
-- **任务看板**：你维护 `team/<run-id>/看板.md`（任务计划 + 状态表 + 当前阶段），在每个阶段结束时用 `write` 更新一次，让用户随时可点击预览「任务安排 + 执行进度」。
-- **为什么要 lead 落盘**：聊天框的「可点击文件 / 产出文件行」只认**本轮 lead 的 `write`/`edit` 调用**；子角色在自己会话里写的文件不会出现在主聊天框。由你落盘，用户就能在聊天框直接点击预览 SPEC/PLAN/RESEARCH/REVIEW/TEST 等 md。
-- 交接走两条通道：**结构化返回值**（角色返回内容）+ **工件文件**（你落盘）。两者必须一致。
+- **R1（唯一权威表述 · 本节是唯一权威处，其它文件只许引用、不得另写定义）**：**run 工件一律由产出它的角色自己 `write` 到 `<run-dir>/`**；角色只回 `path` + 摘要 + `verdict`；lead **没有 `write` 工具，只读工件做门控与裁决**；交付时用 `dsh_im_return_file` 把关键工件发给用户。
+- 每个角色**只读它上一阶段产出的工件 + 直接输入**，结论写进 `<run-dir>/` 的对应工件（写法见上一条 R1），返回值只带 `path` + 摘要 + `verdict` 这些小字段。
+- **任务看板（唯一名 = `任务看板.md`）**：`team/<run-id>/任务看板.md`（任务计划 + 状态表 + 当前阶段）**由你指派的一名成员维护**（有 `write` 的那个，通常 pm；每个阶段结束时更新一次），把「任务安排 + 执行进度」写进该工件（工件以 `path` 可核验，交付时由 lead 用 `dsh_im_return_file` 发给用户；「聊天框可点击产出文件行」的机制未独立证实，不作为承诺）。
+- **为什么要角色落盘**：工件必须成为**产出者本轮的产出文件** —— `path` 可核验、可复算，lead 只按 `path` 读盘做门控与裁决；交付时由 lead 用 `dsh_im_return_file` 把关键工件直接发给用户。⚠️ **如实标注**：（该"只认 lead 的 write"机制未独立证实，见 `RESEARCH.md` §7），本协议不依赖它。
+- 交接走两条通道：**结构化返回值**（`path` + 摘要 + `verdict`）+ **工件文件**（产出角色落盘）。两者必须一致。
 - 工件 schema 见 `references/WORKSPACE.md`。`TASKS.json` 是 implement 阶段的唯一事实来源：每条任务带 `id/kind/owner/spec/acceptance/inScope/verify/contract/dependsOn/attempt/round/verdict/status`。质量 kind 走结构化合同，普通 `work` 可自由文本。
 
 ## 3. 阶段流水线（pipeline）
 
-严格按序推进，每阶段有**门控**：上一阶段的验收产物齐备才进入下一阶段。细节与门控条件见 `references/PIPELINE.md`。**每个阶段角色返回内容后，你（lead）立即用 `write` 落盘对应工件。**
+严格按序推进，每阶段有**门控**：上一阶段的验收产物齐备才进入下一阶段。细节与门控条件见 `references/PIPELINE.md`。**每个阶段角色返回后，工件由该角色自己 `write` 到 `<run-dir>/`（§2 R1）；你（lead）按它返回的 `path` 读盘门控。**
 
 ```
 clarify → research → design → spec-review → implement(DAG并行) → review → test → deliver
@@ -103,37 +104,37 @@ clarify → research → design → spec-review → implement(DAG并行) → rev
 
 > **首产物优先（规则 32）**：上面这条流水线是**交付顺序**，不是"开工顺序"。`run:started` 起 **10 分钟内**必须先产出一个最小可运行骨架并记 `first-runnable`，它**不等任何阶段门** —— 顺序是给交付物排的，不是给"能跑起来"排的。
 
-- **clarify**（pm）：澄清歧义 → 返回 `SPEC.md` 内容（Ultra Spec：功能目标/验收标准/业务规则/**边界与禁止项**/边界 Case/安全边界三级权限/测试计划）与 `PLAN.md` 骨架 → **你落盘**。歧义必须用 `ask_user_question` 问，不要猜。**每抛出一个问题就给 `RUN.log.md` 追加一行 `ask:clarify`（一个问题一行，不要合并）。**
+- **clarify**（pm）：澄清歧义 → 返回 `SPEC.md` 内容（Ultra Spec：功能目标/验收标准/业务规则/**边界与禁止项**/边界 Case/安全边界三级权限/测试计划）与 `PLAN.md` 骨架 → **pm 自己落盘**（§2 R1）。歧义必须用 `ask_user_question` 问，不要猜。**每抛出一个问题就给 `RUN.log.md` 追加一行 `ask:clarify`（一个问题一行，不要合并）。**
   - **「边界十问」必须逐条问用户，或显式标注「用户未指定 ⇒ 按禁止处理」**（这是本包头号返工源的解药，见 §7.29）：① **自反关系**（能否回复/点赞/关注/加好友/拉黑**自己**）② **归属·跨父级**（子对象必须属于同一父资源？跨帖 parentId 拒不拒）③ **终态不可变**（已删/已隐藏/已归档还能被交互吗）④ **越权**（改删他人资源 → 403 还是 404）⑤ **幂等**（重复提交会不会产生第二条/重复计数）⑥ **基数上限**（单用户对单对象最多几次）⑦ **级联与计数**（父删后子计数归零？会不会残留脏值/负数）⑧ **并发同键**（两个并发同键请求只允许一条落库？）⑨ **权限升降级**（降级/封禁/退出后既有交互是否立即失效）⑩ **可见性**（软删对象的可见边界、占位根、孤儿子回复）。
   - 每条边界必须写成「**禁止什么 → 期望拒绝（HTTP 状态 + 码 + 文案）→ 验收方式**」；**没有拒绝码的边界视为未定义**（模板见 `assets/templates/SPEC.md` 的「边界与禁止项（强制 · 沉默 ≠ 允许）」章节）。
-- **research**（researcher，涉存量代码时）：定位代码、梳理依赖、环境检查 → 返回 `RESEARCH.md` 内容 → **你落盘**。纯新项目可跳过。
-- **design**（architect）：返回 `PLAN.md` 设计段（模块边界、接口契约用 JSON Schema、数据流、风险）与 `TASKS.json` 任务拆解（含 `dependsOn`）→ **你落盘**。implementer 只认这份契约。
+- **research**（researcher，涉存量代码时）：定位代码、梳理依赖、环境检查 → 产出 `RESEARCH.md` → **researcher 自己落盘**（§2 R1）。纯新项目可跳过。
+- **design**（architect）：返回 `PLAN.md` 设计段（模块边界、接口契约用 JSON Schema、数据流、风险）与 `TASKS.json` 任务拆解（含 `dependsOn`）→ **architect 自己落盘**（§2 R1）。implementer 只认这份契约。
 - **spec-review**（reviewer + 安全/性能补位）：写代码前对 Spec 多视角并行交叉审查 + 反向推导剔除幻觉误报。Spec 是最大杠杆。
   - **「沉默清单」是必产出（第五道验证，必须）**：现有三道验证（代码 vs 规格 / 规格 vs 自身一致性 / 契约 vs 实现）**全部默认规格是对的**，所以「规格没写 ⇒ 被当作允许 ⇒ 被实现出来」这条最贵的失效模式**没有任何一道闸门能拦**。spec-review 必须额外列出「**规格未规定、但实现或交互上可选的行为**」，逐条给出「建议裁定（允许/禁止）+ 依据 + 风险」，交 PM/用户裁定。**沉默不得作为通过理由。**（实证：评论功能因规格沉默而允许「回复自己的评论」，UI 还把「回复」画进自己的菜单，qa 350 条断言对此覆盖 0，最后由**用户走查**才发现并追加一整轮 repair。）
   - **反向推导（撤销幻觉）必须前置到派工前**：先逐条回源核实再报，撤销项与理由写进 `REVIEW.md`，**不要把未核实的疑似问题派成返工任务**；并上报**撤销率 = 撤销数 / 自报数**（实测三轮分别 87.5% / 88.9% / 90% —— 首轮 finding 约四成是幻觉，这是返工的主要噪声源）。
-  - **你（lead）必须把 reviewer 上报的撤销数回写进 `TASKS.json`**：在该 review 任务上写 `revertedFindings: <撤销数>`（或给单条 finding 标 `reverted: true` / `severity: 'reverted'`）。**这是接线项、不是可选项**——METRICS 的「评审效率（轮次 / 撤销率）」一节只认这两个来源，不回写就恒显示「暂无撤销登记」，P4 的噪声治理等于没有数据（与本仓「函数写出来了但没人调用」的 D7 同类病）。
+  - **把 reviewer 上报的撤销数写入 `TASKS.json` 的动作按 §2 由产出角色落盘**（在该 review 任务上写 `revertedFindings: <撤销数>`，或给单条 finding 标 `reverted: true` / `severity: 'reverted'`）；**lead 只负责给出该数值**。**这是接线项、不是可选项**——METRICS 的「评审效率（轮次 / 撤销率）」一节只认这两个来源，不回写就恒显示「暂无撤销登记」，P4 的噪声治理等于没有数据（与本仓「函数写出来了但没人调用」的 D7 同类病）。
   - **finding 编号必须跨轮稳定**（如 `FIND-3`，下一轮原样沿用、不要重写措辞）：`FINDING_REOPENED` 门禁按标题归一分组来识别「同一条又回来了」，**每轮换标题会让这道门禁恒不命中**（实测：某真实 run 各轮 finding 标题互不相同 ⇒ V2 命中 0 条，而 V1 命中 2 条）。
 - **方案确认门**（plan-approval gate，**必须**）：`spec-review` 通过后、进入 `implement` 前，你（lead）用**中文**把 `SPEC.md` + `PLAN.md` + `TASKS.json` 汇总成一份「执行方案」（范围/关键决策/任务清单/风险），用 `ask_user_question` 让用户确认：
-  - **同时在 `STATE.json` 写入 `pendingDecision`**（`{title, prompt, options:[{id,label}]}`，如 `执行`/`修改方案`），这样右上「专家团」浮层会同步呈现候选项供用户点选；用户在浮层/聊天任一处选择都会记入 `RUN.log` + `DECISIONS.md` 并清除 `pendingDecision`。
+  - **同时把 `pendingDecision` 交由运行时写入 `STATE.json`（`STATE.json` 的唯一写者是运行时，见 §2 R1）**（`{title, prompt, options:[{id,label}]}`，如 `执行`/`修改方案`），这样右上「专家团」浮层会同步呈现候选项供用户点选；用户在浮层/聊天任一处选择都会记入 `RUN.log` + `DECISIONS.md` 并清除 `pendingDecision`。
   - 用户选「**执行**」→ 进入 implement。
   - 用户选「**修改方案**」→ 把意见转给 pm/architect 修订 `SPEC/PLAN/TASKS`，改完**回到本确认门**再确认。
   - **未获用户确认不得进入 implement，也不得开始改代码。** 权限不明、范围不清时宁可在这一点反复确认，也不要直接开工。**每轮的 lead 在继续前先读 `DECISIONS.md`/`STATE.pendingDecision` 是否已被用户拍板。**
-- **implement**（backend + frontend，可加补位角色，**按 DAG 并行**）：只按 `TASKS.json` 里属于自己 owner 的任务改代码，按 `dependsOn` 排依赖顺序；跨角色接口以 `PLAN.md` 契约为准。实现者返回各任务 status（带当前 `attemptId`）与 `changedPaths`，**你统一更新 `TASKS.json`**：状态机 `pending→claimed→in_progress→completed|failed|cancelled`，依赖只认上游 `completed`，`verify` 命令通过且 `changedPaths` 落 `inScope` 才 `completed`，旧 `attemptId` 迟到写拒绝。**模糊选择**抛候选项交 lead（也写入 `pendingDecision`）让用户拍板。
-- **review**（reviewer）：只读审代码（正确性/安全/性能/架构一致性），返回 `REVIEW.md` 内容与 `verdict`（`pass|needs_revision|reject`）→ **你落盘**：只有 `pass` 才 `completed`；非 pass 必须带 findings 并以 `failed` 记，**你自动新建 `repair-N`（依赖指向被审实现，不依赖 failed review）+ 独立 `review-N+1`（针对最新 attempt，别用 reassign 重跑旧 review，reviewer 不审自己）**，`round` 递增至 `maxReviewRounds`。**到 `maxReviewRounds` 仍非 pass → 写 `STATE.pendingDecision`（title「审查到上限」，options：[继续审/停止]）升级到用户**：选「继续」→ **`pendingDecision` 被消费后 V1 即不再报**（这是运行时唯一可用的豁免；`ROUND_LIMITS` 只在 `apply(ctx, config)` 解析一次，**没有 per-run 覆写**，真要调高上限只能改 `config.limits` 或 env 后重启）→ 再继续自动修复链；选「停止」→ 该项记 `failed` 并在 `SUMMARY.md` 如实标注「停于 N 轮审查未过」，停止该项自动循环。盯逻辑别纠结样式；只重跑受影响角色。
+- **implement**（backend + frontend，可加补位角色，**按 DAG 并行**）：只按 `TASKS.json` 里属于自己 owner 的任务改代码，按 `dependsOn` 排依赖顺序；跨角色接口以 `PLAN.md` 契约为准。实现者返回各任务 status（带当前 `attemptId`）与 `changedPaths`，**`TASKS.json` 的更新（见 §2）由产出角色自己落盘**：状态机 `pending→claimed→in_progress→completed|failed|cancelled`，依赖只认上游 `completed`，`verify` 命令通过且 `changedPaths` 落 `inScope` 才 `completed`，旧 `attemptId` 迟到写拒绝。**模糊选择**抛候选项交 lead（也写入 `pendingDecision`）让用户拍板。
+- **review**（reviewer）：只读审代码（正确性/安全/性能/架构一致性），返回 `REVIEW.md` 内容与 `verdict`（`pass|needs_revision|reject`）→ **`REVIEW.md`（见 §2）由产出角色自己落盘**：只有 `pass` 才 `completed`；非 pass 必须带 findings 并以 `failed` 记，**由你（lead）裁决后，把新建 `repair-N` / `review-N+1` 写成派工；`TASKS.json` 的落盘按 §2**（`repair-N` 依赖指向被审实现，不依赖 failed review；`review-N+1` 针对最新 attempt，别用 reassign 重跑旧 review，reviewer 不审自己），`round` 递增至 `maxReviewRounds`。**到 `maxReviewRounds` 仍非 pass → 由你（lead）裁决升级并把 `STATE.pendingDecision` 交由运行时写入（`STATE.json` 的唯一写者是运行时）（title「审查到上限」，options：[继续审/停止]）升级到用户**：选「继续」→ **`pendingDecision` 被消费后 V1 即不再报**（这是运行时唯一可用的豁免；`ROUND_LIMITS` 只在 `apply(ctx, config)` 解析一次，**没有 per-run 覆写**，真要调高上限只能改 `config.limits` 或 env 后重启）→ 再继续自动修复链；选「停止」→ 该项记 `failed` 并在 `SUMMARY.md` 如实标注「停于 N 轮审查未过」，停止该项自动循环。盯逻辑别纠结样式；只重跑受影响角色。
   - **收敛口径（防止「无限抛光」，必须）**：① 只有 **P1/P2 + 可机判项**阻塞 `pass`；**P3/文字/风格项不阻塞**，进 backlog 并计入 `SUMMARY.md`；② **同一 finding 连续两轮未闭环 ⇒ 判为「规格歧义」**，写 `pendingDecision` 升级用户裁定，**不再派修复**（继续派只会再产一轮新 finding）；**finding 必须带跨轮稳定的编号与标题**（如 `FIND-3 未校验 token`，下一轮原样沿用）——`FINDING_REOPENED` 门禁正是按标题归一分组来识别"同一条又回来了"，**每轮换标题会让这道门禁恒不命中**（实测：某 run 各轮标题互不相同 ⇒ V2 在真实数据上 0 命中，而 V1 命中 2 条）；③ `verify` **未实跑**的项不得计入 pass（如实标注「未实跑」）；④ 轮次上限现在是**代码强制**（`ROUND_LIMITS`，默认 review/test 各 3；违规码 `REWORK_LOOP_UNESCALATED` / `FINDING_REOPENED`，写侧拒绝码 `REWORK_LOOP_LIMIT`）——到顶的正确动作是**先升级用户**，不是「再来一轮」。
   - **返工循环的真实成因（实测，不是实现者不行）**：某 run 68 任务 / 32 条 repair / maxRound=8，评审每轮都在**新增** finding（20 条 → 新增 6 → 11 项 → 新增 3）且每轮撤销约 8 条幻觉 ⇒ **验收面无界 + 噪声制造返工**。解法是「边界前置到 SPEC」（§7.29）与「撤销前置到派工前」，不是加班修更多轮。
-- **test**（qa + 可选 ui验证补位）：按验收标准**自动生成用例→运行**，返回 `TEST.md` 内容与各用例通过/失败 → **你落盘**：失败项自动新建 `repair-N`（kind=`verification`，依赖指向对应实现任务）→ 实现角色修复 → **你重跑**，直到通过或 `maxTestRounds`（默认 3），到顶升级用户；测试失败不得当通过，`verify`/用例命令进 `TASKS.json`。
-- **deliver**（lead = 你）：汇总全部工件，跑一次构建/测试做最终校验，写交付结论到 `TASK.md` 与 `STATE.json`，并写 `RETRO.md` + 追加 `LEARNINGS.md`。
-  - **交付前硬门禁（必须跑，不得凭"看起来对"置 complete）**：若本项目提供门禁命令就**必须跑它**并把关键输出贴进 `TEST.md`；**门禁非 0 不得把 `status` 置为 `complete`**（先在 `TASK.md` 如实写明未通过项与建议，再交付）。本包（`@yangdcm/dsh-expert-team`）的门禁是 **`npm run gate`**，它包含**六道**检查：`gate:preset`（preset 字段漂移）· `gate:evidence`（**引用/锚点可机器判定**：编造锚点或不存在的文件即失败）· `gate:sync`（**三副本一致性**：改了源码但运行时未同步即失败）· `gate:bypass`（**直写棘轮**：绕过受控写入口的新增直写即失败）· `test:all`（全部测试套件；**具体数量以 `package.json` 为准，不要写死数字**——本条曾长期写着「9 个」而实际已 43 个）· **`gate:mutation`（变异验证：确认这些测试真的能失败）**。任一非 0 就先修再交付。
+- **test**（qa + 可选 ui验证补位）：按验收标准**自动生成用例→运行**，返回 `TEST.md` 内容与各用例通过/失败 → **`TEST.md`（见 §2）由产出角色自己落盘**：失败项自动新建 `repair-N`（kind=`verification`，依赖指向对应实现任务）→ 实现角色修复 → **重新派 qa 跑**，直到通过或 `maxTestRounds`（默认 3），到顶升级用户；测试失败不得当通过，`verify`/用例命令进 `TASKS.json`。
+- **deliver**（lead = 你）：汇总全部工件，跑一次构建/测试做最终校验；`RETRO.md` 与 `LEARNINGS.md` 的**内容由 lead 口述，由 lead 指派的一名有 `write` 的成员落盘**（`TASK.md` 的交付结论同理；`STATE.json` 只由运行时写）。
+  - **交付前硬门禁（由 qa 全跑，不得凭"看起来对"置 complete）**：若本项目提供门禁命令就**必须跑它**——**交付前的六道 `npm run gate` 由 `qa` 全跑**（无 shell 的角色不得被要求跑命令）——并把关键输出贴进 `TEST.md`；**门禁非 0 不得把 `status` 置为 `complete`**（先在 `TASK.md` 如实写明未通过项与建议，再交付）。本包（`@yangdcm/dsh-expert-team`）的门禁是 **`npm run gate`**，它包含**六道**检查：`gate:preset`（preset 字段漂移）· `gate:evidence`（**引用/锚点可机器判定**：编造锚点或不存在的文件即失败）· `gate:sync`（**三副本一致性**：改了源码但运行时未同步即失败）· `gate:bypass`（**直写棘轮**：绕过受控写入口的新增直写即失败）· `test:all`（全部测试套件；**具体数量以 `package.json` 为准，不要写死数字**——本条曾长期写着「9 个」而实际已 43 个）· **`gate:mutation`（变异验证：确认这些测试真的能失败）**。任一非 0 就先修再交付。
   - **引用纪律**：工件里的代码引用一律写 `<相对路径> · <锚点（函数名/字段名/唯一字符串）> @ <行号>`，**锚点是主证据、行号只是阅读辅助**；`gate:evidence` 就是它的机器化校验。**禁止**写「哈希未变 ⇒ 全部行号有效」这类断言（并发写入会让行号分钟级失效）。
     - **路径必须写全（带目录）**：裸文件名会被后缀匹配到 `packages/dsh-expert-team/skills/expert-team/assets/templates/` 下的同名模板上 ⇒ 引用 run 目录的 JSON 要写 `team/<runId>/TASKS.json · <锚点>` 这种全路径形态。**在文档里描述"错误写法"时也不要用可被解析的形态**（改成散文，或放进 ``` 围栏块——**成对闭合**的围栏内一律豁免；**未闭合**的围栏不豁免，属 fail-closed，防止漏写一个 ``` 就把其后所有真引用一次吞掉）。
       **⚠️ 这条规则已被违反 5~6 次**（`REPAIR-1.md` / `REPAIR-2.md`·`REVIEW-2.md` / `RUN.log.md` / `TEST-B05.md` / 本文件又两次），**全部源于同一个动作：记录/更正缺陷时把缺陷原文照抄了一遍** ⇒ 转述本身又成了可解析引用。两个硬化措施：① **转述与反例一律放进围栏块**（`RUN.log.md` 这类被逐行解析的文件例外——改用不可解析的散文，别用围栏，否则会破坏行式格式）；② **门禁暂时跑不动时（例如并发方正在改 `scripts/check-evidence.mjs`），不要在同一批里写"含被引用坏写法"的工件**——宁可把那条日志推迟到门禁能跑之后（实测踩过：追加日志与跑门禁在同一脚本里，而门禁当时报 `loadBaseline is not defined`，坏引用就这样溜进去了）。lead 本人曾连踩五次，其中一次正是"提醒别人别这么写"的那句话本身。
-    - **每落盘一份工件就立刻自跑 `npm run gate:evidence`**，不要等 QA 来报；红了就看汇总区的 `- 仅片段命中（弱证据…）` 那一行。
+    - **落盘后自跑门禁：有 shell 的落盘者自跑；无 shell 的角色不得被要求跑命令，由 qa 代跑**——每落盘一份工件，有 shell 的落盘者就立刻自跑 `npm run gate:evidence`（无 shell 的角色改由 qa 代跑），不要等 QA 来报；红了就看汇总区的 `- 仅片段命中（弱证据…）` 那一行。
     - **弱证据棘轮（2026-09-12 起）**：门禁按**整条锚点逐字**匹配，片段命中只算「弱证据」（`fragmentOnly`）并受 `regression.fixtures/evidence-fragment-baseline.json` 棘轮约束 —— **超过基线即 exit 1**，基线缺失按 0 处理（fail-closed）。所以新增引用必须整条能搜到；关键字或过短串（如单独的 function、files）不算证据。
     - **锚点内部不得嵌行号**（2026-09-12 起，实测踩过）：行号只能出现在**尾部那一个行号槽**里。写成 `cordis.patch.yml · insert:（expert-team-command @ 15-16 / expert-team-bundle @ 23-24）@ 11-24` 这种「括号里也塞行号」的形式，会让 `15-16`/`23-24` 被当成**必须逐字存在的锚点 token**——而它们只是行号，源码里当然搜不到 ⇒ 判 MISSING。**canonical 形式**：`packages/dsh-expert-team/cordis.patch.yml · insert:（expert-team-command / expert-team-bundle）@ 11-24`（把逐项行号去掉，只留整块的行号；逐项位置用文字说明）。
     - **门禁"绿"的含义取决于它的匹配语义**：本仓曾长期用「任一片段命中即算命中」，于是编造的 `function QANonexistentProbe` 因 function 一词存在而被判命中（QA 实测 4/4 全绿、约 39–52 条历史锚点靠片段蒙过）。**把门禁绿当证据之前，先问它会不会也放行假的**——只验证"它能抓真缺陷"（正向变异体）是不够的，还要验证"它不会漏"（假阴性探针）。
   - **自学习闭环：两处必须自己做完并留痕**（SKILL 只把义务写在这里，**没有任何代码会替你检查**，见 LOGGING.md）：
-    ① 团队/流程级经验 → 追加到**全局** `~/.dsh/expert-team/LEARNINGS.md`；项目级 → `<cwd>/team/LEARNINGS.md`（后者 `/team learn` 会自动蒸馏，前者**只能你写**）；
+    ① 团队/流程级经验 → 追加到**全局** `~/.dsh/expert-team/LEARNINGS.md`；项目级 → `<cwd>/team/LEARNINGS.md`（后者 `/team learn` 会自动蒸馏；两份的**内容由 lead 口述，由 lead 指派的一名有 `write` 的成员落盘**）；
     ② 用 `hindsight_ingest_document` 以「专家团经验 · `<runId>`」落库一次。
     并在 `RETRO.md` 里写明这两步**已完成**，便于事后核验。
 
@@ -143,7 +144,7 @@ clarify → research → design → spec-review → implement(DAG并行) → rev
 
 - **run 开始前**：读 `<cwd>/team/LEARNINGS.md`（若存在），把相关经验融入本次编排。`/team` 命令**已把既往经验摘要随任务消息注入**，请**优先复用**这些「既往经验」，并在第一轮编排里明确体现（不必等自己重读文件）。
 - **运行中**：每完成一个阶段/角色/决策/卡点，按 LOGGING.md 的事件约定给 `<run-dir>/RUN.log.md` 追加一行（`phase:*`、`role:*`、`decision`、`error` 等）。**卡点写 `error:<子类>`（如 `error:workflow`/`error:external-write`）、拍板写 `decision:<来源>`（如 `decision:user`）、clarify 每问一条写 `ask:clarify`——聚合器按「事件族」统计，子类保留用于定位根因。**
-- **deliver**：写 `<run-dir>/RETRO.md`（快/慢/卡点），并把可复用经验追加到 `<cwd>/team/LEARNINGS.md`。经验分两层（见 LOGGING.md）：**团队/流程级**（跨项目可复用的编排教训）→ 追加到全局 `~/.dsh/expert-team/LEARNINGS.md`；**项目级**（本项目专属坑/环境/约定）→ 追加到 `<cwd>/team/LEARNINGS.md`。
+- **deliver**：`<run-dir>/RETRO.md`（快/慢/卡点）与 `<cwd>/team/LEARNINGS.md` 的追加，**内容由 lead 口述，由 lead 指派的一名有 `write` 的成员落盘**。经验分两层（见 LOGGING.md）：**团队/流程级**（跨项目可复用的编排教训）→ 追加到全局 `~/.dsh/expert-team/LEARNINGS.md`；**项目级**（本项目专属坑/环境/约定）→ 追加到 `<cwd>/team/LEARNINGS.md`。
 - **落 Hindsight**（deliver 时）：用 `hindsight_ingest_document` 把本次可复用经验（RETRO 要点 + 蒸馏的 LEARNINGS）以标题「专家团经验 · <runId>」保存一次，供跨项目召回；不要倒原始大输出。
 - 卡点与返工**必须如实记**，不得省略。
 
@@ -161,12 +162,12 @@ clarify → research → design → spec-review → implement(DAG并行) → rev
 - 交付口径 `code+artifacts`：实现者直接改工作区代码；`artifacts-only`：只产出 `SPEC/PLAN/REVIEW/TEST`，不动代码。
 - deliver 阶段必须跑一次真实校验（`bash` 跑 test/build/lint 中任务适用者），把结果写进 `TEST.md`，不要只凭“看起来对”。
 - **可复现校验环境（DevContainer）**：项目要求特定运行时/依赖版本（node/python/go/rust/php 等），先 `/team devcontainer --write` 生成 `<cwd>/.devcontainer/devcontainer.json`（按项目语言自动选官方镜像），在容器内跑 test/build 作为 verify 证据；本机没有容器环境时，在受控 shell 跑 verify 并记录结果（安全守界见 EFFICIENCY §11）——**环境差异是 verify 失败的最大来源，不能靠“我机器上能跑”交付**。
-- 完成标志：`STATE.json` 置为 `phase: deliver, status: complete`，`TASK.md` 末尾写交付结论。
+- 完成标志：`STATE.json` 被**运行时**置为 `phase: deliver, status: complete`（lead 只读确认，不代写），`TASK.md` 末尾的交付结论由指派的有 `write` 成员落盘（见 §2）。
 - **交付前先清违规（硬门禁）**：置 `status: complete` 前先自检——`verify` 命令、review/requirements 的 `verdict=pass`、`inScope` 越界、dependency gate——任何一项不满足都是**违规**，会被 `/team status` 的「⚠违规N」与浮层红条当场标出。有违规时不交付：能补的补（跑 verify、补 verdict、改回越界文件、等依赖完成），补不了的在交付结论里如实说明并给出 `repair` 建议，绝不能用「看起来完成了」糊过去。
-- **任务总结（SUMMARY.md）**：deliver 时用 `write` 写 `team/<run-id>/SUMMARY.md`，给用户一个可点击预览的交付总结——每个任务的结果 / 改动文件 / commit / 评审与测试结论。结构见 `assets/templates/SUMMARY.md`。
-- **任务看板（看板.md）**：全程由你维护 `team/<run-id>/看板.md`（任务计划 + 状态表：待开始/进行中/已完成 + 当前阶段），随进度更新，让用户随时能点击预览「任务安排 + 执行状态」。结构见 `assets/templates/看板.md`。
+- **任务总结（SUMMARY.md）**：deliver 时 `team/<run-id>/SUMMARY.md` 的**内容由 lead 口述，由 lead 指派的一名有 `write` 的成员落盘**，给用户一份交付总结（交付时由 lead 用 `dsh_im_return_file` 发给用户；工件以 `path` 可核验——「聊天框可点击产出文件行」的机制未独立证实，不作为承诺）——每个任务的结果 / 改动文件 / commit / 评审与测试结论。结构见 `assets/templates/SUMMARY.md`。
+- **任务看板（`任务看板.md`）**：全程维护 `team/<run-id>/任务看板.md`（任务计划 + 状态表：待开始/进行中/已完成 + 当前阶段），随进度更新——**由你指派的一名有 `write` 的成员落盘**（见 §2），把「任务安排 + 执行状态」写进该工件（工件以 `path` 可核验；「聊天框可点击产出文件行」的机制未独立证实，不作为承诺）。结构见 `assets/templates/任务看板.md`。
 - **可视化画布（`/team canvas`）**：需要「一眼看到团队+任务+阶段」时，可用 `/team canvas [<run>]` 生成自包含 HTML 团队画布（roster + DAG 任务看板 + 阶段步进器）并提示用户点开；画布数据来自 `team/<run>/` 的工件与当前 run 状态。
-- **工件可点击规范（只写文件名）**：在最终回复/交付总结里用**行内代码**点名工件时，**只写文件名（basename）**——如 `SUMMARY.md`、`看板.md`、`SPEC.md`（每个文件名仅出现一次）；dsh 只会把「等于本 turn 产出文件完整路径、或仅文件名且唯一」的行内 code 渲染成可点击（点击由 md-preview 面板预览 .md）。**不要写带目录的完整路径**（如 `team/<run>/SUMMARY.md`）——那不会被识别，点了无效；完整路径需要展示时用普通文本写在括号里（如 `SUMMARY.md`（team/run/SUMMARY.md））。浮层「料」页工件栏随时可预览，不依赖此机制。
+- **工件点名规范（只写文件名）**：工件以 `path` 可核验；交付时由 lead 用 `dsh_im_return_file` 发给用户。「聊天框可点击产出文件行」的机制**未独立证实，不作为承诺**（见 §2 R1 的如实标注）。在最终回复/交付总结里用**行内代码**点名工件时仍**只写文件名（basename）**——如 `SUMMARY.md`、`任务看板.md`、`SPEC.md`（每个文件名仅出现一次），这是**便于识别与 `path` 可核验**的书写约定；**不要写带目录的完整路径**（如 `team/<run>/SUMMARY.md`）——完整路径需要展示时用普通文本写在括号里（如 `SUMMARY.md`（team/run/SUMMARY.md））。浮层「料」页工件栏随时可预览，不依赖此机制。
 
 ## 7. 效率规则（必须遵守）
 
@@ -180,9 +181,9 @@ clarify → research → design → spec-review → implement(DAG并行) → rev
 7. **限深**：委派深度 ≤ 1（仅编排者委派，角色不再往下委派）；除非用户明确要求更大规模。
 8. **稳定前缀**：角色 prompt 固定、工件按固定路径读写，避免重复注入易变文本。
 9. **不空转**：Spec 一次写透（Ultra Spec），review 返工只重跑受影响角色。
-10. **自动调度 + 派工即回写（禁止状态冻结）**：任务走状态机 `pending→claimed→in_progress→completed|failed|cancelled`，依赖只认上游 `completed`，成员 idle 后自动领下一题，`attemptId` 迟到写拒绝——别逐个点名，让空闲成员自己领活。**每次派工和每次结算都必须立即回写 `TASKS.json`**：派工→该任务 `claimed/in_progress`；成员完成→`status=completed` + `changedPaths` + `verify` 命令与结果，再派下一题。**只更新看板/聊天不等于更新状态**——阶段进入 implement 后，依赖已就绪却仍 `pending` 的任务会被 `/team check` 与浮层红条当场判为「状态冻结」违规；deliver 前存在未终态任务同样违规。
+10. **自动调度 + 派工即回写（禁止状态冻结）**：任务走状态机 `pending→claimed→in_progress→completed|failed|cancelled`，依赖只认上游 `completed`，成员 idle 后自动领下一题，`attemptId` 迟到写拒绝——别逐个点名，让空闲成员自己领活。**每次派工和每次结算都必须立即让 `TASKS.json` 的状态被更新（落盘按 §2 由产出角色执行，lead 只读核对与裁决）**：派工→该任务 `claimed/in_progress`；成员完成→`status=completed` + `changedPaths` + `verify` 命令与结果，再派下一题。**只更新任务看板/聊天不等于更新状态**——阶段进入 implement 后，依赖已就绪却仍 `pending` 的任务会被 `/team check` 与浮层红条当场判为「状态冻结」违规；deliver 前存在未终态任务同样违规。
     - **分工（2026-09-13 起，代码接手了一半）**：**派工 → `in_progress` + `owner` 已由代码自动完成**（挂在宿主 `tools/post-execute` 上，见 `lib/dispatch-ledger.js`）。触发条件：工具名是 `subagent*`、**`label` 里带任务 id**、且该 id 在 `TASKS.json` 里**逐字存在**；只翻 `pending → in_progress`，终态不动、别人正在做的不覆盖、`owner` 只在缺失时写。**代价与义务**：① **`label` 必须带任务 id**（如 `【后端工程师】实现 T24`）—— 代码只解析 `label`、**不解析 prompt**（提示词里「依赖 T01 已完成」这类提及会把别人的活也标成在做），没带 id 就退化为"不记账"；② 没带 `--run` 的会话归属也由代码处理，**只认本会话自己的 run**（多会话并行时不会去改别人的台账）。
-    - **代码不管的那一半仍然是你的义务**：**结算回写**（`completed` + `changedPaths` + `verify` 结果 + `round`/`verdict`）、repair 链的新建、越界审计 —— 这些都需要你的判断，代码不做。**「派工自动记账」不等于「你不用更新状态」。**
+    - **代码不管的那一半仍然是你的义务**：**裁决并给出结算口径**（`completed` + `changedPaths` + `verify` 结果 + `round`/`verdict` 的数值与判定；写入 `TASKS.json` 的动作按 §2 由产出角色落盘）、repair 链的新建（写成派工，落盘按 §2）、越界审计 —— 这些都需要你的判断，代码不做。**「派工自动记账」不等于「你不用给出结算口径」。**
 11. **质量门禁到共识**：review/requirements 只有 `verdict=pass` 才 `completed`；非 pass 自动 `repair-N`+`review-N+1`（independent、针对最新 attempt），到 `maxReviewRounds` 升级用户；reviewer 不审自己；完成时按 `changedPaths` 做过越界审计。
 12. **开跑先派工：双研究并行 + 同步澄清（Qoder 同款）**：`/team` 创建、自动拉起或 `/team resume` 后，**第一条消息内立即派工**——首步固定拆成**两项并行研究**（同批启动，不等对方）：①`[researcher] 研究现有项目全貌`（读 REPOWIKI + 代码/文档/依赖/存量约束）②`[researcher] 调研竞品与行业`（动态补位调研角色，见 §1 补位规则；无竞品需求时合并为一项）。**同一响应内**再抛 3-5 个关键澄清问题（`ask_user_question`，影响目标/范围/口径的决策点，如「重构范围是否含 admin」「兼容旧数据吗」）——研究工作与确认问题**并行**，不空等。浮层「已派 0/N」且无任务在跑是不正常状态，必须先把它变 ≥1。派工顺序按「已安排任务链」：调研 → 设计 → 实现（DAG 并行）→ 评审 → 测试 → 交付。**澄清前先摸底**：研究 pre-check（现状/缺口）先于口径提问（历史 run：先摸清「加密链路已存在、缺口=中间件不记密文」后一问即准）。
 13. **不 sleep 等活（禁止空转轮询）**：派活后**禁止** `bash sleep 240` 这类盲等——后台成员完成会发**结算通知**（自动到达）；中途看进度用 `list_agents`（成员状态）或看浮层（任务详情有「谁在做/改哪些文件/运行日志」实时信息）或读 `RUN.log.md`；确实要同步阻塞收结果时用 `job_output(<jobId>, {wait:true})`，不要 sleep。等待消息里只做有用的事（继续编排下一层任务、读工件），不空转。
@@ -198,7 +199,7 @@ clarify → research → design → spec-review → implement(DAG并行) → rev
     - 完成：`✅ 完成 → 🔎 研究员：REVIEW-SPEC 已产出`
     规则：播报行放在动作之前/与动作同一轮、一个动作一行、**不写成长段落**；阶段推进与关键门禁必播报，例行文件操作不播报。**播报与一切面向用户的文案里，阶段名一律写中文汉字**（澄清 / 调研 / 设计 / 规格评审 / 方案确认 / 实现 / 审查 / 测试 / 交付），不要写 clarify、design 这类英文阶段 id。
 18. **lint+静态+build 通过 ≠ 运行时通过（交付前必须 smoke）**：`php -l`/静态/build 全过不代表能跑（历史实锤：Hyperf `use function` 漏写导致 `Call to undefined function`，三关全过却运行时崩）。交付/验收必须含**运行时 smoke**：迁移可执行 + 服务可启动 + 关键路径 HTTP 冒烟（健康看 `Server: <框架>` 头 + trace_id，异常路径特征早识别）；QA 对运行时/外部依赖项**如实标注「未实跑」**，不得把 lint/build 通过谎报为运行时通过。
-19. **计划门：先暂存草稿，再由用户授「批准并运行」（Approve & Run）（AgentTeams 借鉴，必须）**：进入方案确认门时，除写 `STATE.pendingDecision`（浮层卡片 + 输入框横幅）外，还必须把**可编辑的计划草稿**写进 `STATE.draft = { roles:[...], tasks:[{id,owner,title,dependsOn,...}] }`（写入方式二选一：① `POST /plugins/dsh-expert-team/plan`（推荐，会做校验：owner 必须在 roles 内、dependsOn 必须指向存在的任务 id、状态归一为 pending）；② 直接 `write` STATE.json）。用户在浮层「事」页签可**增删角色、改任务 owner/依赖**；**只有**用户点 **「✅ 批准并运行」**（该路由把 `draft.tasks` 落入 `TASKS.json`、按 `draft.roles` 更新 `ROSTER.json`、清 `pendingDecision`）之后才允许 implement 派工。用户点 **「🗑 丢弃」** 后 `STATE.planDiscarded` 置位——**此后禁止自动重建同一目标的团队**，除非用户明确再次要求；被丢弃的草稿不得在下一轮"悄悄复活"。
+19. **计划门：先暂存草稿，再由用户授「批准并运行」（Approve & Run）（AgentTeams 借鉴，必须）**：进入方案确认门时，除写 `STATE.pendingDecision`（浮层卡片 + 输入框横幅）外，还必须把**可编辑的计划草稿**写进 `STATE.draft = { roles:[...], tasks:[{id,owner,title,dependsOn,...}] }`（写入方式二选一：① `POST /plugins/dsh-expert-team/plan`（推荐，会做校验：owner 必须在 roles 内、dependsOn 必须指向存在的任务 id、状态归一为 pending）；② 由**运行时**写入（`STATE.json` 的唯一写者是运行时））。用户在浮层「事」页签可**增删角色、改任务 owner/依赖**；**只有**用户点 **「✅ 批准并运行」**（该路由把 `draft.tasks` 落入 `TASKS.json`、按 `draft.roles` 更新 `ROSTER.json`、清 `pendingDecision`）之后才允许 implement 派工。用户点 **「🗑 丢弃」** 后 `STATE.planDiscarded` 置位——**此后禁止自动重建同一目标的团队**，除非用户明确再次要求；被丢弃的草稿不得在下一轮"悄悄复活"。
 
 20. **dsh 升级后先校验预设（字段漂移会让整个 preset 挂不上，且毫无征兆）**：agent 预设是**手写副本**，dsh 升级可能改动插件 config 字段——实测 `@deepseek-ai/dsh-persona` 在 0.1.5-rc.1 把 `text` 改成**必填**的 `prefix`（+`suffix`），而组合**只在会话创建/恢复时读一次**，所以失败表现是「**新建工作区/恢复会话直接报 `preset "expert-team" failed to mount … invalid config: $.prefix missing required value`**」，正在运行的会话却完全正常，用户只会说「加好工作区没反应」。**动作**：升级 dsh（或改动预设）后，立刻跑 `node scripts/validate-agent-preset.mjs`（本包随附：逐行用插件**真实 Config schema** 校验，可离线复现上面的报错），通过后再新建会话；**不等用户来报**。
 

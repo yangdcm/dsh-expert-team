@@ -1785,6 +1785,20 @@
           "replace": "        var ttl = 0 // MUTANT: 不读设置 ⇒ 永不自动消失"
         }
       ]
+    },
+    {
+      "id": "M137-artifact-ownership-r1-revert",
+      "title": "R1 权威表述被改回旧口径（run 工件又「由 lead 落盘」）",
+      "why": "2026-09-15 新增（本轮 A4 的防回归登记）。R1 的权威表述只有一处 —— `skills/expert-team/SKILL.md` 的「**run 工件一律由产出它的角色自己 `write` 到 `<run-dir>/`**」；而 references/ROLES.md 等文件此前写着**相反**的旧口径（「由 lead 落盘」「不要写文件」），成员据此拒绝自己落盘 ⇒ 骨架没人建、工件没人写，用户看到的就是「团队不动」。旧表述现已清掉，故本变异体把**真源的关键子串**改回旧口径：artifact-ownership.test.mjs 的断言 A（整串子串匹配，不用模糊正则）必须失败 —— 若它仍通过，说明这条防回归根本没在盯真源。",
+      "test": "artifact-ownership.test.mjs",
+      "file": "skills/expert-team/SKILL.md",
+      "edits": [
+        {
+          "file": "skills/expert-team/SKILL.md",
+          "find": "run 工件一律由产出它的角色自己",
+          "replace": "run 工件一律由 lead 落盘（MUTANT: R1 改回旧口径）"
+        }
+      ]
     }
   ]
 }

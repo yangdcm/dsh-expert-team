@@ -1,0 +1,174 @@
+// 测试：**工件归属**（防回归 · 本轮 A4）
+//
+// 为什么需要：R1 的权威表述**只有一处** —— `skills/expert-team/SKILL.md`：
+//   「**run 工件一律由产出它的角色自己 `write` 到 `<run-dir>/`**；lead 没有 `write` 工具」。
+// 而 `references/ROLES.md` 等文件曾长期写着**相反**的旧口径（「由 lead 落盘」「不要写文件」）：
+// 成员读到旧口径就**拒绝自己落盘** ⇒ 骨架没人建、工件没人写，用户看到的是「团队不动」。
+// 旧表述清掉之后，"清掉"本身不是机制 —— 任何一次改写都可能把它抄回来。本测试就是防它回来的门禁。
+//
+// 四条断言，一律**整串子串匹配**（不用模糊正则：正则的宽容度会让"看起来还在"蒙混过关）：
+//   A 真源含 R1 权威关键子串（逐字）
+//   B 旧表述在 `skills/expert-team/**` + `presets/expert-team/agent.cordis.yml` 里命中 **0**
+//   C `skills/expert-team/**` 里所有 `assets/templates/<文件名>` 引用都**真实存在**
+//     （悬空引用 = 用户点开预览是空/报错，且说明模板被改名或没落盘）
+//   D 看板名唯一：不得再出现非「任务」前缀的 `看板.md`
+//     （同一个东西两个名字 ⇒ 模板名与引用名对不上；**排掉 `任务看板.md` 这个子串**，别把自己判红）
+//
+// 纪律：每条失败信息都打印**命中文件 + 行号** —— 在一个并发改文件的仓里，
+// 没有行号的失败信息"等于没说"（读的人还得自己 grep 一遍）。
+//
+// 变异验证：见 `regression.fixtures/mutations.json` 的 **M137-artifact-ownership-r1-revert**
+// （把 A 的关键子串改回旧表述 ⇒ A 必红）。运行：node artifact-ownership.test.mjs
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile, readdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { join, dirname, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const SKILL_ROOT = join(here, 'skills', 'expert-team');
+const TEMPLATES_DIR = join(SKILL_ROOT, 'assets', 'templates');
+const SKILL_MD = join(SKILL_ROOT, 'SKILL.md');
+const PRESET_YML = join(here, 'presets', 'expert-team', 'agent.cordis.yml');
+
+/** R1 的权威关键子串（逐字；改一个字都算红）。 */
+const R1_KEY = 'run 工件一律由产出它的角色自己';
+/** 旧口径（与 R1 矛盾；成员据此拒绝落盘）。 */
+const LEGACY_PHRASES = ['由 lead 落盘', '不要写文件', '工件文件一律由 lead'];
+/** 看板唯一名（D 断言的"合法"形态）。 */
+const KANBAN = '看板.md';
+const KANBAN_OK_PREFIX = '任务';
+/** `assets/templates/<文件名>` 引用（文件名可含中文；遇到空白/引号/括号/标点即止）。 */
+const TEMPLATE_REF_RE = /assets\/templates\/([^\s`'"()[\]（）【】、，。；：:|<>*]+)/g;
+
+/** 仓内相对路径（统一 / 分隔，报错信息里可直接点开）。 */
+const rel = (p) => relative(here, p).split('\\').join('/');
+
+/** 递归列出目录下所有文件（自己实现，不依赖 bash / find）。 */
+async function listFiles(dir) {
+  const out = [];
+  const walk = async (d) => {
+    for (const ent of await readdir(d, { withFileTypes: true })) {
+      const p = join(d, ent.name);
+      if (ent.isDirectory()) await walk(p);
+      else if (ent.isFile()) out.push(p);
+    }
+  };
+  await walk(dir);
+  return out.sort();
+}
+
+/** 文本缓存（同一文件被 B/C/D 反复读）。 */
+const cache = new Map();
+async function readText(p) {
+  if (!cache.has(p)) cache.set(p, await readFile(p, 'utf8'));
+  return cache.get(p);
+}
+
+/** 1-based 行号。 */
+const lineOf = (text, index) => text.slice(0, index).split('\n').length;
+
+test('A · SKILL.md 含 R1 权威表述关键子串（逐字）', async (t) => {
+  const src = await readText(SKILL_MD);
+  const at = src.indexOf(R1_KEY);
+  if (at >= 0) {
+    const hits = src.split(R1_KEY).length - 1;
+    t.diagnostic(`命中 ${rel(SKILL_MD)}:${lineOf(src, at)}（共 ${hits} 次）`);
+    return;
+  }
+  const legacyLines = src.split('\n')
+    .map((line, i) => ({ line, no: i + 1 }))
+    .filter(({ line }) => LEGACY_PHRASES.some((p) => line.includes(p)))
+    .map(({ line, no }) => `${rel(SKILL_MD)}:${no} → ${line.trim().slice(0, 100)}`);
+  assert.ok(false,
+    `A 失败：${rel(SKILL_MD)} 里找不到 R1 权威关键子串「${R1_KEY}」`
+    + `（整串子串匹配，${rel(SKILL_MD)} 全文命中 0 次）`
+    + (legacyLines.length
+      ? `\n      同文件里的旧口径（R1 被改回去了？）：\n      ${legacyLines.join('\n      ')}`
+      : '\n      同文件里也没有旧口径 —— 该子串是被改写/删掉，而不是被替换成旧表述。'));
+});
+
+test('B · 旧口径在 skills/expert-team/** + agent 预设里命中 0 次', async (t) => {
+  assert.ok(existsSync(PRESET_YML),
+    `B 失败：目标文件不存在 ${rel(PRESET_YML)} —— 旧口径清查的覆盖面缺一块，不能静默少扫一个文件`);
+  const files = [...(await listFiles(SKILL_ROOT)), PRESET_YML];
+  const found = [];
+  for (const f of files) {
+    const lines = (await readText(f)).split('\n');
+    lines.forEach((line, i) => {
+      for (const p of LEGACY_PHRASES) {
+        let at = line.indexOf(p);
+        while (at >= 0) {
+          found.push(`${rel(f)}:${i + 1} 「${p}」 → ${line.trim().slice(0, 90)}`);
+          at = line.indexOf(p, at + 1);
+        }
+      }
+    });
+  }
+  assert.equal(found.length, 0,
+    `B 失败：旧口径共命中 ${found.length} 处（应为 0；扫了 ${files.length} 个文件）`
+    + `\n      ${found.slice(0, 20).join('\n      ')}`
+    + (found.length > 20 ? `\n      …（还有 ${found.length - 20} 处）` : ''));
+  t.diagnostic(`${files.length} 个文件、${LEGACY_PHRASES.length} 个旧口径串：0 命中`);
+});
+
+test('C · assets/templates/<文件名> 引用无悬空（引用都能落地）', async (t) => {
+  const tplNames = new Set(await readdir(TEMPLATES_DIR));
+  const refs = [];
+  for (const f of await listFiles(SKILL_ROOT)) {
+    const lines = (await readText(f)).split('\n');
+    lines.forEach((line, i) => {
+      TEMPLATE_REF_RE.lastIndex = 0;
+      let m;
+      while ((m = TEMPLATE_REF_RE.exec(line)) !== null) refs.push({ file: rel(f), line: i + 1, name: m[1] });
+    });
+  }
+  const missing = refs.filter((r) => !tplNames.has(r.name));
+  assert.equal(missing.length, 0,
+    `C 失败：${missing.length} 处悬空引用（目标不在 ${rel(TEMPLATES_DIR)}/ 下）`
+    + `\n      ${missing.map((r) => `${r.file}:${r.line} → assets/templates/${r.name}`).join('\n      ')}`
+    + `\n      现有模板：${[...tplNames].sort().join(', ')}`);
+  // 反空转：解析器若一条都读不到，这条断言就会变成"永远通过"的假门禁。
+  assert.ok(refs.length > 0,
+    `C 失败：一条 assets/templates/<文件名> 引用都没解析到 —— 解析器与实际写法脱节`
+    + `（扫了 ${rel(SKILL_ROOT)} 下 ${(await listFiles(SKILL_ROOT)).length} 个文件）`);
+  t.diagnostic(`${refs.length} 处引用，全部命中 ${rel(TEMPLATES_DIR)}/ 下的真实文件`);
+});
+
+test('D · 看板名唯一：非「任务」前缀的 看板.md 命中 0 次', async (t) => {
+  const found = [];
+  let okCount = 0;
+  for (const f of await listFiles(SKILL_ROOT)) {
+    const lines = (await readText(f)).split('\n');
+    lines.forEach((line, i) => {
+      let at = line.indexOf(KANBAN);
+      while (at >= 0) {
+        const before = line.slice(Math.max(0, at - KANBAN_OK_PREFIX.length), at);
+        if (before === KANBAN_OK_PREFIX) okCount += 1;
+        else found.push(`${rel(f)}:${i + 1} → …${line.slice(Math.max(0, at - 14), at + KANBAN.length + 8)}…`);
+        at = line.indexOf(KANBAN, at + 1);
+      }
+    });
+  }
+  assert.equal(found.length, 0,
+    `D 失败：非「${KANBAN_OK_PREFIX}${KANBAN}」的 ${KANBAN} 共 ${found.length} 处（看板名必须唯一）`
+    + `\n      ${found.slice(0, 20).join('\n      ')}`
+    + (found.length > 20 ? `\n      …（还有 ${found.length - 20} 处）` : ''));
+  t.diagnostic(`${KANBAN_OK_PREFIX}${KANBAN} 命中 ${okCount} 处，其它形态 0 处`);
+});
+
+test('反空转 · 真源/模板目录/唯一看板名都还在扫描面里（防「解析不到 ⇒ 永远通过」）', async (t) => {
+  const files = await listFiles(SKILL_ROOT);
+  assert.ok(files.some((f) => f === SKILL_MD), `${rel(SKILL_MD)} 不在扫描面里`);
+  const tplNames = await readdir(TEMPLATES_DIR);
+  assert.ok(tplNames.length > 0, `${rel(TEMPLATES_DIR)}/ 是空的`);
+  // D 的反空转：唯一看板名（`任务看板.md`）必须真的出现在扫描面里 —— 否则"把看板整个改名/删掉"
+  // 会让 D 因为"一处都没扫到"而变绿（本仓教训：解析不到东西的门禁＝永远通过的门禁）。
+  const kanbanSeen = [];
+  for (const f of files) if ((await readText(f)).includes(KANBAN_OK_PREFIX + KANBAN)) kanbanSeen.push(rel(f));
+  assert.ok(kanbanSeen.length > 0,
+    `扫描面（${files.length} 个文件）里一处 ${KANBAN_OK_PREFIX}${KANBAN} 都没有 —— D 的判据失去了对象，不能算通过`);
+  t.diagnostic(`扫描面：${files.length} 个文件；模板 ${tplNames.length} 个；${KANBAN_OK_PREFIX}${KANBAN} 出现在 ${kanbanSeen.join(', ')}`);
+});
