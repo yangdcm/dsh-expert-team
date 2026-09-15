@@ -3,6 +3,73 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.3.11
+
+**`/state` 的 `subs` / `roles` 两段收口 —— 这次不靠预测，靠 1.3.10 留下的分步计时开关实测定位。**
+父会话在真机上带 `DSH_EXPERT_TEAM_STATE_PROFILE=1` 复测，拿到确切归属（同一台机器、同一 session、
+连续两次请求）：
+
+```
+totalMs 2222 / 2047
+profile.runs+select   21 / 15  ms   ✓ 便宜
+profile.subs        1327 / 1388 ms  ✗ 主犯
+profile.wfLabels       0 / 0   ms   ✓
+profile.roles        869 / 638 ms  ✗ 次犯
+profile.tail           3 / 3   ms   ✓
+rolesBudget: {per:4, left:0, deferred: 16 → 40}   ← deferred 在**涨**
+```
+
+### ① `subs` 段：按 session id 备忘（并纠正两处"看起来像缓存、其实没用"的设置）
+
+- **根因**：1.3.10 的"只在真缺人时才查"**没真正省下钱** —— 已结束/历史子会话本来就不在活注册表里，
+  `missingIds` 每请求都非空 ⇒ 每请求都退化成对 **475 个 artifact 逐个读 header** 的枚举；
+  而当时设的 **2 s TTL 恰好等于真实请求间隔**（轮询 + 退避），**必然过期** ⇒ 等于没有缓存。
+- **改法**：新增 `SUB_HEADER_MEMO`（按 session id 永久记住 `createdAt/parentId/depth`）——
+  这条分支上的 id 恰恰是"活注册表里查不到"的那些，其 header 不可变，记住它们不会让用户看到旧状态；
+  枚举本身的主失效键改为 **`(sessions 根目录, mtimeMs, size)`**（`sessionsRootStamp()`，实测 0.56 ms），
+  TTL 只作兜底并放宽到 **60 s**。
+- **口径不变**：**活代理一律实时读，绝不进任何缓存**（有断言守着：活代理不写入备忘）。
+- **折算前后**（单位成本取自上面的真机 profile：一次枚举 ≈ 1500–2400 ms，本机取 1800 ms）：
+  **旧：每请求 ≈ 1800 ms；新：第 1 次 1800 ms，第 2 次起 0.02–0.09 ms** ⇒ 热态 `subs` ≈ **0 ms**。
+
+### ② `roles` 段：限次摊平改成**跨请求推进的队列**
+
+- **根因**：1.3.10 每请求都把候选集**从零重算**，预算永远喂给队首同几条，而新派的子代理不断出现在队尾
+  ⇒ **进度不前进、`deferred` 只增不减**（实测 16 → 40）。"限次摊平"退化成"永远摊不完"。
+- **改法**：模块级 `ROLE_PENDING` 队列 —— 每请求按"当前 subs 里仍未缓存"的顺序**重建队列**
+  （已缓存的自动掉队、既有顺序保留、新人追加队尾），再从队首消费 ≤ 4 条；角色结果**永久缓存**
+  （对已结束会话不可变）。`resetRoleReadBudget()` 只复位**本请求额度**，**不丢队列进度**。
+- **两种零仍然分得开**：`deferred` = **还没解析**（队列长度，单调不增）；`unresolved` = **解析不出来**
+  （读过但日志里没有角色）—— 新增这个数，正是为了不让两者混成一个。
+- **实测（21 个子会话，每次 4 条预算）**：`deferred` **17 → 13 → 9 → 5 → 1 → 0**；
+  6 个 tick 后**零次日志读**。折算：**旧 860 ms/请求且永不收敛 → 收敛后 ≈ 0 ms**。
+
+### ③ 推荐插件自检的**假警报**（用户贴的启动日志直接坐实）
+
+- **现象**：日志说 `@vectorize-io/hindsight-coding-agents` 与 `dsh-cost-meter`"已安装但当前不可用 ⇒
+  `dsh plugin … add`"，**紧跟着 `dsh-cost-meter` 自己就加载成功了** ⇒ 判定是错的、建议是误导的。
+- **根因（两条）**：① 我们的 `apply()` 跑在其它插件之前，那一刻 `ctx.get('costMeter')`/工具表里当然还没有它们；
+  ② 对 `installed-not-ready` 也拼了安装命令，等于叫用户装一个**已经装好**的东西。
+- **宿主没有 app 级 ready 事件**（已核源码）：`dsh-app-boot` 的 `boot()` 顺序是
+  `mountRootInclude → await ctx.get('loader').await() → assertEntriesActivated → return`，
+  期间不 emit 任何"就绪"事件；而 `loader.await()` 我们**不能用** —— 那棵树包含我们自己的挂载任务，
+  在 init 里 await 它会**自等死锁**。
+- **改法**：`scheduleOptionalPluginCheck()` —— **有界延迟重探**（250/1000/3000 ms，最后一次才下结论）
+  ＋ **`ctx.inject([服务])` 事件驱动**（服务一出现立刻重探；服务始终不出现则回调不触发，零副作用）；
+  外加 **`/team help` 懒重探**（刚装上/刚修好配置不必为了这行提示再重启）。
+- **文案分档**：`missing` ⇒ 给安装命令；`installed-not-ready` ⇒ 只说"已安装但当前未就绪（可能未配置或被关闭）"，
+  **不再给安装命令**；`unknown` ⇒ 不出现（四态与"两种零可区分"的语义不变）。
+
+### 验证与口径
+
+- `npm run test:all` **EXIT=0**（**80** 个测试文件；`state-perf-guard` 扩到 37 条断言：备忘只枚举一次、
+  活代理不入备忘、目录戳失效、队列跨请求推进、deferred 单调不增、额度复位不丢进度、
+  `installed-not-ready` 不含安装命令、服务晚挂不再误报、就绪后重探与懒重探的接线）。
+- **诚实边界**：上面"折算前后"的数字是**用父会话真机实测的单位成本 × 新代码的调用次数**折算的
+  （本机宿主仍跑 1.3.10，我无法把新代码装进运行中的进程）。**端到端 `totalMs` 请装完 1.3.11 后带
+  `DSH_EXPERT_TEAM_STATE_PROFILE=1` 复测**：预期 `subs`/`roles` 两段都接近 0，
+  `totalMs` 由 `runs+select`（~20 ms）+ `tail`（~3 ms）主导。
+
 ## 1.3.10
 
 **四项一次收口：推荐插件自检 · 画布轮询也走 single-flight · 底盘缓存 · 角色解析限次。**
