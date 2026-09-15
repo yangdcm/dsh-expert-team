@@ -74,7 +74,7 @@ console.log('\n④ 行为契约（解析口径不许在搬迁中被"顺手改好
   const rl = c('rule 改完就提交');
   check(rl.kind === 'rules' && rl.action === 'add' && rl.rule === '改完就提交', '`/team rule <文本>` ⇒ **同一个 kind**、action=add（不是另一个 kind）', JSON.stringify(rl));
   check(c('tier 严格档').kind === 'tier', 'tier 子命令（G 线）');
-  check(c('--persist x').persist === true && c('x').persist === false, '--persist');
+  check(c('--persist x').persist === true && c('x').persist === null, '--persist（未给 flag ⇒ null = 未表态，听设置）');
   check(c('--no-code x').noCode === true, '--no-code');
   check(c('--allow-rebuild x').allowRebuild === true, '--allow-rebuild');
   check(c('--roles pm,qa x').roles.join(',') === 'pm,qa', '--roles 逗号列表');

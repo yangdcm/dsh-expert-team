@@ -92,7 +92,7 @@ console.log('\n⑤ 普通任务 → create，且参数解析仍然正确');
   // 必须是有意为之的改动，而不是靠巧合。
   const r2 = parseTeamCommand('做一个番茄钟 --persist');
   check(r2.kind === 'create', 'flags 写在后面仍是 create', r2.kind);
-  check(r2.persist === false, 'flags 写在任务之后不生效（被当成任务文本）—— 契约，不是 bug', String(r2.persist));
+  check(r2.persist === null, 'flags 写在任务之后不生效（被当成任务文本，未表态 ⇒ null）—— 契约，不是 bug', String(r2.persist));
   check(/--persist/.test(r2.task || ''), '后置 flag 原样进任务文本', String(r2.task));
 }
 

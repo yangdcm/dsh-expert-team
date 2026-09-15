@@ -1190,6 +1190,7 @@ window.__ModuleLoader__.load({
         h('button', { className: 'exp-settings-retry', onClick: function () { setRetry(retry + 1) } }, esc(t('重试', 'Retry'))))
       if (!data || !data.schema) return h('div', { className: 'exp-settings' }, h('div', { className: 'exp-empty' }, t('（正在读取设置…）', '(loading settings…)')))
       var model = settingsFormModel(data.schema, data.settings)
+      var hasInertMark = model.some(function (g) { return (g.rows || []).some(function (r) { return /暂未生效/.test(String(r.hint || '')) }) })
       var rows = []
       model.forEach(function (g) {
         rows.push(h('div', { key: 'h-' + g.group, className: 'exp-settings-group' }, esc(g.label) + (g.hint ? ' · ' + esc(g.hint) : '')))
@@ -1222,7 +1223,11 @@ window.__ModuleLoader__.load({
         //   ③ **没有任何一项需要重启** ⇒ 回执只说"已保存"（`needsRestart` 恒 false）。
         //   ④ 标着「暂未生效」的项 = **还没接线**（`INERT_SETTINGS`，见 lib/settings.js）：写在这里
         //      不是承诺，而是如实告知；逐项标记由 per-item hint 携带，不在这里重复。
-        h('div', { className: 'exp-settings-head' }, esc(t('改动即保存并即时生效（上限 / 轮次 / 档位门 / 振荡检测开关在进程内重算）。标着「暂未生效」的项尚未接线，改了不会有作用。', 'Saved on change and applied immediately (caps, rounds, the tier gate and the oscillation switch are recomputed in-process). Items marked as not yet in effect are not wired up — changing them does nothing.'))),
+        // 「暂未生效」那句**只在真有这种项时**才渲染（1.3.5）：INERT_SETTINGS 现在是空的，
+        // 无条件渲染会让用户去找一个不存在的标注。判据直接取 hint 里的标记 ⇒ 与后端单一真源一致。
+        h('div', { className: 'exp-settings-head' }, esc(hasInertMark
+          ? t('改动即保存并即时生效（上限 / 轮次 / 档位门 / 振荡检测开关在进程内重算）。标着「暂未生效」的项尚未接线，改了不会有作用。', 'Saved on change and applied immediately (caps, rounds, the tier gate and the oscillation switch are recomputed in-process). Items marked as not yet in effect are not wired up — changing them does nothing.')
+          : t('改动即保存并即时生效（上限 / 轮次 / 档位门 / 振荡检测开关在进程内重算）。', 'Saved on change and applied immediately (caps, rounds, the tier gate and the oscillation switch are recomputed in-process).'))),
         rows,
         h('div', { className: 'exp-settings-msg' + (err ? ' bad' : '') }, esc(err ? '✗ ' + err : (msg || ''))))
     }
