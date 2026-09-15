@@ -22,7 +22,7 @@ window.__ModuleLoader__.load({
     var h = createElement
 
     var CSS =
-      '.exp-panel{position:fixed;top:0;right:0;bottom:0;width:360px;max-width:100vw;display:flex;flex-direction:column;background:var(--dsw-alias-bg-base,var(--bg,#fff));border-left:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));box-shadow:-10px 0 32px rgba(0,0,0,.16);z-index:120;font-size:13px;color:var(--dsw-alias-label-primary,var(--text,#1f2328));font-family:-apple-system,"Segoe UI","PingFang SC",sans-serif}' +
+      '.exp-panel{position:fixed;top:0;right:0;bottom:0;width:420px;max-width:100vw;display:flex;flex-direction:column;background:var(--dsw-alias-bg-base,var(--bg,#fff));border-left:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));box-shadow:-10px 0 32px rgba(0,0,0,.16);z-index:120;font-size:13px;color:var(--dsw-alias-label-primary,var(--text,#1f2328));font-family:-apple-system,"Segoe UI","PingFang SC",sans-serif}' +
       '.exp-head{padding:12px 16px;border-bottom:1px solid var(--dsw-alias-border-l1,var(--border,#d0d7de));background:linear-gradient(180deg,var(--dsw-alias-bg-module-platform,var(--bg-subtle,#f6f8fa)),var(--dsw-alias-bg-base,var(--bg,#fff)));display:flex;align-items:center;justify-content:space-between;flex:none}' +
       '.exp-head.exp-grab{cursor:move;user-select:none}' +
       '.exp-dock-handle{position:absolute;left:-2px;top:0;bottom:0;width:9px;cursor:col-resize;z-index:3;transition:background .12s}' +
@@ -293,6 +293,74 @@ window.__ModuleLoader__.load({
     function setOpen() { open = !open; notify() }
     function subscribe(f) { listeners.add(f); return function () { listeners.delete(f) } }
     function useExternal(getValue) { var s = useState(getValue()); useEffect(function () { return subscribe(function () { s[1](getValue()) }) }, []); return s[0] }
+
+    // ── 设置桥（1.3.4）：`display.*` 的**唯一**运行态来源 ───────────────────────────
+    // 为什么必须有它：此前全仓只有一处 `/settings` 拉取，而且只在设置表单里 —— display 四项因此
+    // 永远流不到运行态（轮询间隔/胶囊停留/面板宽度/默认页签各自硬编码或读 localStorage）。
+    // 这里建**一条**共享的路：面板挂载时拉一次；设置页保存成功后复用同一条路把新值通知出去
+    // ⇒ 改设置**当场生效**（同一 client、进程内），不必重启。
+    var EXPERT_DISPLAY = { pollMs: 3000, capsuleMs: 4000, panelWidth: 420, defaultTab: 'team' }
+    var DISPLAY_TABS = ['team', 'tasks', 'board', 'info']
+    var DISPLAY_RANGE = { pollMs: [1000, 60000], capsuleMs: [0, 60000], panelWidth: [280, 900] }
+    var displayLoaded = false
+    var displayLoading = null
+    function clampInt(v, lo, hi, def) { var n = Number(v); if (!isFinite(n)) return def; n = Math.round(n); return Math.max(lo, Math.min(hi, n)) }
+    /** 从 `/settings` 响应挑出 display 四项并按值域夹紧；缺项/越界一律回退当前值（不制造 NaN/空白）。 */
+    function pickDisplay(settings) {
+      var d = (settings && settings.display) || {}
+      return {
+        pollMs: clampInt(d.pollMs, DISPLAY_RANGE.pollMs[0], DISPLAY_RANGE.pollMs[1], EXPERT_DISPLAY.pollMs),
+        capsuleMs: clampInt(d.capsuleMs, DISPLAY_RANGE.capsuleMs[0], DISPLAY_RANGE.capsuleMs[1], EXPERT_DISPLAY.capsuleMs),
+        panelWidth: clampInt(d.panelWidth, DISPLAY_RANGE.panelWidth[0], DISPLAY_RANGE.panelWidth[1], EXPERT_DISPLAY.panelWidth),
+        defaultTab: DISPLAY_TABS.indexOf(String(d.defaultTab)) >= 0 ? String(d.defaultTab) : EXPERT_DISPLAY.defaultTab
+      }
+    }
+    /** 应用一份设置：换对象（useExternal 才看得见变化）+ 未拖动过宽度时采纳设置值 + 通知重渲染。 */
+    function applyDisplaySettings(settings) {
+      var next = pickDisplay(settings)
+      var changed = next.pollMs !== EXPERT_DISPLAY.pollMs || next.capsuleMs !== EXPERT_DISPLAY.capsuleMs || next.defaultTab !== EXPERT_DISPLAY.defaultTab
+      EXPERT_DISPLAY = next
+      // 宽度：设置值是**默认宽度**；用户拖过就以拖动结果为准（拖动结束会把宽度写回设置）。
+      if (!panelWidthUserSet && next.panelWidth !== panelWidth) { panelWidth = clampW(next.panelWidth); changed = true }
+      if (changed) notify()
+      return next
+    }
+    function fetchSettingsPayload() {
+      return fetch('/plugins/dsh-expert-team/settings').then(function (r) {
+        return r.json().catch(function () { return null }).then(function (d) { return { ok: r.ok, status: r.status, d: d } })
+      })
+    }
+    /** 拉一次设置（幂等：同一次加载只拉一次；失败静默 —— 面板照旧用默认值工作）。 */
+    function loadDisplaySettings() {
+      if (displayLoaded) return displayLoading || Promise.resolve(EXPERT_DISPLAY)
+      displayLoading = fetchSettingsPayload().then(function (res) {
+        displayLoaded = true
+        if (res.ok && res.d && res.d.ok && res.d.settings) applyDisplaySettings(res.d.settings)
+        return EXPERT_DISPLAY
+      }).catch(function () { displayLoaded = true; return EXPERT_DISPLAY })
+      return displayLoading
+    }
+    /** 运行态取 display 配置（挂载时拉一次；保存后由 applyDisplaySettings 通知更新）。 */
+    function useDisplaySettings() {
+      var v = useExternal(function () { return EXPERT_DISPLAY })
+      useEffect(function () { loadDisplaySettings() }, [])
+      return v
+    }
+    /** 拖动结束把宽度**防抖**写回设置（单一真源）；localStorage 只作首帧缓存。 */
+    var widthSaveTimer = null
+    function persistDisplayWidth(w) {
+      if (widthSaveTimer) clearTimeout(widthSaveTimer)
+      widthSaveTimer = setTimeout(function () {
+        widthSaveTimer = null
+        try {
+          fetch('/plugins/dsh-expert-team/settings', {
+            method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ 'display.panelWidth': w })
+          }).then(function (r) { return r.json().catch(function () { return null }) }).then(function (d) {
+            if (d && d.ok && d.settings) applyDisplaySettings(d.settings)
+          }).catch(function () {})
+        } catch (e) {}
+      }, 400)
+    }
     /** 对话流 workflow 卡是否已回退到 dsh 原生（localStorage 开关，刷新生效）。 */
     function nativeWfOn() { try { return window.localStorage.getItem('et-native-workflow') === '1' } catch (e) { return false } }
     function useCurrentSession() { return useExternal(function () { return currentSessionId }) }
@@ -306,8 +374,12 @@ window.__ModuleLoader__.load({
     function saveLS(key, v) { try { window.localStorage.setItem(key, JSON.stringify(v)) } catch (e) {} }
     var dockState = loadLS('et-dock', true)
     var panelPos = loadLS('et-pos', { x: 0, y: 0 })
-    var panelWidth = loadLS('et-width', 360)
-    function clampW(w) { return Math.max(280, Math.min(640, w)) }
+    // 1.3.4：默认宽度来自设置 `display.panelWidth`（首帧用 localStorage 缓存避免闪烁）；
+    // 值域与设置对齐 280..900（此前 clamp 到 640、CSS 写死 360 —— 三处互不一致）。
+    var panelWidthLS = loadLS('et-width', null)
+    var panelWidthUserSet = typeof panelWidthLS === 'number'
+    var panelWidth = clampW(typeof panelWidthLS === 'number' ? panelWidthLS : EXPERT_DISPLAY.panelWidth)
+    function clampW(w) { return Math.max(280, Math.min(900, w)) }
     function setDock(v) { if (dockState === v) return; dockState = v; if (!v) { panelPos = { x: ((window && window.innerWidth) || 1280) - panelWidth, y: 80 }; saveLS('et-pos', panelPos) } saveLS('et-dock', dockState); notify() }
     function setPanelPos(x, y) { panelPos = { x: x, y: y }; saveLS('et-pos', panelPos); notify() }
     /**
@@ -323,7 +395,7 @@ window.__ModuleLoader__.load({
         if (changed) notify()
       } catch (e) {}
     }
-    function setPanelWidth(w) { panelWidth = clampW(w); saveLS('et-width', panelWidth); notify() }
+    function setPanelWidth(w) { panelWidth = clampW(w); panelWidthUserSet = true; saveLS('et-width', panelWidth); notify(); persistDisplayWidth(panelWidth) }
 
     /**
      * ── 对话流卡片 → 右侧面板的「聚焦意图」通道 ──
@@ -1081,12 +1153,10 @@ window.__ModuleLoader__.load({
       useEffect(function () {
         var alive = true
         setLoading(true); setLoadErr('')
-        fetch('/plugins/dsh-expert-team/settings').then(function (r) {
-          return r.json().catch(function () { return null }).then(function (d) { return { ok: r.ok, status: r.status, d: d } })
-        }).then(function (res) {
+        fetchSettingsPayload().then(function (res) {
           if (!alive) return
           setLoading(false)
-          if (res.ok && res.d && res.d.ok && res.d.schema) { setData(res.d); return }
+          if (res.ok && res.d && res.d.ok && res.d.schema) { applyDisplaySettings(res.d.settings); setData(res.d); return }
           var detail = (res.d && (res.d.error || (res.d.errors || []).join('；'))) || ''
           setLoadErr(t('读取设置失败：HTTP ', 'Reading settings failed: HTTP ') + res.status + (detail ? ' ' + t('（', '(') + detail + t('）', ')') : ''))
         }).catch(function (e) {
@@ -1107,6 +1177,7 @@ window.__ModuleLoader__.load({
             return
           }
           setData(function (prev) { return { schema: (prev && prev.schema) || [], settings: res.d.settings, ok: true } })
+          applyDisplaySettings(res.d.settings)   // 1.3.4：设置页改完 display 四项**当场生效**（不必重启/刷新）
           setMsg('已保存')   // 1.3.2：经逐项核查，没有任何设置需要重启（见 lib/command.js 的 needsRestart 注释）⇒ 死分支已删
         }).catch(function (e) { setErr(String(e && e.message ? e.message : e)); setMsg('') })
       }
@@ -1179,6 +1250,8 @@ window.__ModuleLoader__.load({
       var pos = usePanelPos()
       useLang() // re-render when the shell language changes
       var pw = usePanelWidth()
+      // 1.3.4：display 四项在这里取（挂载时拉一次设置；保存后即时通知更新）
+      var dispCfg = useDisplaySettings()
       var dataS = useState(null), data = dataS[0], setData = dataS[1]
       var runsMetaS = useState([]); var runsMeta = runsMetaS[0], setRunsMeta = runsMetaS[1]
       var selTask = useState(null); var selTaskV = selTask[0], setSelTask = selTask[1]
@@ -1196,7 +1269,7 @@ window.__ModuleLoader__.load({
       var prevDecRef = useRef(0)
       var hoverS = useState(null); var hoverId = hoverS[0], setHover = hoverS[1]
       var view = useState('dag'); var viewV = view[0], setView = view[1]
-      var tabS = useState('team'); var tab = tabS[0], setTab = tabS[1]
+      var tabS = useState(null); var tab = tabS[0] || dispCfg.defaultTab; var setTab = tabS[1]   // 1.3.4：初始页签来自设置 display.defaultTab
       var listOpenS = useState(false); var listOpen = listOpenS[0], setListOpen = listOpenS[1]
       // 流转视图（波次带）自己的 UI 状态：宽视图 / 波折叠 / 未绑定任务展开
       var wideS = useState(false); var wideV = wideS[0], setWide = wideS[1]
@@ -1315,18 +1388,19 @@ window.__ModuleLoader__.load({
         var m = (d && d.members) || {}
         var busy = Object.keys(m).some(function (k) { var v = m[k]; return v && typeof v === 'object' && (v.activity === 'running' || v.shortStatus === 'running') })
         clearInterval(pollRef.current)
-        pollRef.current = setInterval(load, busy ? 1200 : 3000)
+        // 1.3.4：间隔来自设置 display.pollMs（忙碌时按同一意图加速到 40%，下限 300ms）
+        pollRef.current = setInterval(load, busy ? Math.max(300, Math.round(dispCfg.pollMs * 0.4)) : dispCfg.pollMs)
       }
       useEffect(function () {
         if (!isOpen && !viewMode) return undefined // panel closed & not canvas → no polling
-        load(); pollRef.current = setInterval(load, 3000)
+        load(); pollRef.current = setInterval(load, dispCfg.pollMs)
         // catch up instantly when the user returns to the tab / window
         var onVis = function () { if (document.visibilityState === 'visible') load() }
         var onFocus = function () { load() }
         document.addEventListener('visibilitychange', onVis)
         window.addEventListener('focus', onFocus)
         return function () { clearInterval(pollRef.current); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('focus', onFocus) }
-      }, [sessionId, selRunV, isOpen, viewMode])
+      }, [sessionId, selRunV, isOpen, viewMode, dispCfg.pollMs])
 
       // Make the docked panel reserve space (shift the shell frame) instead of
       // covering the workspace; clears when closed or floating (md-preview trick).
@@ -1710,7 +1784,7 @@ window.__ModuleLoader__.load({
         // 可画宽度三源：实测容器 → 全屏画布按窗口估 → 停靠侧栏宽度偏好。
         // 「宽视图」开关终于有作用了：放宽单卡上限（否则 12 波里每波只有 2–3 人时，
         // 卡片被 176px 封顶、右侧大片空白）。
-        var baseW = flowW || (viewMode ? Math.max(320, ((typeof window !== 'undefined' && window.innerWidth) || 1200) - 340) : (typeof pw === 'number' ? pw : 360))
+        var baseW = flowW || (viewMode ? Math.max(320, ((typeof window !== 'undefined' && window.innerWidth) || 1200) - 340) : (typeof pw === 'number' ? pw : 420))
         var avail = Math.max(240, baseW - 26)
         var widest = 1
         W.waves.forEach(function (w) { widest = Math.max(widest, w.members.length) })
@@ -2335,8 +2409,14 @@ window.__ModuleLoader__.load({
       try {
         var last = activityQ[0]
         if (last && last.text === text && Date.now() - (last.ts || 0) < 4000) return
-        activityQ.unshift({ icon: icon, text: String(text || '').slice(0, 90), ts: Date.now() })
+        var entry = { icon: icon, text: String(text || '').slice(0, 90), ts: Date.now() }
+        activityQ.unshift(entry)
         if (activityQ.length > 8) activityQ.length = 8
+        // 1.3.4：停留时长来自设置 `display.capsuleMs`（0 = 不自动消失）。
+        // ⚠️ 上面那个 4000 是**同文本去重窗口**，不是停留时长 —— 旧实现把它当停留时长，
+        // 于是"胶囊 N 毫秒后消失"这个功能**压根不存在**（只入队、永不自动出队，>8 才截断）。
+        var ttl = EXPERT_DISPLAY.capsuleMs
+        if (ttl > 0) setTimeout(function () { var i = activityQ.indexOf(entry); if (i >= 0) { activityQ.splice(i, 1); notify() } }, ttl)
         notify()
       } catch (e) {}
     }
