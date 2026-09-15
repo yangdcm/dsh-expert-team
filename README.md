@@ -3,10 +3,10 @@
 [English](README.en.md) | 中文
 
 [![npm](https://img.shields.io/npm/v/@yangdcm/dsh-expert-team)](https://www.npmjs.com/package/@yangdcm/dsh-expert-team)
-[![license](https://img.shields.io/npm/l/@yangdcm/dsh-expert-team)](LICENSE)
+[![license](https://img.shields.io/npm/l/@yangdcm/dsh-expert-team)](https://github.com/yangdcm/dsh-expert-team/blob/main/LICENSE)
 [![CI](https://github.com/yangdcm/dsh-expert-team/actions/workflows/ci.yml/badge.svg)](https://github.com/yangdcm/dsh-expert-team/actions/workflows/ci.yml)
 
-![专家团：一句话组队交付](docs/images/hero.svg)
+![专家团：一句话组队交付](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/hero.svg)
 
 > **一句话组队交付**：`/team 做一个带登录的支付模块` —— 自动组建 12 角色专家团，走
 > 澄清 → 调研 → 设计 → 规格评审 → 方案确认 → 实现 → 审查 → 测试 → 交付 的门控流水线，
@@ -18,7 +18,7 @@
 |---|---|---|---|---|
 | 各带人设 / `toolFilter` / `maxDepth: 1` | 含 1 道硬门 + 1 道确认门 | 含 136 条变异目录与多组棘轮 | `dependencies: {}` | 无 bundler、无 `prepare` 钩子 |
 
-![9 阶段门控流水线](docs/images/pipeline.svg)
+![9 阶段门控流水线](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/pipeline.svg)
 
 <sub>图 1：9 阶段门控流水线。「规格评审」是**硬门** —— SPEC.md 的「边界与禁止项」没填就不放行（`lib/interception.js`）；「方案确认」是默认开启的**确认门**（`identity.keepPlanGate`，可在设置里关掉）；「实现」阶段按依赖 DAG **并行扇出**，多个实现者同时开工、各自只改自己那份文件。</sub>
 
@@ -59,19 +59,19 @@ $ /team 做一个带登录的支付模块
 
 ## 看一眼它在干什么
 
-![质量门禁违规实时可见](docs/images/panel-gate.png)
+![质量门禁违规实时可见](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-gate.png)
 
 <sub>图 2：**门禁违规**。看顶部那条横幅 —— 违规项与拒绝理由（例如"SPEC.md 的边界章节已进入 `implement` 但仍无任何一行填写"）由 `lib/interception.js` 挂在宿主 `tools/post-execute` 上当场判出后推出，不是提示词提醒。</sub>
 
-![成员模型与任务详情](docs/images/panel-live.png)
+![成员模型与任务详情](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-live.png)
 
 <sub>图 3：**角色编制**。看成员列表 —— 谁在跑、用哪个模型、当前在做什么；展开任一成员可看它的任务与产物。模型可按角色分别配置，异构模型用于交叉验证。</sub>
 
-![阶段推进与工件预览](docs/images/panel-flow.png)
+![阶段推进与工件预览](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-flow.png)
 
 <sub>图 4：**阶段与工件**。看阶段条与预览区 —— 当前阶段、已过阶段、以及该阶段真正写下的工件正文（工件是唯一真源，浮层只是它的视图）。</sub>
 
-![官方设置页里的专家团分节](docs/images/settings.png)
+![官方设置页里的专家团分节](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
 
 <sub>图 5：**设置**。看官方 `设置 →「专家团」` 这一页 —— 18 个设置项、中文标签、**改动即保存并即时生效**（上限/轮次/档位门/振荡检测在进程内重算）；值存在宿主命名空间 `expert-team`，随插件市场的备份/恢复一起走。</sub>
 

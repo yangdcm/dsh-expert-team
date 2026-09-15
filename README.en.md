@@ -3,10 +3,10 @@
 English | [中文](README.md)
 
 [![npm](https://img.shields.io/npm/v/@yangdcm/dsh-expert-team)](https://www.npmjs.com/package/@yangdcm/dsh-expert-team)
-[![license](https://img.shields.io/npm/l/@yangdcm/dsh-expert-team)](LICENSE)
+[![license](https://img.shields.io/npm/l/@yangdcm/dsh-expert-team)](https://github.com/yangdcm/dsh-expert-team/blob/main/LICENSE)
 [![CI](https://github.com/yangdcm/dsh-expert-team/actions/workflows/ci.yml/badge.svg)](https://github.com/yangdcm/dsh-expert-team/actions/workflows/ci.yml)
 
-![expert-team: one sentence in, a gated team delivery out](docs/images/hero.svg)
+![expert-team: one sentence in, a gated team delivery out](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/hero.svg)
 
 > **One sentence in, a gated team delivery out.** `/team build a payments module with login`
 > assembles a 12-role expert team and runs
@@ -20,7 +20,7 @@ A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 |---|---|---|---|---|
 | own persona / `toolFilter` / `maxDepth: 1` | 1 hard gate + 1 approval gate | incl. a 136-entry mutation catalog and several ratchets | `dependencies: {}` | no bundler, no `prepare` hook |
 
-![The 9-phase gated pipeline](docs/images/pipeline.svg)
+![The 9-phase gated pipeline](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/pipeline.svg)
 
 <sub>Figure 1: the 9-phase gated pipeline. `spec-review` is a **hard gate** — if the SPEC.md
 "boundaries and prohibitions" section is empty, the run does not advance (`lib/interception.js`).
@@ -67,24 +67,24 @@ answer them:
 
 ## What it looks like in action
 
-![Quality-gate violations surfaced live](docs/images/panel-gate.png)
+![Quality-gate violations surfaced live](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-gate.png)
 
 <sub>Figure 2: **gate violations**. Look at the banner at the top — the violation and its refusal reason
 (e.g. "SPEC.md's boundary section has entered `implement` but still has no 'expected rejection' row")
 is decided by `lib/interception.js`, hooked onto the host's `tools/post-execute` waterfall, and surfaced
 immediately. This is code, not a prompt reminder.</sub>
 
-![Members, models and task detail](docs/images/panel-live.png)
+![Members, models and task detail](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-live.png)
 
 <sub>Figure 3: **the roster**. Look at the member list — who is running, on which model, and what it is doing;
 expand a member for its tasks and artifacts. Models are configurable per role; heterogeneous models are used for cross-checking.</sub>
 
-![Phase progress and artifact preview](docs/images/panel-flow.png)
+![Phase progress and artifact preview](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-flow.png)
 
 <sub>Figure 4: **phases and artifacts**. Look at the phase bar and the preview pane — the current phase, the phases
 already passed, and the actual body of the artifact written in that phase (artifacts are the single source of truth; the overlay is just a view of them).</sub>
 
-![The expert-team section inside the official settings page](docs/images/settings.png)
+![The expert-team section inside the official settings page](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
 
 <sub>Figure 5: **settings**. Look at the official `Settings → Expert team` page — 18 settings, Chinese labels,
 **saved on change and applied immediately** (caps, rounds, the tier gate and the oscillation detector are recomputed

@@ -1,4 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" width="100%" role="img" aria-label="专家团 dsh-expert-team：一句话组队交付，12 角色专家、9 阶段门控、80 个测试文件">
+  <!-- 分带布局（band layout）：每个元素必须完整落在一条带内；B3 内左右两栏 x 互不相交。
+       B1 标题 [44,84] · B2 副标题 [88,114] · B3 命令框(左 x≤600) / 指标(右 x≥636) [118,178]
+       B4 进度条 [190,210] · B5 页脚 [218,246]
+       改这几条带时，请同步 /tmp 的重叠自检脚本（一次性工具，未提交）：先改 BANDS 再改坐标。 -->
   <defs>
     <linearGradient id="hbg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0b1220"/>
@@ -9,19 +13,25 @@
   <rect x="0.75" y="0.75" width="1198.5" height="258.5" rx="18" fill="none" stroke="#22304d"/>
 
   <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif">
-    <text x="64" y="76" font-size="30" font-weight="650" fill="#f8fafc">专家团 · dsh-expert-team</text>
-    <text x="64" y="108" font-size="14" fill="#94a3b8">一句话组队交付：自动组建 12 角色专家团，走 9 阶段门控流水线，实现者直接改你工作区的代码</text>
+    <!-- B1 标题 -->
+    <text x="64" y="74" font-size="30" font-weight="650" fill="#f8fafc">专家团 · dsh-expert-team</text>
 
+    <!-- B2 副标题：深底上提高对比度（#c7d2fe），并整条独占一带，不再与指标行争同一 y 带 -->
+    <text x="64" y="106" font-size="14" fill="#c7d2fe">一句话组队交付：自动组建 12 角色专家团，走 9 阶段门控流水线，实现者直接改你工作区的代码</text>
+
+    <!-- B3 左：命令框 -->
     <rect x="64" y="130" width="536" height="42" rx="10" fill="#0f1a2e" stroke="#1e2b45"/>
     <text x="86" y="157" font-size="14" fill="#7dd3fc" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace">$ /team 做一个带登录的支付模块</text>
 
-    <text x="636" y="120" font-size="28" font-weight="650" fill="#f8fafc">12</text>
-    <text x="636" y="146" font-size="11.5" fill="#94a3b8">角色专家（人设 + 工具边界）</text>
-    <text x="826" y="120" font-size="28" font-weight="650" fill="#f8fafc">9</text>
-    <text x="826" y="146" font-size="11.5" fill="#94a3b8">阶段门控（规格评审为硬门）</text>
-    <text x="1006" y="120" font-size="28" font-weight="650" fill="#f8fafc">80</text>
-    <text x="1006" y="146" font-size="11.5" fill="#94a3b8">测试文件（含变异目录）</text>
+    <!-- B3 右：三个指标（整体下移到副标题带之下；数字与图注之间留 7px 净空） -->
+    <text x="636" y="144" font-size="28" font-weight="650" fill="#f8fafc">12</text>
+    <text x="636" y="170" font-size="11.5" fill="#cbd5e1">角色专家（人设 + 工具边界）</text>
+    <text x="826" y="144" font-size="28" font-weight="650" fill="#f8fafc">9</text>
+    <text x="826" y="170" font-size="11.5" fill="#cbd5e1">阶段门控（规格评审为硬门）</text>
+    <text x="1006" y="144" font-size="28" font-weight="650" fill="#f8fafc">80</text>
+    <text x="1006" y="170" font-size="11.5" fill="#cbd5e1">测试文件（含变异目录）</text>
 
+    <!-- B4 进度条：9 段对应 9 阶段（前 4 段已完成/进行中示意） -->
     <rect x="64" y="198" width="72" height="8" rx="4" fill="#2563eb"/>
     <rect x="144" y="198" width="72" height="8" rx="4" fill="#2563eb"/>
     <rect x="224" y="198" width="72" height="8" rx="4" fill="#f59e0b"/>
@@ -31,6 +41,8 @@
     <rect x="544" y="198" width="72" height="8" rx="4" fill="#1e293b"/>
     <rect x="624" y="198" width="72" height="8" rx="4" fill="#1e293b"/>
     <rect x="704" y="198" width="72" height="8" rx="4" fill="#334155"/>
-    <text x="64" y="234" font-size="11.5" fill="#64748b">澄清 · 调研 · 设计 · 规格评审 · 方案确认 · 实现 · 审查 · 测试 · 交付</text>
+
+    <!-- B5 页脚：同样提高对比度 -->
+    <text x="64" y="234" font-size="11.5" fill="#a5b4fc">澄清 · 调研 · 设计 · 规格评审 · 方案确认 · 实现 · 审查 · 测试 · 交付</text>
   </g>
 </svg>
