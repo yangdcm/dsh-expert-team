@@ -166,6 +166,37 @@ console.log('\n③ 负载与呈现：rolesPending 单一真源 + 客户端真的
     '"还没解析"（deferred/pending）与"解析不出来"（unresolved）仍是两个数', '');
 }
 
+console.log('\n④ profile 的键空间：分步耗时与附带账本不许同名互相覆盖');
+{
+  const { assembleStateProfile } = _live;
+  // 真实事故：`mark('subs')` 写 steps.subs = 毫秒，而附带账本里的 subs 计数器**也叫 subs**，
+  // 合成时后者盖掉前者 ⇒ 那一步的耗时在 profile 里根本看不见（上一轮只能靠"各步之和与总耗时之差"反推）。
+  const merged = assembleStateProfile({ subs: 7, tail: 1 }, {
+    rolesBudget: { deferred: 0 },
+    subsCounters: { enumCalls: 0, cut: '' },
+  });
+  check(merged.subs === 7, '`profile.subs` 仍是**该步耗时**（数值），没被计数器覆盖', 'subs=' + JSON.stringify(merged.subs));
+  check(merged.subsCounters && merged.subsCounters.enumCalls === 0 && merged.subsCounters.cut === '',
+    '计数器在 `profile.subsCounters` 里**同时可见**（两本账都读得到）', 'subsCounters=' + JSON.stringify(merged.subsCounters));
+  check(merged.rolesBudget && merged.rolesBudget.deferred === 0 && merged.tail === 1,
+    '其它附带账本与步耗时都不受影响', 'keys=' + Object.keys(merged).join(','));
+
+  // 撞名**绝不静默**：步耗时优先保留（测量值丢了就没法复现），并把撞名如实记进响应。
+  const collided = assembleStateProfile({ subs: 7 }, { subs: { enumCalls: 0 } });
+  check(collided.subs === 7 && JSON.stringify(collided.profileKeyCollisions) === JSON.stringify(['subs']),
+    '再撞名时不静默覆盖：保住步耗时并把撞名记进 `profileKeyCollisions`',
+    'subs=' + JSON.stringify(collided.subs) + ' collisions=' + JSON.stringify(collided.profileKeyCollisions));
+
+  // 接线本身也要被钉住：路由必须**经由**该函数合成，且不再有"直接 Object.assign 覆盖"的老写法。
+  const cmdSrc = readFileSync(join(here, 'lib', 'command.js'), 'utf8');
+  check(/profile: assembleStateProfile\(prof\.steps, \{/.test(cmdSrc),
+    '路由确实经由 `assembleStateProfile` 合成 profile（函数不是导出来当摆设）', '');
+  check(!/profile: Object\.assign\(\{\}, prof\.steps/.test(cmdSrc),
+    '旧的"直接 Object.assign 覆盖"写法已消失（它正是撞名覆盖的来源）', '');
+  check(/subsCounters: \{/.test(cmdSrc) && !/subs: \{\n\s+cut: SUB_HEADER_STATS/.test(cmdSrc),
+    '计数器键名是 `subsCounters`，不再占用 `subs`', '');
+}
+
 console.log('');
 if (fail > 0) {
   console.log(`✗ 有界化护栏失败：${fail} 项`);

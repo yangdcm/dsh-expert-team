@@ -153,8 +153,11 @@ $ /team 做一个带登录的支付模块
   `no-known-names` / `nothing-to-deny`；`/state` 取不到时间戳时给 `hasTimestamp: false`，而不是用 `0` 冒充。
 - **失败必须出声。** 写侧越界、工件分叉、超轮次返工一律**显式报错**，不做静默截断 —— 静默失败是本仓最贵的 bug 类型。
 - **性能有实测、也有护栏。** 曾经 `/state` 会逐条全量读子会话日志：实测热态 7.1–9.8 s、冷态 283.6 s（75 个子会话），
-  还会堵住整个 `dsh web` 的事件循环。1.3.5 改成只查表（实测 0.0026 ms/次、零次 `readSession`），
-  **修复后的端到端数字待实机复测**；`state-perf-guard.test.mjs` 守着它不许回退。
+  还会堵住整个 `dsh web` 的事件循环。1.3.5 改成只查表（实测 0.0026 ms/次、零次 `readSession`）。
+  **端到端数字已在真实语料的机器上复测**（1.3.20，95 个子代理、13 条 `STATE.members`、104 个任务）：
+  `?section=summary` 中位 **3.5–5.8 ms**；`?section=people,feed` 由 1.3.19 的 **~280 ms/次**降到稳态
+  **4–13 ms**（约 70×），提速没有靠丢成员（`agents`/`stateMembers` 数量不变）；`state-perf-guard.test.mjs`
+  守着它不许回退。
 
 ## 安装 / Installation
 

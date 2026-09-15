@@ -3,10 +3,10 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
-## Unreleased
+## 1.3.21
 
-**Hindsight 配置页二期：从"只能看"变成"能改，而且改得规矩"**（写路径；**版本号与发布由后续统一处理**，
-本节刻意不写 `## 1.3.x` 以免伪造一个还没发的版本）。
+**这一版有三件事：Hindsight 配置页从"只能看"变成"能改"；写入绕过棘轮从"一直红着没人知道"修到真绿；
+以及 `/state` 三处"看起来正常其实在骗人"的地方。**
 
 - **新写路由**：`POST /plugins/dsh-expert-team/hindsight-config`（与诊断 GET **同一路径**、同一命名空间，
   同样走 `registerLocal` 的本机来源守卫 ⇒ 跨站写 403、非 JSON content-type 415、非回环 Host 403）。
@@ -93,15 +93,32 @@
   | 指标 | 旧（1999c66） | 新 |
   |---|---|---|
   | `subsPending`（稳态） | **1**（幽灵 id） | **0** |
-  | `profile.subs.enumCalls`（冷启动 / 窗口重开） | **1 / 2** | **0 / 0** |
+  | `profile.subsCounters.enumCalls`（冷启动 / 窗口重开） | **1 / 2** | **0 / 0** |
   | 冷启动 `agents` | 0 → 95 | 0 → 95 |
-  | `subs` 步耗时（由 profile 各步与总耗时之差反推） | ~193 ms（窗口重开那发） | ~4 ms |
+  | `subs` 步耗时（当时只能由 profile 各步与总耗时之差反推，见下） | ~193 ms（窗口重开那发） | ~4 ms |
 
   同一轮也确认**没有把 1.3.20 的提速弄回去**：`?section=summary` 5.4–7.3 ms（中位 ~5.8 ms）、
   `?section=people,feed` 稳态 8.1–12.6 ms，`agents=95` / `stateMembers=13` 不变。
   **诚实边界**：窗口重开那一发的**总耗时**新旧都是 ~3 s 量级，因为它在**冷实例**上由 `wfLabels`
   （~0.8–2.7 s）与 `roles` 突发读主导 —— 那不是这两处修复的目标；修复消掉的是 `enumCalls` 那一项
   （旧代码最多为此付满 800 ms 期限）。
+
+- **`profile` 键空间：分步耗时与附带账本不再同名互相覆盖**（可观测性瑕疵，1.3.20 就在）：
+  `mark('subs')` 写 `profile.subs` = **该步耗时**（数值），而 subs 段的计数器对象**也叫 `subs`**，
+  合成时后者盖掉前者 ⇒ 那一步的耗时在 profile 里**根本看不见**（上面表里那一行就是这么被迫用
+  "各步之和与总耗时之差"反推的 —— 用算术补测量，而不是读测量）。现在计数器改名 **`profile.subsCounters`**，
+  **两者同时可见且命名无歧义**；合成统一走 `assembleStateProfile()`，它**结构性地**不许撞名：
+  真撞了就保留步耗时（测量值丢了就没法复现）并把撞名如实记进 `profileKeyCollisions`，**绝不静默覆盖**。
+  只在 `DSH_EXPERT_TEAM_STATE_PROFILE=1` 时可见，默认响应体不变。
+- **`state-perf-guard` 的"索引落盘"断言：硬等改成轮询 + `saveErrors === 0`**（CI 假红修复）：
+  旧断言是"防抖 1 500 ms vs 硬等 1 700 ms"，只剩 200 ms 余量；runs-index 改走原子入口后多了一次
+  `fsync`，CI 一忙就把这点余量吃掉 ⇒ 报"没落盘"。但真因**不是写失败**（`saveErrors: 0`），而是
+  **还没写完** —— 现在轮询（每 25 ms、上限 6 s）并在失败信息里带实际等待时长，同时补一条
+  `saveErrors === 0` 把"写失败"与"还没写完"分开（这两种零必须分得开）。
+- **文档数字归位**：README / README.en 里那句"修复后的端到端数字**待实机复测**"换成**真机实测值**
+  （`summary` 中位 3.5–5.8 ms、`people,feed` 稳态 4–13 ms，1.3.19 约 280 ms/次 ⇒ 约 70×），
+  `llms.txt` 的"84 个测试文件 / 138 条变异"归位为 **89 / 140**，并把 `llms.txt` 的可引用事实
+  （包名 / 宿主下限 / 角色数及逐 id 清单 / 阶段数）纳入 `docs-integrity` 棘轮。
 
 ## 1.3.20
 

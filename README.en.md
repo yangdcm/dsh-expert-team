@@ -179,8 +179,11 @@ A persistent status bar also sits directly above the chat input box (client slot
   explicit error; nothing is truncated silently — silent failure is the most expensive bug class in this repo.
 - **Performance is measured and guarded.** `/state` used to read every sub-session log in full: measured at
   7.1–9.8 s warm and 283.6 s cold (75 sub-sessions), and it blocked the whole `dsh web` event loop. 1.3.5
-  replaced that with a table lookup (measured at 0.0026 ms per call, zero `readSession` calls);
-  **the end-to-end post-fix number is still pending a re-measurement on a real host**.
+  replaced that with a table lookup (measured at 0.0026 ms per call, zero `readSession` calls).
+  **The end-to-end numbers have since been re-measured on a machine with real data** (1.3.20, 95 sub-agents,
+  13 `STATE.members`, 104 tasks): `?section=summary` median **3.5–5.8 ms**; `?section=people,feed` went from
+  **~280 ms per call** on 1.3.19 to a steady **4–13 ms** (about 70×), and the speed-up did not come from
+  dropping members (`agents`/`stateMembers` counts unchanged).
   `state-perf-guard.test.mjs` keeps it from coming back.
 
 ## Install
