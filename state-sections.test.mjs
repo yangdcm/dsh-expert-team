@@ -101,8 +101,8 @@ console.log('\n② 服务端：贵块真的关在分节后面（守卫点在位�
     'people：硬上限如实上报进 `scopeCaps`（**不是** degraded —— 设计上限不是故障）', '');
   check(/warmSubRoles\(ctx, subs\.slice\(0, MAX_ROLE_SUBS\), wfLabels/.test(src),
     'people：后台批吃的是**按上限切过**的列表（超出上限的人不会被排进解析队列）', '');
-  check(/await resolveSubRoles\(ctx, subs, wfLabels, \{ maxReads: 0 \}\)/.test(src),
-    'people：请求路径零日志读（角色日志读已整体移出请求路径）', '');
+  check(/await resolveSubRoles\(ctx, subs, wfLabels, \{ maxReads: 0, queueCap: MAX_ROLE_SUBS \}\)/.test(src),
+    'people：请求路径零日志读（角色日志读已整体移出请求路径），且队列只收**上限内可解析**的', '');
   check(/want\('people'\) \? subs\.map\(\(s\) => \{/.test(src) && /\}\) : \[\];/.test(src),
     'people：agents 在摘要里是**空数组**（不是"没有成员"—— 由 sections 区分）', '');
   check(/if \(want\('people'\)\) sel\.members = enrichMembers\(/.test(src), 'people：成员 enrich 只在分节内（否则空 subById 会把名册糊成"未启动"）', '');

@@ -38,8 +38,12 @@ console.log('\n① 分类器（启发式；两条真实原文必须各自归到�
   check(/shm-size|dev\/shm/.test(a.hint), 'hint 指向容器 `/dev/shm` / `--shm-size`（可操作）', a.hint.slice(0, 40));
 
   const b = hs.classifyFailure(WAF_403);
-  check(b.classification === 'waf-blocked', '403 + HTML 防火墙页 ⇒ waf-blocked', b.classification);
-  check(/WAF/.test(b.hint) && /不是 token 问题/.test(b.hint), 'hint 点明是 WAF 拦的、且**不是 token 问题**', b.hint.slice(0, 40));
+  check(b.classification === 'http-403-html', '403 + HTML 页 ⇒ http-403-html（**只描述观察到的现象**）', b.classification);
+  // ⚠️ 纠错（2026-09-16）：旧分类名 `waf-blocked` 与旧话术（"检查 WAF / 加白名单"）**超出证据**，
+  // 真机上把用户和派工方都误导了。403 + HTML **推不出** WAF；本页也不该对未确定的根因给整改动作。
+  check(!/\bWAF\b/i.test(b.classification + b.hint) && !/白名单/.test(b.hint),
+    '分类名与话术都**不含** WAF / 白名单这类未验证的断言（这是本次纠错的核心）', b.classification + ' | ' + b.hint.slice(0, 30));
+  check(/不是根因/.test(b.hint) && /已恢复|历史/.test(b.hint), '话术只陈述观察到的事实 + 指出要先看"之后是否已有成功"', b.hint.slice(0, 40));
   check(a.classification !== b.classification, '**两种故障不会混成一类**（这正是本期要区分的事）', `${a.classification} vs ${b.classification}`);
 
   check(hs.classifyFailure('POST https://x/v1/… -> 401 {"detail":"invalid token"}').classification === 'auth', '401（无 HTML）⇒ auth', '');
@@ -66,7 +70,10 @@ console.log('\n③ 日志解析：两种零分得开；坏行/半行不许抛');
     JSON.stringify({ ts: '2026-09-15T12:05:26Z', event: 'retain_failed', ms: 1003, error: WAF_403 }),
     JSON.stringify({ ts: '2026-09-15T12:06:00Z', event: 'inject_empty', ms: 12 }),
   ].join('\n'));
-  check(ok && ok.classification === 'waf-blocked' && ok.at === '2026-09-15T12:05:26Z', '取到带 error 的那条并分类', ok && ok.classification);
+  check(ok && ok.classification === 'http-403-html' && ok.at === '2026-09-15T12:05:26Z', '取到带 error 的那条并分类', ok && ok.classification);
+  check(ok && ok.sinceFailure && ok.sinceFailure.successes === 0 && ok.sinceFailure.emptyRecalls === 1,
+    '失败之后**没有**真正的成功、只有一次召回为空 ⇒ successes=0 / emptyRecalls=1（两者分开计数）',
+    JSON.stringify(ok && ok.sinceFailure));
 
   check(hs.pickLastFailure(JSON.stringify({ ts: 't', event: 'inject_empty', ms: 3 })) === null,
     '**只有 `inject_empty`（召回为空）⇒ 不算失败**（两种零必须分得开）', '');
@@ -119,7 +126,10 @@ console.log('\n⑥ 探测语义：不探测绝不发网络；任何 HTTP 响应�
   check(noProbe.apiTokenConfigured === true && typeof noProbe.apiTokenConfigured === 'boolean', 'apiTokenConfigured 是布尔（不是值）', String(noProbe.apiTokenConfigured));
   check(!JSON.stringify(noProbe).includes('SENTINEL-abc'), '**安全红线：整个响应全文不含 token 值**', '');
   check(noProbe.bankForWorkspace === 'coding-agent::liangge', '带 cwd ⇒ 给出本工作区 bank', String(noProbe.bankForWorkspace));
-  check(noProbe.lastFailure && noProbe.lastFailure.classification === 'waf-blocked', '最近失败已分类并带 hint', noProbe.lastFailure && noProbe.lastFailure.classification);
+  check(noProbe.lastFailure && noProbe.lastFailure.classification === 'http-403-html', '最近失败已分类并带 hint', noProbe.lastFailure && noProbe.lastFailure.classification);
+  check(noProbe.lastFailure && noProbe.lastFailure.sinceFailure && typeof noProbe.lastFailure.sinceFailure.successes === 'number',
+    '报告里的 lastFailure **带 `sinceFailure`**（调用方据此判断它是历史还是当前 —— 这是本次修复的承重字段）',
+    JSON.stringify(noProbe.lastFailure && noProbe.lastFailure.sinceFailure));
   const keys = Object.keys(noProbe).sort().join(',');
   check(keys === 'apiTokenConfigured,apiUrl,apiUrlEffective,bankForWorkspace,diagPath,exists,lastFailure,notes,ok,path,probeMs,reachable,serverMode',
     '报告字段集合稳定（前端可依赖）', keys);
@@ -434,6 +444,67 @@ console.log('\n⑨ 面板文案不许带 markdown 标记（这些字符串是**�
     if (/`/.test(str)) probeMarks.push('反引号');
   }
   check(probeMarks.length === 2, '把当初的两处泄漏喂给这条 lint ⇒ 两个标记都被认出来（不是空壳断言）', probeMarks.join('+'));
+}
+
+
+console.log('\n⑩ **历史失败 ≠ 当前故障**（2026-09-16 纠错）：必须与后续成功比较，且读不到日志 ≠ 没有失败');
+{
+  const mk = (o) => JSON.stringify(o);
+  const FAIL = mk({ ts: '2026-09-15T14:22:32.239Z', event: 'retain_failed', ms: 1200, error: WAF_403 });
+  const OK1 = mk({ ts: '2026-09-15T16:34:26Z', event: 'retain_ok', ms: 88 });
+  const OK2 = mk({ ts: '2026-09-15T16:36:00Z', event: 'retain_ok', ms: 74 });
+  const EMPTY = mk({ ts: '2026-09-15T16:35:00Z', event: 'inject_empty', ms: 6 });
+
+  // ① 失败**之后有成功** ⇒ 判定为历史（真机事故：两小时前那一条被当成当前故障）
+  const rec = hs.scanDiag([FAIL, EMPTY, OK1, OK2].join('\n'));
+  check(rec.lastFailure && rec.lastFailure.sinceFailure.successes === 2,
+    '① 失败之后有 2 次成功 ⇒ sinceFailure.successes === 2（**判定的唯一依据**）',
+    JSON.stringify(rec.lastFailure && rec.lastFailure.sinceFailure));
+  check(rec.sinceFailure.lastSuccessAt === '2026-09-15T16:36:00Z' && rec.sinceFailure.lastSuccessMs === 74,
+    '① 最近成功的时间与耗时都取到（文案要用它们说清「此后有 N 次成功」）',
+    rec.sinceFailure.lastSuccessAt + ' / ' + rec.sinceFailure.lastSuccessMs);
+  check(rec.sinceFailure.emptyRecalls === 1,
+    '① 「召回为空」**不计入**成功（它只证明读路径在响应，不证明写入已恢复）—— 但单独计数不丢',
+    String(rec.sinceFailure.emptyRecalls));
+
+  // ② 失败之后**没有**成功 ⇒ 仍按当前故障处理
+  const cur = hs.scanDiag([OK1, FAIL].join('\n'));
+  check(cur.lastFailure && cur.lastFailure.sinceFailure.successes === 0,
+    '② 失败在最后、之后没有任何成功 ⇒ successes === 0（仍按当前故障处理）',
+    JSON.stringify(cur.lastFailure && cur.lastFailure.sinceFailure));
+
+  // ③ 客户端必须**按这两态分别渲染**，且历史态不许再挂告警框 / 整改指令
+  const clientSrc = readFileSync(join(here, 'client.js'), 'utf8');
+  check(/var recovered = !!\(sfa && sfa\.successes > 0\)/.test(clientSrc),
+    '③ 客户端按 sinceFailure.successes > 0 判「已恢复」（不是一个写死的样式）', '');
+  check(/className: 'exp-hs-hist'/.test(clientSrc) && /\.exp-hs-hist\{/.test(clientSrc),
+    '③ 历史态走**中性的** .exp-hs-hist（告警框是 .exp-hs-warn，两者样式区分）', '');
+  check(/历史 · 已恢复/.test(clientSrc) && /次成功/.test(clientSrc) && /lastSuccessMs/.test(clientSrc),
+    '③ 历史态文案说清「这是 <ts> 的历史失败，此后已有 N 次成功（最近 <ts>，耗时 <ms> ms）」', '');
+  check(/尚无后续成功/.test(clientSrc),
+    '③ 当前故障态**明确标出**「尚无后续成功」（否则用户无法区分两态）', '');
+  const histBlock = (clientSrc.match(/if \(recovered\) \{[\s\S]*?\} else \{/) || [''])[0];
+  check(histBlock.length > 0 && !/处理建议|这说明什么/.test(histBlock),
+    '③ 历史态里**不含**任何整改指令（把历史失败当当前故障给动作，正是这次误导的形态）', 'len=' + histBlock.length);
+
+  // ④ 「读不到」 ≠ 「没有失败」（两种零必须分得开）
+  const cfgText10 = JSON.stringify({ serverMode: 'self-hosted', apiUrl: 'https://qbbt.8nit.cn', apiToken: 'SENTINEL-abc' });
+  const reportWith = async (diag) => hs.buildHindsightReport({
+    env: {}, home: '/fake/home', probe: false, io: { readText: async (p) => { if (p.endsWith('coding-agent.json')) return cfgText10; if (diag === null) throw new Error('ENOENT'); return diag; } },
+    fetchImpl: async () => { throw new Error('不该被调用'); },
+  });
+  const noLog = await reportWith(null);
+  check(noLog.lastFailure === null && noLog.notes.some((n) => /读不到/.test(n) && /无法判断/.test(n)),
+    '④ 日志**读不到** ⇒ 如实说「无法判断有没有失败」（**不许**说成「没有失败」）',
+    JSON.stringify(noLog.notes.filter((n) => /日志/.test(n))));
+  const junkLog = await reportWith('{"ts":"a","event":\n不是 JSON\n{');
+  check(junkLog.lastFailure === null && junkLog.notes.some((n) => /没有一条可解析/.test(n) && /无法判断/.test(n)),
+    '④ 日志**存在但一行都解析不出来**（坏行/半写）⇒ 同样是「无法判断」（读不懂 ≠ 没问题）',
+    JSON.stringify(junkLog.notes.filter((n) => /日志/.test(n))));
+  const cleanLog = await reportWith(mk({ ts: 't', event: 'retain_ok', ms: 5 }));
+  check(cleanLog.lastFailure === null && cleanLog.notes.some((n) => /其中没有失败/.test(n)),
+    '④ 真读到了记录且其中没有失败 ⇒ 这才叫「没有失败」（三种情况三种说法）',
+    JSON.stringify(cleanLog.notes.filter((n) => /日志/.test(n))));
 }
 
 await rmFixture(root);

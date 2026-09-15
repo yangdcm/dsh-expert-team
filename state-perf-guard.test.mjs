@@ -309,7 +309,7 @@ console.log('\n⑤ 子会话日志读取：**跨请求推进**的待解析队列
     'resetRoleReadBudget() 只复位"本请求额度"，**不丢队列进度**', 'deferred=' + roleReadBudgetSnapshot().deferred);
 
   // 源码级：队列实现存在且 resolveSubRoles 走它（防止有人改回"每请求从零重算"）
-  check(/function syncRolePending\(/.test(cmdSrc) && /syncRolePending\(subs\)/.test(cmdSrc),
+  check(/function syncRolePending\(/.test(cmdSrc) && /syncRolePending\(subs, queueCap\)/.test(cmdSrc),
     '待解析队列按当前 subs 重建（保留既有顺序、新人追加队尾）', '');
   check(/let ROLE_PENDING = \[\]/.test(cmdSrc), '队列是**模块级**（跨请求保留），不是每请求新建', '');
 }

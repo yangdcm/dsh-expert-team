@@ -231,6 +231,11 @@ window.__ModuleLoader__.load({
       '.exp-hs-ok{color:#1a7f5a;font-weight:700}' +
       '.exp-hs-bad{color:#b3291e;font-weight:700}' +
       '.exp-hs-warn{margin:8px 0;padding:8px 10px;border:1px solid #f0c36d;border-left:3px solid #e0a83c;border-radius:8px;background:linear-gradient(180deg,rgba(224,168,60,.12),transparent);font-size:11.5px;line-height:1.6}' +
+      // ⚠️ 中性「历史 / 已恢复」样式（2026-09-16）：失败之后**已有成功**时不许再挂告警框。
+      // 灰蓝细边、无渐变、无左侧重色条 —— 与 `.exp-hs-warn` 视觉上明确区分。
+      '.exp-hs-hist{margin:8px 0;padding:8px 10px;border:1px solid var(--dsw-alias-border-secondary,#dfe3e8);border-radius:8px;background:transparent;font-size:11.5px;line-height:1.6;opacity:.92}' +
+      '.exp-hs-hist .exp-hs-tag{color:var(--dsw-alias-label-secondary,var(--text,#57606a));background:rgba(127,127,127,.14)}' +
+      '.exp-hs-hist .exp-hs-tag-ok{color:#1a7f5a;background:rgba(26,127,90,.14)}' +
       '.exp-hs-tag{display:inline-block;font-weight:700;color:#8a6100;background:rgba(224,168,60,.18);border-radius:4px;padding:0 5px;margin-right:6px}' +
       '.exp-hs-hint{color:var(--dsw-alias-label-secondary,var(--text,#57606a))}' +
       '.exp-hs-notes{margin:6px 0 0;padding-left:16px;font-size:11px;line-height:1.6;color:var(--dsw-alias-label-secondary,var(--text,#57606a))}' +
@@ -1409,11 +1414,40 @@ window.__ModuleLoader__.load({
           h('span', { className: 'exp-hs-v' }, h('code', null, esc(String(d.bankForWorkspace))))))
       }
       if (d.lastFailure && d.lastFailure.summary) {
-        rows.push(h('div', { key: 'hs-fail', className: 'exp-hs-warn' },
-          h('div', null, h('span', { className: 'exp-hs-tag' }, esc(String(d.lastFailure.classification || 'unknown'))),
-            esc(' ' + String(d.lastFailure.at || '') + (d.lastFailure.event ? ' · ' + String(d.lastFailure.event) : ''))),
-          h('div', null, esc(String(d.lastFailure.summary || ''))),
-          h('div', { className: 'exp-hs-hint' }, esc(t('处理建议：', 'Suggested fix: ') + String(d.lastFailure.hint || '')))))
+        // ⚠️ 历史失败 ≠ 当前故障（2026-09-16 纠错：真机上它把用户和派工方都误导了）：
+        // 旧实现一律按"当前故障"渲染 —— 告警框 + 整改指令，即使那条失败发生在**两小时前**、
+        // 之后已有大量成功。现在按 `sinceFailure.successes` 分两态：
+        //   · 有后续成功 ⇒ 中性「历史 · 已恢复」：说清"这是 <ts> 的历史失败，此后已有 N 次成功
+        //     （最近 <ts>，耗时 <ms> ms）"，**不再**给"处理建议"（前提没被验证的动作比不给动作更坏）；
+        //   · 无后续成功 ⇒ 才按当前故障处理（告警框 + 分类 + 说明）。
+        var lf = d.lastFailure
+        var sfa = (lf.sinceFailure && typeof lf.sinceFailure === 'object') ? lf.sinceFailure : null
+        var recovered = !!(sfa && sfa.successes > 0)
+        if (recovered) {
+          rows.push(h('div', { key: 'hs-fail', className: 'exp-hs-hist' },
+            h('div', null,
+              h('span', { className: 'exp-hs-tag exp-hs-tag-ok' }, esc(t('历史 · 已恢复', 'historical · recovered'))),
+              h('span', { className: 'exp-hs-tag' }, esc(String(lf.classification || 'unknown'))),
+              esc(' ' + String(lf.at || '') + (lf.event ? ' · ' + String(lf.event) : ''))),
+            h('div', null, esc(t('这是 ', 'This failure happened at ') + String(lf.at || '')
+              + t(' 的历史失败；此后已有 ', '; since then there have been ')
+              + String(sfa.successes) + t(' 次成功', ' successful calls')
+              + (sfa.lastSuccessAt ? t('（最近 ', ' (latest ') + String(sfa.lastSuccessAt)
+                + (sfa.lastSuccessMs == null ? '' : t('，耗时 ', ', took ') + String(sfa.lastSuccessMs) + ' ms') + '）' : '')
+              + t('。它现在不是当前故障 —— 因此不给你整改动作。', '. It is NOT a current failure, so no fix is suggested.'))),
+            h('div', { className: 'exp-hs-hint' }, esc(String(lf.summary || '')))))
+        } else {
+          rows.push(h('div', { key: 'hs-fail', className: 'exp-hs-warn' },
+            h('div', null, h('span', { className: 'exp-hs-tag' }, esc(String(lf.classification || 'unknown'))),
+              esc(' ' + String(lf.at || '') + (lf.event ? ' · ' + String(lf.event) : '')),
+              h('span', { className: 'exp-hs-tag' }, esc(t('尚无后续成功', 'no later success yet')))),
+            (sfa && sfa.emptyRecalls > 0)
+              ? h('div', null, esc(t('（此后有 ', '(there were ') + String(sfa.emptyRecalls)
+                + t(' 次召回为空：说明服务在响应，但这不等于写入已恢复）', ' empty recalls: the service responds, but that does NOT prove writes recovered)')))
+              : null,
+            h('div', null, esc(String(lf.summary || ''))),
+            h('div', { className: 'exp-hs-hint' }, esc(t('这说明什么：', 'What this means: ') + String(lf.hint || '')))))
+        }
       }
       if (probed) {
         rows.push(h('div', { key: 'hs-probe', className: 'exp-hs-kv' },
@@ -2390,8 +2424,17 @@ window.__ModuleLoader__.load({
       // **必须显式渲染**，不许静默用旧数据假装一切正常；同时它**不是** degraded（真截断），
       // 所以用中性样式 + 独立文案，而不是红/黄告警。
       var warmingList = (data && Array.isArray(data.warming)) ? data.warming : []
-      var warmingSeg = { wf: t('工作流元数据', 'workflow metadata'), roles: t('角色解析', 'role resolution'), 'members:write-skipped': t('成员登记（等元数据就绪）', 'member registration (waiting for metadata)') }
+      var warmingSeg = { wf: t('工作流元数据', 'workflow metadata'), roles: t('角色解析', 'role resolution'), subs: t('成员明细', 'member rows'), 'members:write-skipped': t('成员登记（等元数据就绪）', 'member registration (waiting for metadata)') }
       var warmingTitle = warmingList.map(function (k) { return warmingSeg[k] || k }).join('、')
+      // ⚠️ 两条 `warming` 的含义**不一样**，标题不许含糊（2026-09-16）：
+      //   · `subs` = "**还没有就绪**"（宿主刚起来、一行子会话都还没枚举到）⇒ 本轮**没有**明细可显示，
+      //     绝不是"这个团队没有人"（服务端还有 `subsPending` 与之对称）；
+      //   · 其余 = "重读挪到后台"⇒ 本轮显示的是**上一份完整快照**（数据不残缺，只是可能旧）。
+      // 旧文案一律写"本轮显示的是上一份完整快照"，对 `subs` 那种情况就是**假话**（没有快照）。
+      var warmingNoSnapshot = warmingList.indexOf('subs') >= 0
+      var warmingTail = warmingNoSnapshot
+        ? t('）—— 本轮人员明细尚未就绪，不是"这个团队没有人"', ') — member rows are not ready yet this round; this does not mean the team is empty')
+        : t('）—— 本轮显示的是上一份完整快照', ') — showing the previous complete snapshot this round')
       // 服务端 `scopeCaps`（1.3.22）：**按设计的能力上限**（不是故障）—— 必须**显式渲染**。
       // 把 `roles:N`/`feed:N` 从 degraded 里拆出来只是"不把它当告警"，**不是**"藏起来"：
       // 任何声称完整的地方都不许因为拆了标记而变得看似完整。
@@ -2637,7 +2680,7 @@ window.__ModuleLoader__.load({
         h('div', { className: headCls, onMouseDown: function (e) { startDrag(e, docked && !viewMode, pos) } },
           h('div', { className: 'exp-title' }, h('span', { className: 'exp-live', title: t('实时刷新中', 'live') }), '🧑‍🔬 ' + t('专家团', 'Team')),
           h('span', { className: 'exp-run' }, runId ? esc(runId) : ''),
-          warmingList.length ? h('span', { className: 'exp-warming', title: t('后台刷新中（', 'refreshing in background: ') + warmingTitle + t('）—— 本轮显示的是上一份完整快照', ') — showing the previous complete snapshot this round') }, t('更新中', 'warming')) : null,
+          warmingList.length ? h('span', { className: 'exp-warming', title: t('后台处理中（', 'working in background: ') + warmingTitle + warmingTail }, t('更新中', 'warming')) : null,
           capKeys.length ? h('span', { className: 'exp-scope', title: t('按设计上限（不是故障）：', 'by design, not a failure: ') + capTitle }, t('另有 ' + capOver + ' 条按上限只列名', capOver + ' capped (name only)')) : null,
           h('span', { style: { display: 'flex', gap: 6 } },
             !viewMode ? h('button', { className: 'exp-close', title: docked ? t('转为可拖动浮窗', 'Make floating') : t('停靠回右侧', 'Dock right'), onClick: function () { setDock(!docked) } }, docked ? t('浮动', 'Float') : t('停靠', 'Dock')) : null,

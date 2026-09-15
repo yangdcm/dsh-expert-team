@@ -310,7 +310,7 @@ dsh plugin --profile web add dshmarket
 **记忆没生效：报 `could not resize shared memory` 或返回一张 HTML 防火墙页？** 这两类错误都发生在**记忆后端（Hindsight）的服务端**，**不是本插件**，也不要把它们混成一件事：
 
 - `… -> 500 {"detail":"could not resize shared memory segment … No space left on device"}` ⇒ 服务端 **PostgreSQL 分配共享内存失败**：自托管最常见成因是容器 `/dev/shm` 只有 64 MB（用 `--shm-size=1g` 重启容器），也可能是磁盘/inode 满（`df -h`）或并行度太高；
-- `… -> 403 <!doctype html>…网站防火墙…` ⇒ 服务端 **WAF 拦下了 POST**（返回的是**HTML 防火墙页**，不是 API 的 JSON 错误）⇒ 检查 WAF 是否拦了 `/v1/` 的请求，或把该客户端 IP/UA 加入白名单。**这不是 token 问题。**
+- `… -> 403 <!doctype html>…网站防火墙…` ⇒ **应用层返回了 403 的 HTML 页面**（该页自称「网站防火墙」）。这是**观察到的现象，不是根因**：能返回 HTML 403 的环节可能是反向代理 / 面板安全插件 / CDN / 临时拦截等，插件无法判定是哪一种，**也不给你未经证实的整改动作**。面板会告诉你这条失败**之后是否已有成功**：已恢复 ⇒ 只是历史记录；仍在持续 ⇒ 再去服务端逐层确认。
 
 **怎么看**：`设置 →「专家团」→「记忆后端（Hindsight）· 只读诊断」` 会显示配置文件路径、部署形态（`cloud`/`self-hosted`/`daemon`）、服务地址、**token 是否已配置（值不显示）**、以及**最近一条失败的分类与处理建议**，并可按需**探测一次连通性**（**连通 ≠ 鉴权成功**：401/403 也算"可达"）。重启语义：改 `serverMode`/`apiUrl` 需重启 `dsh web`；只改 `apiToken` 免重启（401 时会重读）。本页**只读**，没有任何写入控件。
 

@@ -170,8 +170,8 @@ console.log('\n③ 负载与呈现：rolesPending 单一真源 + 客户端真的
   check(/subs:deadline/.test(cmdSrc) && !/degraded\.push\('roles:deadline'\)/.test(cmdSrc),
     'degraded 只承载**请求路径上**的真截断（subs:deadline）；roles 读日志已离开请求路径', '');
   // 反向护栏：请求路径不许再出现那两种"全量读"，它们正是"窗口重开 1–3 s"的来源。
-  check(/await resolveSubRoles\(ctx, subs, wfLabels, \{ maxReads: 0 \}\)/.test(cmdSrc),
-    '请求路径的角色解析是 `maxReads: 0`（零日志读）', '');
+  check(/await resolveSubRoles\(ctx, subs, wfLabels, \{ maxReads: 0, queueCap: MAX_ROLE_SUBS \}\)/.test(cmdSrc),
+    '请求路径的角色解析是 `maxReads: 0`（零日志读）；`queueCap` 保证队列只收**上限内可解析**的（否则 pending 永不为零）', '');
   check(!/await workflowChildLabels\(ctx, peopleSid\)/.test(cmdSrc),
     '请求路径不再 await `workflowChildLabels`（全量父会话日志读已挪到后台预热）', '');
   check(/await workflowEventIndexForRequest\(ctx, peopleSid\)/.test(cmdSrc),
@@ -469,16 +469,18 @@ console.log('\n⑦ 后台角色批必须**真的干活**（1.3.23）：期限从
     JSON.stringify({ degraded: mixed.degraded, scopeCaps: mixed.scopeCaps }));
 
   // ── ⑥ 接线棘轮（源码级）：防止"期限又挪回 kick 时算"或"零进展不再上报"────────────
-  check(/warmSubRoles\(ctx, subs\.slice\(0, MAX_ROLE_SUBS\), wfLabels, \{ maxReads: rolesAllowance, deadlineMs: ROLES_READ_DEADLINE_MS \}\)/.test(cmdSrc3),
-    '⑥ 生产接线传的是**时长** deadlineMs（绝对期限在批开跑时才计算）', '');
+  check(/warmSubRoles\(ctx, subs\.slice\(0, MAX_ROLE_SUBS\), wfLabels, \{ maxReads: ROLES_WARM_MAX_READS, deadlineMs: ROLES_WARM_BUDGET_MS, queueCap: MAX_ROLE_SUBS \}\)/.test(cmdSrc3),
+    '⑥ 生产接线传的是**时长** deadlineMs + 后台批**自己的**预算/上限（不再沿用请求路径的 1 条/30 s）', '');
   check(!/deadlineAt: Date\.now\(\) \+ ROLES_READ_DEADLINE_MS/.test(cmdSrc3),
     '⑥ 旧的"kick 时算好绝对期限"形状已消失 —— 它就是零读回归的来源', '');
   check(/ROLE_WARM_STATS\.noProgress && roleWarmHasWork\(\)\) cutFacts\.push\('roles:no-progress'\)/.test(cmdSrc3),
     '⑥ 零进展经 cutFacts 进 degraded，且"队列已无未缓存 id"时不再报（自灭的一半）', '');
   check(/if \(stats\.reads > 0 \|\| stats\.queued === 0\) \{ ROLE_WARM_STATS\.noProgress = false; \}/.test(cmdSrc3),
     '⑥ 恢复即清零：读到东西 / 队列读空都算恢复（自灭的另一半）', '');
-  check(/ROLE_READS_LEFT = Math\.max\(ROLE_READS_LEFT, maxReads\);\n\s+resolveSubRoles\(ctx, subs, wfLabels, \{ maxReads, deadlineAt: Date\.now\(\) \+ deadlineMs, stats \}\)/.test(cmdSrc3),
-    '⑥ 额度与期限都在**开跑那一刻**才定（中间插入的请求把它复位成 0 也不会让本批空转）', '');
+  check(/ROLE_READS_LEFT = Math\.max\(ROLE_READS_LEFT, want\);\n\s+const chunkStats = \{ reads: 0, queued: ROLE_PENDING\.length, cut: '' \};\n\s+await resolveSubRoles\(ctx, subs, wfLabels, \{ maxReads: want, deadlineAt: o\.deadlineAt, stats: chunkStats, queueCap: o\.queueCap \}\);/.test(cmdSrc3),
+    '⑥ 每个**分块**开跑前才垫额度、且期限仍是开跑时算好的绝对时刻（中间插入的请求复位额度也不会让本批空转）', '');
+  check(/o\.stats\.yields \+= 1;\n\s+await new Promise\(\(r\) => setTimeout\(r, ROLES_WARM_YIELD_MS\)\);/.test(cmdSrc3),
+    '⑥ 分块之间**真的让出事件循环**（CPU 密集读不让出就会顶掉请求的收尾 —— 1.3.22 的老坑）', '');
   // 只在 `warmSubRoles` 体内判"不认绝对时刻"：`resolveSubRoles` 自己仍收绝对 `deadlineAt`，
   // 那是**批开跑时**算出来的，正是我们要的形状 —— 一刀切成全局禁词会把正确用法也判红。
   const warmFn = (cmdSrc3.match(/function warmSubRoles\([\s\S]*?\n}\n/) || [''])[0];
@@ -486,6 +488,117 @@ console.log('\n⑦ 后台角色批必须**真的干活**（1.3.23）：期限从
     '⑥ warmSubRoles 体内只认**时长** deadlineMs、不再认绝对 deadlineAt（让"延迟"与"期限"再也没法互相打架）',
     'fnLen=' + warmFn.length);
   delete process.env.DSH_EXPERT_TEAM_ROLES_WARM_DELAY_MS;
+}
+
+console.log('\n⑧ 后台批的**排空速率**（1.3.24）：一批按自己的预算连续推进，且分块让出事件循环');
+{
+  const {
+    warmSubRoles, resolveSubRoles, roleReadBudgetSnapshot, _resetBoundedState, _resetRolePending,
+    resetRoleReadBudget, ROLE_READ_LOG_CACHE, ROLE_WARM_STATS, ROLES_WARM_MAX_READS,
+  } = _live;
+  let reads8 = 0;
+  const mkCtx8 = () => ({
+    get: (k) => (k === 'sessionQuery' ? {
+      readSession: async () => {
+        reads8 += 1;
+        return { events: [{ type: 'user/message', data: { content: [{ type: 'text', text: '你是「专家团」的后端工程师（backend，动态补位角色）' }] } }] };
+      },
+    } : null),
+  });
+  ROLE_READ_LOG_CACHE.clear(); _resetRolePending(); _resetBoundedState(); resetRoleReadBudget();
+  process.env.DSH_EXPERT_TEAM_ROLES_WARM_DELAY_MS = '10';
+  const subs8 = ['r8-1', 'r8-2', 'r8-3', 'r8-4', 'r8-5'].map((id) => ({ id, role: '', label: '' }));
+  await resolveSubRoles(mkCtx8(), subs8, {}, { maxReads: 0 });
+  // 真机 1.3.23 的病：调用方只给 1 条额度（`ROLES_READ_PER_BURST`）⇒ 30.4 s 才解析 1 个，
+  // 89 个积压 ≈ 45 分钟，而语料只有 5.6 MiB。修法：后台批用自己的预算 + 上限 + 分块让出。
+  const p8 = warmSubRoles(mkCtx8(), subs8, {}, { deadlineMs: 2000 });
+  check(!!p8, '⑧ 不传 maxReads 也能踢出批（旧实现默认 0 ⇒ null，等于"踢了批却什么都不做"）', '');
+  await p8;
+  check(reads8 === 5 && ROLE_WARM_STATS.lastReads === 5,
+    '⑧ 一批**真的把 5 条都读完**（旧实现一批只读 1 条 —— 那就是 30 s/个的根因）',
+    'reads=' + reads8 + ' lastReads=' + ROLE_WARM_STATS.lastReads);
+  check(ROLE_WARM_STATS.chunks >= 5 && ROLE_WARM_STATS.yields === ROLE_WARM_STATS.chunks - 1,
+    '⑧ 每条一分块、块间**让出事件循环**（CPU 密集读不让出就会顶掉请求的收尾 —— 1.3.22 的老坑）',
+    'chunks=' + ROLE_WARM_STATS.chunks + ' yields=' + ROLE_WARM_STATS.yields);
+  check(roleReadBudgetSnapshot().deferred === 0, '⑧ 队列一次排空（旧实现要 30 s × 5）', 'deferred=' + roleReadBudgetSnapshot().deferred);
+  check(ROLES_WARM_MAX_READS > 1, '⑧ 后台批的条数上限 > 1（"1 条/批"是病，不是纪律）', String(ROLES_WARM_MAX_READS));
+  delete process.env.DSH_EXPERT_TEAM_ROLES_WARM_DELAY_MS;
+}
+
+console.log('\n⑨ `rolesPending` 必须能**归零**（1.3.24）：队列只收上限内可解析的，超限由 scopeCaps 解释');
+{
+  const {
+    warmSubRoles, resolveSubRoles, roleReadBudgetSnapshot, _resetBoundedState, _resetRolePending,
+    resetRoleReadBudget, ROLE_READ_LOG_CACHE, classifyStateShortfall,
+  } = _live;
+  const mkCtx9 = () => ({
+    get: (k) => (k === 'sessionQuery' ? {
+      readSession: async () => ({ events: [{ type: 'user/message', data: { content: [{ type: 'text', text: '你是「专家团」的测试员（qa，动态补位角色）' }] } }] }),
+    } : null),
+  });
+  ROLE_READ_LOG_CACHE.clear(); _resetRolePending(); _resetBoundedState(); resetRoleReadBudget();
+  const subs9 = ['cap-1', 'cap-2', 'cap-3', 'cap-4', 'cap-5'].map((id) => ({ id, role: '', label: '' }));
+  // 硬上限 = 3 ⇒ 只有前 3 条该进队列；另外 2 条**按设计**永不做日志解析。
+  await resolveSubRoles(mkCtx9(), subs9, {}, { maxReads: 0, queueCap: 3 });
+  check(roleReadBudgetSnapshot().deferred === 3,
+    '⑨ 队列只收**上限内**的 3 条（旧实现收全量 5 条 ⇒ 那 2 条永不被读、却永远躺在队列里）',
+    'deferred=' + roleReadBudgetSnapshot().deferred);
+  process.env.DSH_EXPERT_TEAM_ROLES_WARM_DELAY_MS = '10';
+  await warmSubRoles(mkCtx9(), subs9.slice(0, 3), {}, { deadlineMs: 2000, queueCap: 3 });
+  delete process.env.DSH_EXPERT_TEAM_ROLES_WARM_DELAY_MS;
+  check(roleReadBudgetSnapshot().deferred === 0,
+    '⑨ 上限内读完 ⇒ **归零**（旧实现永久停在"超出上限的条数"上，且 warming 变成常亮）',
+    'deferred=' + roleReadBudgetSnapshot().deferred);
+  const cap9 = classifyStateShortfall({ caps: [{ key: 'roles', total: 5, limit: 3 }] });
+  check(cap9.degraded.length === 0 && cap9.scopeCaps.roles.over === 2,
+    '⑨ 被上限挡住的 2 条在**同一份响应里**由 scopeCaps 解释（既不静默，也不报警）',
+    JSON.stringify({ degraded: cap9.degraded, scopeCaps: cap9.scopeCaps }));
+}
+
+console.log('\n⑩ "还没就绪的空" vs "真的没有成员"（1.3.24）：两种零必须在响应里分得开');
+{
+  const {
+    listSubagentStatusBySession, SUB_HEADER_STATS, _resetSubRowsMemo, _resetSubHeaderMemo,
+    SUB_ROWS_MEMO, _resetBoundedState,
+  } = _live;
+  const UUID10 = '11111111-2222-3333-4444-555555555555';
+  // 宿主刚起来：`knownIds` 里有人（来自 STATE.json），但一行子会话都还没枚举到。
+  const mkCold = () => ({
+    get: (k) => {
+      if (k === 'subagents') return { listChildren: async () => [] };
+      if (k === 'sessionQuery') return { listSessions: async () => [], readSession: async () => ({ events: [] }) };
+      if (k === 'sessions') return { list: () => [] };
+      return null;
+    },
+  });
+  _resetSubRowsMemo(); _resetSubHeaderMemo(); _resetBoundedState();
+  const rows10 = await listSubagentStatusBySession(mkCold(), 'cold-root', [UUID10], { allowEnum: true, enumDeadlineAt: Date.now() + 40 });
+  check(rows10.length === 0 && SUB_HEADER_STATS.notReady === true,
+    '⑩ 空列表 + 宿主没就绪 ⇒ `notReady` 明确点亮（**不是**"这个团队没有人"）',
+    'rows=' + rows10.length + ' notReady=' + SUB_HEADER_STATS.notReady);
+  check(SUB_HEADER_STATS.cut === 'warming',
+    "⑩ 内部 cut 也如实（调用方据此挂 warming:['subs']）", 'cut=' + SUB_HEADER_STATS.cut);
+  const memo10 = SUB_ROWS_MEMO.get('cold-root');
+  check(!!memo10 && memo10.provisional === true,
+    '⑩ 空结果**没有**被当成有效基线（provisional，1.3.21 的修法仍然有效）',
+    JSON.stringify(memo10 && { provisional: memo10.provisional, streak: memo10.emptyStreak }));
+  // 限时：一直拿不到就把"还没就绪"这句**收回**，交给 `subsPending` 表达"明细拿不到"。
+  if (memo10) memo10.provisionalSince = Date.now() - (200 * 60 * 1000);
+  await listSubagentStatusBySession(mkCold(), 'cold-root', [UUID10], { allowEnum: true, enumDeadlineAt: Date.now() + 40 });
+  check(SUB_HEADER_STATS.notReady === false,
+    '⑩ 超过限时后**不再**声称"还没就绪"（这句话有保质期 —— 否则它自己又会变成一盏常亮灯）',
+    'notReady=' + SUB_HEADER_STATS.notReady);
+  // 真的没有成员（knownIds 为空）⇒ 空集是**合法基线**，不许标"还没就绪"。
+  _resetSubRowsMemo(); _resetSubHeaderMemo();
+  await listSubagentStatusBySession(mkCold(), 'cold-root', [], { allowEnum: true, enumDeadlineAt: Date.now() + 40 });
+  check(SUB_HEADER_STATS.notReady === false, '⑩ 本来就没有成员 ⇒ 不标"还没就绪"（两种零分得开）', 'notReady=' + SUB_HEADER_STATS.notReady);
+  // 接线棘轮：这个事实**必须**被送到响应里，否则它只是又一个内部字段（1.3.23 的教训）。
+  const cmdSrc10 = readFileSync(join(here, 'lib', 'command.js'), 'utf8');
+  check(/if \(needSubs && SUB_HEADER_STATS\.notReady\) warming\.push\('subs'\)/.test(cmdSrc10),
+    "⑩ 生产接线把它挂成 `warming:['subs']`（沿用既有语义，不造新概念）", '');
+  const clientSrc10 = readFileSync(join(here, 'client.js'), 'utf8');
+  check(/subs: t\('成员明细'/.test(clientSrc10) && /warmingNoSnapshot/.test(clientSrc10),
+    '⑩ 客户端认识 `subs`，且标题按"尚无快照"与"上一份快照"分开措辞（旧文案对这种情况是假话）', '');
 }
 
 console.log('');
