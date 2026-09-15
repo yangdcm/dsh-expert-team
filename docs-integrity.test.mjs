@@ -13,8 +13,14 @@
 //   C. 版本节**无重复**
 //   D. **反空转**：解析到的版本节数 ≥ 15（正则失配 ⇒ 零标题 ⇒ 全部通过，那是假绿）
 //   E. **活文档里的"NN 个测试文件"必须等于真实文件数**（`README.md` / `README.en.md` /
-//      `.github/workflows/ci.yml`）—— **不扫 `CHANGELOG.md`**：那是历史记录，写的就是当时的值，不该被改。
-//   F. **反空转**：`README.md` 里必须真的找到至少一处这样的数字（否则改名/改写就会静默关掉这条检查）
+//      `.github/workflows/ci.yml` / `llms.txt`）—— **不扫 `CHANGELOG.md`**：那是历史记录，写的就是当时的值，不该被改。
+//   F. **反空转**：活文档里必须真的找到至少一处这样的数字（否则改名/改写就会静默关掉这条检查）
+//   H. **`llms.txt` 的可引用事实**（它是 AI 搜索/引用的入口，错一个数字就是一个会被复述的错答案）：
+//      包名 == `package.json` name、宿主下限 == `engines.dsh`、角色数与角色 id 清单 == `lib/vocab.js`
+//      的 `DEFAULT_ROLES`、阶段数 == `PHASES`。**每个提取都带反空转**（提取不到就红，不许静默通过）。
+//
+//   为什么 `llms.txt` 必须一起扫：它曾经写"84 个测试文件 / 138 条变异"，而实况是 89 / 140 ——
+//   正是 E/G 那类漂移，只是发生在一个**最容易被外部 AI 直接引用**的文件上。
 //
 // 它怎么抓"又把新节追加到末尾"：新节写在末尾 ⇒ A 立刻红；顺序整体乱掉 ⇒ B 红；同一版写两遍 ⇒ C 红。
 //
@@ -23,6 +29,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_ROLES, PHASES } from './lib/vocab.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 let fail = 0;
@@ -66,7 +73,7 @@ const realCount = [...list.matchAll(/node\s+(\S+\.test\.mjs)/g)].length;
 check(realCount >= 15, 'test:files 解析出的文件数 ≥ 15（反空转）', `实际 ${realCount} 个`);
 
 // 只扫"活文档"：CHANGELOG 是历史记录，写的是当时的值，**故意不扫**
-const LIVING = ['README.md', 'README.en.md', '.github/workflows/ci.yml'];
+const LIVING = ['README.md', 'README.en.md', '.github/workflows/ci.yml', 'llms.txt'];
 const PATTERNS = [/(\d+)\s*个测试文件/g, /(\d+)\s+test files?/gi];
 let foundAny = 0;
 for (const rel of LIVING) {
@@ -81,7 +88,7 @@ for (const rel of LIVING) {
     }
   }
 }
-check(foundAny >= 1, 'README.md 里确实存在这样的数字（反空转：改写不该静默关掉这条检查）', `命中 ${foundAny} 处`);
+check(foundAny >= 1, '活文档里确实存在这样的数字（反空转：改写不该静默关掉这条检查）', `命中 ${foundAny} 处`);
 
 // ── G：变异目录条数（同一类漂移：README 曾写 138，实际已 140） ────────────────
 console.log('\n③ 活文档里的"变异目录条数"（单一真源 = regression.fixtures/mutations.json）');
@@ -106,12 +113,54 @@ for (const rel of LIVING) {
     }
   }
 }
-check(mutFound >= 1, 'README 里确实存在变异目录条数（反空转）', `命中 ${mutFound} 处`);
+check(mutFound >= 1, '活文档里确实存在变异目录条数（反空转）', `命中 ${mutFound} 处`);
+
+// ── H：llms.txt 的"可引用事实"（AI 搜索/引用入口） ───────────────────────────
+// llms.txt 的读者是外部 AI：它写错一个数字，就会被反复复述成"事实"。测试文件数/变异条数
+// 已由 E/G 覆盖（llms.txt 进了 LIVING）；这里再把**包名 / 宿主下限 / 角色数与角色 id 清单 /
+// 阶段数**钉到各自的唯一真源上。每项都带反空转 —— 提取不到就红，不许静默通过。
+console.log('\n④ llms.txt 的可引用事实（包名 / 宿主下限 / 角色 / 阶段）');
+let llms = '';
+try { llms = readFileSync(join(here, 'llms.txt'), 'utf8'); } catch { /* 下面会红 */ }
+check(llms.trim().length > 0, 'llms.txt 存在且非空（反空转）', llms ? `${llms.length} 字符` : '读不到');
+
+/** 提取 + 反空转：提取不到记一项红并返回 null（调用方跳过后续比较，避免 TypeError）。 */
+const grab = (re, what) => {
+  const m = re.exec(llms);
+  check(m !== null, `llms.txt 里能读到${what}（反空转）`);
+  return m;
+};
+
+const mName = grab(/包名：`([^`]+)`/, '包名');
+if (mName) check(mName[1] === pkg.name, 'llms.txt 包名 == package.json 的 name', `${mName[1]} vs ${pkg.name}`);
+
+const mHost = grab(/Harness\s*≥\s*\*\*([^*]+)\*\*/, '宿主版本下限');
+if (mHost) {
+  const declared = String(pkg.engines?.dsh || pkg.dsh?.dsh || '').replace(/^[>=^~\s]+/, '');
+  check(declared.length > 0, 'package.json 里能读到 engines.dsh（反空转）', declared || '读不到');
+  check(mHost[1].trim() === declared, 'llms.txt 宿主下限 == engines.dsh', `${mHost[1].trim()} vs ${declared}`);
+}
+
+// 角色：既是"个数"也是"清单"。llms.txt 逐 id 列了 12 个角色，与 DEFAULT_ROLES 必须互为子集
+// （少一个 = 漏写；多一个 = 幻觉出一个不存在的角色 id）。
+const mRoles = grab(/角色（(\d+)）：(.+)/, '角色数与角色清单');
+if (mRoles) {
+  check(Number(mRoles[1]) === DEFAULT_ROLES.length, 'llms.txt 角色数 == lib/vocab.js DEFAULT_ROLES.length', `${mRoles[1]} vs ${DEFAULT_ROLES.length}`);
+  const listed = [...mRoles[2].matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+  check(listed.length === DEFAULT_ROLES.length, 'llms.txt 实际列出的角色 id 个数 == DEFAULT_ROLES.length', `${listed.length} vs ${DEFAULT_ROLES.length}`);
+  const missing = DEFAULT_ROLES.filter((r) => listed.indexOf(r) === -1);
+  const extra = listed.filter((r) => DEFAULT_ROLES.indexOf(r) === -1);
+  check(missing.length === 0 && extra.length === 0, 'llms.txt 角色 id 清单与 DEFAULT_ROLES 完全一致',
+    missing.length || extra.length ? `缺：${missing.join(',') || '无'}；多：${extra.join(',') || '无'}` : `${listed.length} 个`);
+}
+
+const mPhases = grab(/阶段（(\d+)）/, '阶段数');
+if (mPhases) check(Number(mPhases[1]) === PHASES.length, 'llms.txt 阶段数 == lib/vocab.js PHASES.length', `${mPhases[1]} vs ${PHASES.length}`);
 
 if (fail) {
   console.log('\n提示：CHANGELOG 约定是**最新在上**（新节插在第一个 `## x.y.z` 之前）；');
-  console.log('      活文档里的测试文件数/变异条数请与仓库实况一致（或干脆别写数字）。');
+  console.log('      活文档（含 llms.txt）里的测试文件数/变异条数/包名/宿主下限/角色/阶段请与仓库实况一致（或干脆别写数字）。');
   console.error(`\n✗ docs-integrity：${fail} 项失败`);
   process.exit(1);
 }
-console.log('\n✓ docs-integrity：全部通过（CHANGELOG 首节=包版本 / 严格降序 / 无重复 / 活文档数字与实数一致 / 反空转）');
+console.log('\n✓ docs-integrity：全部通过（CHANGELOG 首节=包版本 / 严格降序 / 无重复 / 活文档数字与实数一致 / llms.txt 可引用事实一致 / 反空转）');
