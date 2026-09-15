@@ -91,21 +91,25 @@ $ /team 做一个带登录的支付模块
 
 <sub>图 2：**全屏画布**。看阶段条与进度、团队编制（谁在跑、用哪个模型）、以及 `人 / 事 / 料 / 盘` 四个视角 —— 比浮层更完整的一层视图。</sub>
 
+![全屏画布 · 事：任务依赖图](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/canvas-tasks.png)
+
+<sub>图 3：**任务依赖图** —— 11 个任务按依赖 DAG 并行推进；7 个完成、4 个失败。失败会触发 `repair` 与**独立复验**（`repair-1 → review-2 → repair-2 → review-3`），直到通过或被如实判为需修订 —— 这就是「返工不收敛」的硬门禁在真实运行里的样子。</sub>
+
 ![质量门禁违规实时可见](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-gate.png)
 
-<sub>图 3：**门禁违规**。看顶部那条横幅 —— 违规项与拒绝理由（例如"SPEC.md 的边界章节已进入 `implement` 但仍无任何一行填写"）由 `lib/interception.js` 挂在宿主 `tools/post-execute` 上当场判出后推出，不是提示词提醒。</sub>
+<sub>图 4：**门禁违规**。看顶部那条横幅 —— 违规项与拒绝理由（例如"SPEC.md 的边界章节已进入 `implement` 但仍无任何一行填写"）由 `lib/interception.js` 挂在宿主 `tools/post-execute` 上当场判出后推出，不是提示词提醒。</sub>
 
 ![成员模型与任务详情](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-live.png)
 
-<sub>图 4：**角色编制**。看成员列表 —— 谁在跑、用哪个模型、当前在做什么；展开任一成员可看它的任务与产物。模型可按角色分别配置，异构模型用于交叉验证。</sub>
+<sub>图 5：**角色编制**。看成员列表 —— 谁在跑、用哪个模型、当前在做什么；展开任一成员可看它的任务与产物。模型可按角色分别配置，异构模型用于交叉验证。</sub>
 
 ![阶段推进与工件预览](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-flow.png)
 
-<sub>图 5：**阶段与工件**。看阶段条与预览区 —— 当前阶段、已过阶段、以及该阶段真正写下的工件正文（工件是唯一真源，浮层只是它的视图）。</sub>
+<sub>图 6：**阶段与工件**。看阶段条与预览区 —— 当前阶段、已过阶段、以及该阶段真正写下的工件正文（工件是唯一真源，浮层只是它的视图）。</sub>
 
 ![官方设置页里的专家团分节](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
 
-<sub>图 6：**设置**。看官方 `设置 →「专家团」` 这一页 —— 18 个设置项、中文标签、**改动即保存并即时生效**（上限/轮次/档位门/振荡检测在进程内重算）；值存在宿主命名空间 `expert-team`，随插件市场的备份/恢复一起走。</sub>
+<sub>图 7：**设置**。看官方 `设置 →「专家团」` 这一页 —— 18 个设置项、中文标签、**改动即保存并即时生效**（上限/轮次/档位门/振荡检测在进程内重算）；值存在宿主命名空间 `expert-team`，随插件市场的备份/恢复一起走。</sub>
 
 ## 它为什么可靠
 

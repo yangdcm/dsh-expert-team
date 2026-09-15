@@ -100,26 +100,30 @@ answer them:
 
 <sub>Figure 2: **the full-screen canvas**. Look at the phase bar and progress, the roster (who is running, on which model), and the four views (people / tasks / artifacts / board) — one layer above the floating panel.</sub>
 
+![The full-screen canvas, tasks view: the dependency graph](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/canvas-tasks.png)
+
+<sub>Figure 3: **the task dependency graph** — 11 tasks advance in parallel along the dependency DAG; 7 completed, 4 failed. A failure triggers `repair` plus **independent re-verification** (`repair-1 → review-2 → repair-2 → review-3`) until it passes or is honestly marked as needing revision — this is what the "rework does not converge" hard gate looks like in a real run.</sub>
+
 ![Quality-gate violations surfaced live](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-gate.png)
 
-<sub>Figure 3: **gate violations**. Look at the banner at the top — the violation and its refusal reason
+<sub>Figure 4: **gate violations**. Look at the banner at the top — the violation and its refusal reason
 (e.g. "SPEC.md's boundary section has entered `implement` but still has no 'expected rejection' row")
 is decided by `lib/interception.js`, hooked onto the host's `tools/post-execute` waterfall, and surfaced
 immediately. This is code, not a prompt reminder.</sub>
 
 ![Members, models and task detail](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-live.png)
 
-<sub>Figure 4: **the roster**. Look at the member list — who is running, on which model, and what it is doing;
+<sub>Figure 5: **the roster**. Look at the member list — who is running, on which model, and what it is doing;
 expand a member for its tasks and artifacts. Models are configurable per role; heterogeneous models are used for cross-checking.</sub>
 
 ![Phase progress and artifact preview](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-flow.png)
 
-<sub>Figure 5: **phases and artifacts**. Look at the phase bar and the preview pane — the current phase, the phases
+<sub>Figure 6: **phases and artifacts**. Look at the phase bar and the preview pane — the current phase, the phases
 already passed, and the actual body of the artifact written in that phase (artifacts are the single source of truth; the overlay is just a view of them).</sub>
 
 ![The expert-team section inside the official settings page](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
 
-<sub>Figure 6: **settings**. Look at the official `Settings → Expert team` page — 18 settings, Chinese labels,
+<sub>Figure 7: **settings**. Look at the official `Settings → Expert team` page — 18 settings, Chinese labels,
 **saved on change and applied immediately** (caps, rounds, the tier gate and the oscillation detector are recomputed
 in-process). Values live in the host namespace `expert-team`, so they travel with the plugin market's backup/restore.</sub>
 
