@@ -226,6 +226,16 @@ window.__ModuleLoader__.load({
       '.exp-hs-hint{color:var(--dsw-alias-label-secondary,var(--text,#57606a))}' +
       '.exp-hs-notes{margin:6px 0 0;padding-left:16px;font-size:11px;line-height:1.6;color:var(--dsw-alias-label-secondary,var(--text,#57606a))}' +
       '.exp-hs-copy{margin-left:6px;padding:1px 8px;border:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));border-radius:6px;background:var(--dsw-alias-bg-layer-3,var(--bg,#fff));color:inherit;cursor:pointer;font-size:11px}' +
+      '.exp-hs-form{margin:10px 0 4px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l1,var(--border,#eef1f4));border-radius:8px;background:var(--dsw-alias-bg-layer-2,var(--bg-subtle,#f6f8fa))}' +
+      '.exp-hs-row{display:flex;align-items:center;gap:8px;padding:3px 0}' +
+      '.exp-hs-label{flex:0 0 104px;max-width:104px;font-size:12px}' +
+      '.exp-hs-input,.exp-hs-select{flex:1;min-width:0;padding:3px 6px;border:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));border-radius:6px;background:var(--dsw-alias-bg-layer-3,var(--bg,#fff));color:inherit;font-size:12px}' +
+      '.exp-hs-actions{display:flex;flex-wrap:wrap;gap:6px;padding-top:6px}' +
+      '.exp-hs-btn{padding:3px 10px;border:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));border-radius:6px;background:var(--dsw-alias-bg-layer-3,var(--bg,#fff));color:inherit;cursor:pointer;font-size:11.5px}' +
+      '.exp-hs-btn:disabled{opacity:.55;cursor:default}' +
+      '.exp-hs-btn.danger{color:#b3291e;border-color:#e3b0aa}' +
+      '.exp-hs-msg{margin-top:6px;font-size:11.5px;font-weight:700;color:#1a7f5a}' +
+      '.exp-hs-msg.bad{color:#b3291e;font-weight:600}' +
       '.exp-viol{color:#fff;background:linear-gradient(90deg,#c62828,#e53935);font-size:12px;font-weight:600;padding:7px 10px;border-radius:8px;margin:0 0 8px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
       '.exp-decision{margin:8px 0;padding:12px 14px;border:1px solid var(--dsw-alias-state-business-primary,#0969da);border-radius:10px;background:linear-gradient(180deg,#f6f9ff,var(--dsw-alias-bg-layer-1,#fff))}' +
       '.exp-decision-title{font-weight:700;font-size:13px;color:var(--dsw-alias-state-business-primary,#0969da)}' +
@@ -1261,21 +1271,31 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 记忆后端（Hindsight）**只读诊断块**（1.3.18 一期）。
+     * 记忆后端（Hindsight）块：**诊断 + 配置**（1.3.18 一期只读诊断；1.3.21 二期加写路径）。
      *
-     * 为什么要有它：用户遇到的两类故障（服务端 PG 共享内存 500 / WAF 403 防火墙页）都在**服务端**，
-     * 此前客户端只把一长串 JSON/HTML 原样抛出 ⇒ 用户不知道该改哪里。本块把"看"做扎实：
-     * 配置文件路径 · 形态（cloud/self-hosted/daemon）· 地址 · **token 是否已配置**（值绝不回显）
-     * · 最近失败（已分类 + 可操作 hint）· 可选的一次连通性探测。
+     * 诊断部分（配置路径 · 形态 · 地址 · **token 是否已配置**（值绝不回显）· 最近失败已分类 + 可操作
+     * hint · 可选一次连通性探测）保持不变；写部分只做三件事：改形态 / 改地址 / **设置或显式清除** token。
      *
-     * 三条纪律：① **只读** —— 本块没有任何写入控件；② token 只显示"已配置/未配置"（连长度都不给）；
-     * ③ 读不到/探测失败**只说事实**（notes），绝不装作成功，也绝不刷屏。
+     * 五条纪律（有测试盯着）：
+     *   ① **token 值不回显** —— 输入框是 password、保存后立刻清空，界面只显示"已配置/未配置"；
+     *   ② 空输入 = **保持原值不变**（要清除必须按「清除」按钮 —— 空串不等于删除）；
+     *   ③ 保存后按**实际改了哪个键**提示是否要重启（改 `serverMode`/`apiUrl` 要重启，只改 token 不用）；
+     *   ④ 没有改动 ⇒ 如实说"没有改动、未写盘"，**不假报已保存**；
+     *   ⑤ 失败原样显示服务端给的 `errors`（不吞、不美化）。
      */
     function HindsightBlock() {
       var dS = useState(null); var d = dS[0], setD = dS[1]
       var pS = useState(null); var probed = pS[0], setProbed = pS[1]
       var eS = useState(''); var err = eS[0], setErr = eS[1]
       var bS = useState(false); var busy = bS[0], setBusy = bS[1]
+      // ── 写路径的表单状态：只装**用户正在输入的东西**，初始全空 ⇒ 绝不预填 token ──
+      var mS = useState(''); var mode = mS[0], setMode = mS[1]
+      var uS = useState(''); var url = uS[0], setUrl = uS[1]
+      var tS = useState(''); var token = tS[0], setToken = tS[1]
+      var gS = useState(''); var msg = gS[0], setMsg = gS[1]
+      var wS = useState(false); var saving = wS[0], setSaving = wS[1]
+      var cS = useState(''); var armClear = cS[0], setArmClear = cS[1]   // 「再点一次确认」武装的键（'' = 未武装）
+      var nS = useState([]); var postNotes = nS[0], setPostNotes = nS[1]
       var sid = useCurrentSessionId()
       function load(withProbe) {
         var q = '/plugins/dsh-expert-team/hindsight-config'
@@ -1299,9 +1319,55 @@ window.__ModuleLoader__.load({
       function copyPath() {
         try { navigator.clipboard.writeText(String((d && d.path) || '')) } catch (e) { /* 复制失败不影响只读展示 */ }
       }
+      /** 提交一次写：`body` 里**只放用户明确改动的键**（清除走 `clear`）。 */
+      function submit(body) {
+        setSaving(true); setErr(''); setMsg('')
+        fetch('/plugins/dsh-expert-team/hindsight-config', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+        }).then(function (r) {
+          return r.json().catch(function () { return null }).then(function (dd) { return { ok: r.ok, d: dd } })
+        }).then(function (res) {
+          setSaving(false)
+          if (!res.ok || !res.d || !res.d.ok) {
+            setErr(((res.d && res.d.errors) || [t('保存失败', 'save failed')]).join('；'))
+            return
+          }
+          var r = res.d
+          setPostNotes(r.notes || [])
+          // 表单清空 —— **尤其是 token 输入框**（提交过就不再留在界面上）。
+          setMode(''); setUrl(''); setToken(''); setArmClear('')
+          setMsg(r.saved
+            ? t('已保存', 'Saved') + ((r.changed || []).length ? '：' + r.changed.join('、') : '') + ' —— ' + (r.needsRestart
+              ? t('需重启 dsh web 才生效', 'restart dsh web to take effect')
+              : t('无需重启（token 在 401 时会重读）', 'no restart needed (the token is re-read on 401)'))
+            : t('提交的内容与现有配置一致 ⇒ 没有改动、未写盘', 'Nothing changed — nothing was written'))
+          load(false)
+        }).catch(function (e) { setSaving(false); setErr(String(e && e.message ? e.message : e)) })
+      }
+      function saveForm() {
+        var body = {}
+        if (mode) body.serverMode = mode
+        if (url.trim() !== '') body.apiUrl = url.trim()
+        if (token !== '') body.apiToken = token
+        if (!Object.keys(body).length) {
+          setErr(t('表单是空的：请先改形态/地址，或填入 token（要清除已有 token 请按「清除 token」）。',
+            'The form is empty: change the mode/URL or type a token (use “Clear token” to remove one).'))
+          return
+        }
+        submit(body)
+      }
+      /** 显式清除：token 要**再点一次确认**（防误删）；地址一次即可。 */
+      function clearKey(key) {
+        if (key === 'apiToken' && armClear !== 'apiToken') {
+          setArmClear('apiToken'); setErr('')
+          setMsg(t('再点一次「确认清除 token」才会真正删除。', 'Click “Confirm clear token” once more to actually delete it.'))
+          return
+        }
+        submit({ clear: [key] })
+      }
       if (!d) {
         return h('div', { className: 'exp-hs' },
-          h('div', { className: 'exp-settings-group' }, esc(t('记忆后端（Hindsight）· 只读诊断', 'Memory backend (Hindsight) · read-only diagnostics'))),
+          h('div', { className: 'exp-settings-group' }, esc(t('记忆后端（Hindsight）· 诊断与配置', 'Memory backend (Hindsight) · diagnostics & settings'))),
           h('div', { className: 'exp-settings-note' }, esc(err || t('（正在读取记忆后端配置…）', '(loading memory backend…)')))
         )
       }
@@ -1347,13 +1413,43 @@ window.__ModuleLoader__.load({
             ? h('span', { className: 'exp-hs-ok' }, esc(t('可达 ✓ ', 'reachable ✓ ') + String(probed.probeMs == null ? '' : probed.probeMs + ' ms')))
             : h('span', { className: 'exp-hs-bad' }, esc(t('不可达 ✗ ', 'unreachable ✗ ') + String(probed.probeMs == null ? '' : probed.probeMs + ' ms'))))))
       }
-      var notes = (d.notes || []).concat(probed && probed.notes ? probed.notes : [])
+      var notes = (d.notes || []).concat(probed && probed.notes ? probed.notes : []).concat(postNotes)
+      // ── 写路径表单：只呈现"能改什么"，**不呈现任何已存的值**（token 尤其）──────────────
+      // 空输入 = 保持原值不变；清除是**独立按钮**（token 还要再点一次确认）——
+      // 空串当删除是最难排查的一类隐式语义，这里刻意不做。
+      var form = h('div', { className: 'exp-hs-form' },
+        h('div', { className: 'exp-hs-row' },
+          h('span', { className: 'exp-hs-label' }, esc(t('部署形态', 'Server mode'))),
+          h('select', { className: 'exp-hs-select', value: mode, onChange: function (e) { setMode(e.target.value) } },
+            h('option', { value: '' }, esc(t('（不修改）', '(leave unchanged)'))),
+            ['cloud', 'self-hosted', 'daemon'].map(function (m) { return h('option', { key: m, value: m }, m) }))),
+        h('div', { className: 'exp-hs-row' },
+          h('span', { className: 'exp-hs-label' }, esc(t('服务地址', 'API URL'))),
+          h('input', { className: 'exp-hs-input', type: 'text', value: url, spellCheck: false,
+            placeholder: t('留空 = 不修改（不要带 /v1）', 'empty = keep (do not include /v1)'),
+            onChange: function (e) { setUrl(e.target.value) } })),
+        h('div', { className: 'exp-hs-row' },
+          h('span', { className: 'exp-hs-label' }, esc(t('访问令牌', 'API token'))),
+          h('input', { className: 'exp-hs-input', type: 'password', value: token, autoComplete: 'off', spellCheck: false,
+            placeholder: d.apiTokenConfigured
+              ? t('已配置（留空 = 不修改；值不显示）', 'configured (empty = keep; value never shown)')
+              : t('未配置（留空 = 不修改）', 'not configured (empty = keep)'),
+            onChange: function (e) { setToken(e.target.value) } })),
+        h('div', { className: 'exp-hs-actions' },
+          h('button', { className: 'exp-hs-btn', onClick: saveForm, disabled: saving },
+            esc(saving ? t('保存中…', 'saving…') : t('保存', 'Save'))),
+          h('button', { className: 'exp-hs-btn danger', onClick: function () { clearKey('apiToken') }, disabled: saving || !d.apiTokenConfigured },
+            esc(armClear === 'apiToken' ? t('确认清除 token', 'Confirm clear token') : t('清除 token', 'Clear token'))),
+          h('button', { className: 'exp-hs-btn', onClick: function () { clearKey('apiUrl') }, disabled: saving || !d.apiUrl },
+            esc(t('清除地址', 'Clear URL')))),
+        h('div', { className: 'exp-hs-msg' + (err ? ' bad' : '') }, esc(err ? '✗ ' + err : (msg || ''))))
       return h('div', { className: 'exp-hs' },
-        h('div', { className: 'exp-settings-group' }, esc(t('记忆后端（Hindsight）· 只读诊断', 'Memory backend (Hindsight) · read-only diagnostics'))),
+        h('div', { className: 'exp-settings-group' }, esc(t('记忆后端（Hindsight）· 诊断与配置', 'Memory backend (Hindsight) · diagnostics & settings'))),
         rows,
         h('div', { className: 'exp-settings-note' },
-          esc(t('重启语义：改 `serverMode` / `apiUrl` 需重启 dsh web；只改 `apiToken` 免重启（401 时会重读）。本期只读：这里没有任何写入控件。',
-            'Restart semantics: changing `serverMode` / `apiUrl` needs a dsh web restart; `apiToken` alone does not (re-read on 401). Read-only: there are no write controls here.'))),
+          esc(t('重启语义：改 `serverMode` / `apiUrl` 需重启 dsh web；只改 `apiToken` 免重启（401 时会重读）。保存前会先校验并**保留文件里其它键**，写入是 0600 权限的原子替换；token 的值在任何地方都不会回显（输入框也不预填）。',
+            'Restart semantics: changing `serverMode` / `apiUrl` needs a dsh web restart; `apiToken` alone does not (re-read on 401). Writes are validated first, keep every other key in the file, and replace it atomically with mode 0600. The token value is never echoed anywhere (the field is never pre-filled).'))),
+        form,
         h('button', { className: 'exp-settings-retry', onClick: function () { load(true) }, disabled: busy },
           esc(busy ? t('探测中…', 'probing…') : t('检测连通性', 'Check connectivity'))),
         notes.length ? h('ul', { className: 'exp-hs-notes' }, notes.map(function (n, i) { return h('li', { key: 'n' + i }, esc(String(n))) })) : null)
