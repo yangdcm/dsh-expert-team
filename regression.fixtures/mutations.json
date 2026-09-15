@@ -1799,6 +1799,19 @@
           "replace": "run 工件一律由 lead 落盘（MUTANT: R1 改回旧口径）"
         }
       ]
+    },
+    {
+      "id": "M138-r1-ownership-table-emptied",
+      "title": "R1 所有权表事实上被清空（门禁代码还在，但谁负责哪份工件没了 ⇒ 该拦的全放行）",
+      "why": "2026-09-15 新增（本轮 R1 硬门禁的防回归登记）。判定全依赖 lib/artifact-ownership.js 的 ARTIFACT_OWNERS：表一失效，非负责人覆写他人工件就再也拦不住（ownersOf 一律返回 null ⇒ 不限制），而代码一个字没改、日志也不报错 —— 典型静默退化。本变异体让 ownersOf 恒返回 null ⇒ r1-ownership-gate.test.mjs 的断言①②③ 必红。",
+      "test": "r1-ownership-gate.test.mjs",
+      "edits": [
+        {
+          "file": "lib/artifact-ownership.js",
+          "find": "  if (!Object.prototype.hasOwnProperty.call(ARTIFACT_OWNERS, key)) return null;\n  return ARTIFACT_OWNERS[key];",
+          "replace": "  if (!Object.prototype.hasOwnProperty.call(ARTIFACT_OWNERS, key)) return null;\n  return null; // MUTANT: 所有权表事实上被清空"
+        }
+      ]
     }
   ]
 }

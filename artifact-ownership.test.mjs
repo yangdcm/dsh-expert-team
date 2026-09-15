@@ -201,3 +201,42 @@ test('E · 工件清单一致：常量 ≡ 模板目录；e2e 必须清单 ≡ �
       `${tf} 的必需文件清单与「模板 ${constList.length} 项 + ${RUNLOG}」不一致（该文件 ${list.length} 项）`);
   }
 });
+
+// ── F/G：把**新的机读真源**（`lib/artifact-ownership.js` 的 ARTIFACT_OWNERS）双向钉回真源 ──
+// 为什么必须双向：单向只能防一类错误 ——
+//   F（表 → 真源）：防**发明工件名/拼错**（把 SECURITY.md 写成 SEC.md 之类 ⇒ 门禁静默失效）；
+//   G（真源 → 表）：防**漏项**（SKILL.md 给某角色派了工件，而门禁表里没有它 ⇒ 那份工件谁都能覆写）。
+test('F · 所有权表的键都来自真源（不发明文件/不拼错）', async () => {
+  const { ARTIFACT_OWNERS } = await import(join(here, 'lib', 'artifact-ownership.js'));
+  const cmd = await readText(join(here, 'lib', 'command.js'));
+  const m = cmd.match(/const templates = \[([^\]]+)\]/);
+  assert.ok(m, 'command.js 里找不到 templates 常量 —— F 的判据失去对象');
+  const templates = m[1].split(',').map((x) => x.trim().replace(/^'|'$/g, '')).filter(Boolean);
+  const skill = await readText(SKILL_MD);
+  const workspace = await readText(join(SKILL_ROOT, 'references', 'WORKSPACE.md'));
+  const known = new Set([
+    ...templates,
+    ...[...skill.matchAll(/`([A-Za-z0-9_-]+\.(?:md|json))`/g)].map((x) => x[1]),
+    ...[...workspace.matchAll(/`([A-Za-z0-9_-]+\.(?:md|json))`/g)].map((x) => x[1]),
+  ]);
+  const invented = Object.keys(ARTIFACT_OWNERS).filter((k) => !known.has(k));
+  assert.deepEqual(invented, [], `所有权表里的这些工件名在真源（templates / SKILL.md / WORKSPACE.md）里找不到：${invented.join(', ')}`);
+});
+
+test('G · SKILL.md 产出列里每个 run 工件都在所有权表里（R1 不漏项）', async () => {
+  const { ARTIFACT_OWNERS } = await import(join(here, 'lib', 'artifact-ownership.js'));
+  const skill = await readText(SKILL_MD);
+  const missing = [];
+  for (const line of skill.split('\n')) {
+    if (!line.startsWith('|')) continue;
+    const cells = line.replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+    if (cells.length < 3 || cells[0] === '角色') continue;
+    if (cells.every((c) => /^:?-{2,}:?$/.test(c) || c === '')) continue;
+    for (const mm of cells[2].matchAll(/`([A-Za-z0-9_-]+\.(?:md|json))`/g)) {
+      if (!Object.prototype.hasOwnProperty.call(ARTIFACT_OWNERS, mm[1])) missing.push(`${cells[0]} → ${mm[1]}`);
+    }
+  }
+  assert.deepEqual(missing, [], `SKILL.md 给这些角色派了工件，但所有权表里没有 ⇒ 那几份谁都能覆写：${missing.join(' / ')}`);
+  assert.deepEqual([...ARTIFACT_OWNERS['STATE.json']], [], 'STATE.json 必须显式列为运行时专属');
+  assert.deepEqual([...ARTIFACT_OWNERS['ROSTER.json']], [], 'ROSTER.json 必须显式列为运行时专属');
+});
