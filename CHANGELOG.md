@@ -731,3 +731,55 @@ DAG 并行扇出、角色 chip、工件脚注全部保留。
 - `/team` 命令面：一次性组队 / 持久化活团队 / 仅工件 / 先确认后开工 / 流程档位 / 画布 / 代码索引 /
   自学习 / 配额 / 冷启动清算
 - 零运行时依赖、无构建步骤、无安装钩子
+
+## 1.3.16
+
+**三件收尾：`/state` 重活的最大一段（`subs`）、冷启动、以及 R1 的"bash 绕过"坦白。**
+
+### A. `subs` 2,398 ms —— 根因不是缓存不够，而是"永远查不完"
+
+- **真机 profile 定位**：重活 `?section=people,feed` 单发 3,295 ms = `subs` **2,398** + `roles` 874 + 其余 ~2。
+- **根因（真 bug）**：`STATE.members → membersFromState().byRole` 这个 Map **同时**存了
+  `role→agentId` 与 `agentId→role` 两种键，而调用点直接取 `.values()` ⇒ **一半是角色名**
+  （`backend` / `reviewer`）。角色名永远不可能是 session header 的 id ⇒ `missingIds` **永久非空**
+  ⇒ **每个请求都重新枚举 475 个 artifact**，`SUB_HEADER_MEMO`（1.3.11 加的按 id 备忘）因此形同虚设。
+- **修法**：新增 `memberAgentIds()`（只取真 id）并在调用点使用；`isAgentIdLike()` **按角色名精确排除**
+  （等于角色 id，或首段是角色 id 的 `frontend-F4`/`reviewer-R1` 这类带后缀标签），**不按长度猜**
+  —— 长度阈值会误伤短 id（`ended-x`/`live-1`），那才是真丢数据。函数内**再兜一道过滤**，
+  防止未来调用方又把角色名传进来。顺带修掉 `buildRoleSubMap` 把 id 当角色的同一处根因。
+- **效果**（进程内、可复现）：同一份数据第二次请求 `listSessions` **调用 0 次**（原为每次 1 次）。
+
+### B. 冷启动 1,313 ms → 打**逐 run 戳缓存**（含落盘）
+
+- **真机 profile 定位**：重启后第一次 `?section=summary` = 1,313 ms，其中 `runs+select` **876 ms**
+  （每个 run 都要读 `STATE.json` + `TASKS.json` 再算 health/violations/owner）；随后 267 ms → 17 ms。
+- **修法**：按**每个 run 自己**的 `STATE.json`/`TASKS.json` 的 `(mtimeMs, size)` 作失效键缓存"列表行"，
+  索引**落盘**到 `$DSH_HOME/expert-team/runs-index.json`（可用 `DSH_EXPERT_TEAM_RUNS_INDEX` 覆盖位置）
+  ⇒ **重启后第一次**也只是 stat 校验 + 命中，不必从零算。
+- **为什么不能只戳 run 目录**：改文件**不会**改父目录 mtime（只有增删条目会）⇒ 那样会读到旧阶段/旧计数。
+  戳到文件本身才是"看到的就是真的"。
+- **实测**（进程内、`/tmp` 索引）：第一次算 5 个 run 并落盘 2,558 B；**模拟重启后第一次 1 ms、命中 5、零重算**；
+  只改一个 run 的 `STATE.json` ⇒ **恰好重算那 1 个**；新增 run ⇒ **立即可见**。
+- **顺带修**：`team/` 根下的**普通文件**（`CODEINDEX.json` / `LEARNINGS.md`…）过去被当作 run 读
+  `STATE.json` ⇒ 面板 run 下拉里出现一串假的 "broken run"（画布上真能看到）。现在**只列目录**。
+
+### C. R1 的 `bash` 绕过：**只报不拦**（刻意不阻断）
+
+- R1 硬门禁只覆盖 `write`/`edit`；持 `bash` 的 backend/frontend/researcher/qa/dba/devops 理论上可
+  `cat > SPEC.md` 绕过。**静默绕过**违背本仓纪律，但静态判断 bash 写目标不可靠（重定向/变量/子命令）
+  ⇒ 新增 `lib/artifact-redirect-watch.js`：挂在 `tools/post-execute`，**只在**"命令里明显写向
+  `<team 根>/<runId>/<已知工件>`"时**留痕一行 + onEvent**。
+- **绝不**阻断、**绝不**改结果、**绝不**抛错（沿用"监听器不得成为故障源"的纪律，有源码级禁令断言）；
+  含变量/`/dev/null`/工作区代码/更深路径一律**不命中**（宁可漏报，不可误伤）。
+- 已知工件名来自**两处既有真源的并集**（`ARTIFACT_TEMPLATES` ∪ `ARTIFACT_OWNERS`）—— 同时把模板清单
+  提升为模块级单一真源 `ARTIFACT_TEMPLATES`，`authority` / `artifact-ownership` 两组断言改为**读这份真源**
+  （原先按源码字面量解析，重构后会"失去判据对象"—— 那比断言失败更危险，它看起来像通过）。
+- **验收样例**：7 个命中形态（`cat > SPEC.md`、`>>`、`tee`、`tee -a`、带引号绝对路径、`2>`）
+  + 9 个不命中形态（工作区代码、`/tmp`、无写目标、工作区根的 `SPEC.md`、非工件名、含变量、
+  `/dev/null`、只读命令、更深路径）全部符合预期（`artifact-redirect-watch.test.mjs`）。
+
+### 其它
+
+- 新增变异体 `M139-artifact-redirect-watch-blind`（候选提取恒空 ⇒ 观测器变睁眼瞎），
+  catalog 139 条；**已实测**注入后该测试 **10 条断言失败**、还原后逐字节恢复。
+- 测试文件 **85 个**；`npm run test:all` EXIT=0。
