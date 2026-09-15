@@ -3,6 +3,35 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.3.19
+
+**文档与 CI 工具的三件收口**（纯文档/工作流，**不改任何产品代码**）。
+
+- **更正：本文件里 `## 1.3.17` 与 `## 1.3.16` 曾被追加到文件末尾**（挂在 `## 1.1.0` 之后），
+  违反"最新在上"的约定，**且已随 1.3.18 发到 npm**。本版把两节**原样归位**到
+  `1.3.18` 与 `1.3.15` 之间 —— 已用脚本证明**搬前/搬后 25 个版本节内容逐字节一致**（只动位置）。
+  自本版起有断言防回归（见下一条）。
+- **新增 `docs-integrity.test.mjs`**（进 `test:all`），钉住四类"文档与实况脱节"：
+  ① 本文件首个版本节 == `package.json` 的 version；② 版本节**严格降序**（语义化版本比较，不是字符串比较）；
+  ③ 无重复版本节；④ **活文档里的「NN 个测试文件」/「NN 条变异」必须等于实数** ——
+  单一真源分别是 `scripts["test:files"]` 与 `regression.fixtures/mutations.json`；
+  **不扫本文件**（那是历史记录，写的就是当时的值）。四条都带**反空转**断言
+  （解析不到 ⇒ 判红，不允许"零标题/零数字"静默通过）。
+  它上线即抓到 **7 处过期数字**：`README.md`/`README.en.md` 各写"84 个测试文件"（实际 89）、
+  各写"138 条变异"（实际 140）、CI step 名写"75 个测试文件"。
+- **CI step 名不再写死数字**：`全套测试（75 个测试文件，零依赖）` → `全套测试（零依赖、无需 install）`
+  —— 治本：数字不再会漂。
+- **新增零依赖 runner `scripts/run-tests.mjs`**：测试清单仍是**单一真源**
+  `scripts["test:files"]`（同一串 `node X.test.mjs && …`），`test:all` 改为 `node scripts/run-tests.mjs`。
+  它**逐文件跑、每个文件的输出实时透传**（CI 日志形态不变），结束时**汇总一次**：文件数、总耗时、
+  失败清单，以及**每个失败文件的最后 30 行**。语义等价（任一文件失败 ⇒ 退出非 0），
+  但**不再"一红遮八十"**：旧 `&&` 链在第一个失败处就停 —— 2026-09-15 排查真机 CI 红时
+  "31 秒就失败却看不到任何失败细节"正是它。另有**反空转**：清单为空 / 清单里的文件不存在 ⇒ 直接判失败
+  （不允许出现"零测试报绿"）。
+- 验证：`npm run test:all` **EXIT=0**（**89 个测试文件**）；`rename-package --check` 绿；
+  实测演示：把一处断言反转（令**第 2 个**文件失败）⇒ runner **仍跑完其余文件**、汇总报出该文件最后 30 行、
+  退出码非 0；还原后全绿。
+
 ## 1.3.18
 
 **记忆后端（Hindsight）的只读诊断面板**（一期：只"看"，**不改它的任何行为**）。
@@ -31,6 +60,120 @@
 - **诚实边界**：本版只做"看"，**不写任何文件、不改 Hindsight 的行为**（配置仍由它自己读）；
   三种形态的**写入**（读-改-写合并 / 0600 原子写 / 明确重启提示）在**二期**。
 - 顺带修 README FAQ 两处**被串行**的条目（"浮层/画布很慢"答案的尾巴被误粘到"reasoning effort"那条后面，中英各一处）。
+
+## 1.3.17
+
+**重活有界化 + 「为谁而做」前置与其主视觉。**
+
+### 性能：把两段最贵的活变成"有界"（不是"更快"）
+
+真机基线（30+ 子代理的重会话，用户实测）：`?section=people,feed` 单发 **5.4–9.2 s**，分段
+`subs` **2.9–3.7 s**、`roles` **2.4–5.5 s** —— 两段都**没有上限**，请求还压在事件循环上
+（`summary` 与重活并发时从 16 ms 涨到 **772 ms**）。
+
+- **`subs`**：枚举整棵 sessions 树是最贵的一步 ⇒ 两次之间至少 N 秒
+  （`DSH_EXPERT_TEAM_SUBS_ENUM_MIN_INTERVAL_MS`，默认 30 s），窗口内**零枚举**；另给枚举期限
+  （`DSH_EXPERT_TEAM_SUBS_DEADLINE_MS`，默认 800 ms），到点即停。被挡住的 id **不丢成员**：
+  它只是没有 header，按既有口径如实显示"细节不可得"（不假装 0）。
+- **`roles`**：读 MB 级子会话日志很贵且**不紧急** ⇒ 实时路径**默认零读**，未知角色如实显示为
+  **待解析**（新字段 `rolesPending`，替代旧名 `rolesDeferred`；客户端**真的渲染**它），解析交给
+  低频后台（每轮 ≤`DSH_EXPERT_TEAM_ROLES_PER_BURST`（默认 1）条、两次间隔
+  ≥`DSH_EXPERT_TEAM_ROLES_MIN_INTERVAL_MS`（默认 30 s）），期限
+  `DSH_EXPERT_TEAM_ROLES_DEADLINE_MS`（默认 600 ms）。已解析结果永久缓存 ⇒ `rolesPending`
+  **单调下降收敛到 0**（旧实现每请求从零重算 ⇒ 实测 16→40 **上涨**）。
+- **噪声纪律**（新）：**节流不是失败**，绝不每轮进 `degraded` —— 节流窗口内每次轮询都会命中，
+  否则面板会长期挂一个降级标记，把真告警一起降权。节流的事实由 `subsPending` / `rolesPending`
+  诚实表达；`degraded` 只承载**真截断**（`subs:deadline` / `roles:deadline`）。"缺块 ≠ 空数据"不变。
+- 护栏：新增 `state-bounded.test.mjs`（13 条）钉死"零枚举 / 期限即停 / 零读 / 收敛 / 字段单一真源
+  且被渲染 / 节流不进 degraded"。
+- 顺带修两处**源码级断言与文本强耦合**（加五行代码就假红，属"断言失去判据对象"那一类）：
+  `run-ownership` 的固定 2600 字符窗口改为**语义锚点切片**；`state-sections` 的正则改为只表达
+  意图（不再绑死参数表）。**断言本身一字未改**。
+- **诚实边界**：端到端墙钟需实机复测（本机装不进运行中的宿主）；本版给的是"机制级证据 +
+  单位成本账"。默认值都可用上面的环境变量覆盖 —— 想更激进就调小间隔。
+
+### 文档：「为谁而做」前置 + 主视觉（图 1）
+
+- 「为谁而做 / Who it is for」提到 hero + 指标行之后、`速览` 之前（中英同序）；
+- 新增 `docs/images/who-is-it-for.svg`（中）与 `.en.svg`（英，同布局同生成器）：顶带主张
+  「一句话 → 一支完整技术部」、左带三类对象、主带 **12 个岗位卡 4×3**、
+  「**你 · lead**」橙色胶囊**独占一带**、底带诚实边界；纯矢量、系统字体栈、配色克制；
+- **保留**「岗位 → 角色 → 做什么」对照表（图下方）：**图给冲击力、表给检索**（表格是机读文本，
+  比 SVG 里的字更可靠）；图号顺延为 图 1…图 8（中英一致、无重复）；图用绝对地址 + 关键词 alt；
+- 自检：包围盒估算 → 两两相交 → 带约束 → 越界 → **文字溢出父容器**；首轮抓到英文 chip 超框
+  16.8px 并修掉，最终两语言 无相交/无跨带/无越界/无溢出 + `xmllint` 良构；渲染由父会话浏览器核对。
+
+## 1.3.16
+
+**三件收尾：`/state` 重活的最大一段（`subs`）、冷启动、以及 R1 的"bash 绕过"坦白。**
+
+### A. `subs` 2,398 ms —— 根因不是缓存不够，而是"永远查不完"
+
+- **真机 profile 定位**：重活 `?section=people,feed` 单发 3,295 ms = `subs` **2,398** + `roles` 874 + 其余 ~2。
+- **根因（真 bug）**：`STATE.members → membersFromState().byRole` 这个 Map **同时**存了
+  `role→agentId` 与 `agentId→role` 两种键，而调用点直接取 `.values()` ⇒ **一半是角色名**
+  （`backend` / `reviewer`）。角色名永远不可能是 session header 的 id ⇒ `missingIds` **永久非空**
+  ⇒ **每个请求都重新枚举 475 个 artifact**，`SUB_HEADER_MEMO`（1.3.11 加的按 id 备忘）因此形同虚设。
+- **修法**：新增 `memberAgentIds()`（只取真 id）并在调用点使用；`isAgentIdLike()` **按角色名精确排除**
+  （等于角色 id，或首段是角色 id 的 `frontend-F4`/`reviewer-R1` 这类带后缀标签），**不按长度猜**
+  —— 长度阈值会误伤短 id（`ended-x`/`live-1`），那才是真丢数据。函数内**再兜一道过滤**，
+  防止未来调用方又把角色名传进来。顺带修掉 `buildRoleSubMap` 把 id 当角色的同一处根因。
+- **效果**（进程内、可复现）：同一份数据第二次请求 `listSessions` **调用 0 次**（原为每次 1 次）。
+
+### B. 冷启动 1,313 ms → 打**逐 run 戳缓存**（含落盘）
+
+- **真机 profile 定位**：重启后第一次 `?section=summary` = 1,313 ms，其中 `runs+select` **876 ms**
+  （每个 run 都要读 `STATE.json` + `TASKS.json` 再算 health/violations/owner）；随后 267 ms → 17 ms。
+- **修法**：按**每个 run 自己**的 `STATE.json`/`TASKS.json` 的 `(mtimeMs, size)` 作失效键缓存"列表行"，
+  索引**落盘**到 `$DSH_HOME/expert-team/runs-index.json`（可用 `DSH_EXPERT_TEAM_RUNS_INDEX` 覆盖位置）
+  ⇒ **重启后第一次**也只是 stat 校验 + 命中，不必从零算。
+- **为什么不能只戳 run 目录**：改文件**不会**改父目录 mtime（只有增删条目会）⇒ 那样会读到旧阶段/旧计数。
+  戳到文件本身才是"看到的就是真的"。
+- **实测**（进程内、`/tmp` 索引）：第一次算 5 个 run 并落盘 2,558 B；**模拟重启后第一次 1 ms、命中 5、零重算**；
+  只改一个 run 的 `STATE.json` ⇒ **恰好重算那 1 个**；新增 run ⇒ **立即可见**。
+- **顺带修**：`team/` 根下的**普通文件**（`CODEINDEX.json` / `LEARNINGS.md`…）过去被当作 run 读
+  `STATE.json` ⇒ 面板 run 下拉里出现一串假的 "broken run"（画布上真能看到）。现在**只列目录**。
+
+### C. R1 的 `bash` 绕过：**只报不拦**（刻意不阻断）
+
+- R1 硬门禁只覆盖 `write`/`edit`；持 `bash` 的 backend/frontend/researcher/qa/dba/devops 理论上可
+  `cat > SPEC.md` 绕过。**静默绕过**违背本仓纪律，但静态判断 bash 写目标不可靠（重定向/变量/子命令）
+  ⇒ 新增 `lib/artifact-redirect-watch.js`：挂在 `tools/post-execute`，**只在**"命令里明显写向
+  `<team 根>/<runId>/<已知工件>`"时**留痕一行 + onEvent**。
+- **绝不**阻断、**绝不**改结果、**绝不**抛错（沿用"监听器不得成为故障源"的纪律，有源码级禁令断言）；
+  含变量/`/dev/null`/工作区代码/更深路径一律**不命中**（宁可漏报，不可误伤）。
+- 已知工件名来自**两处既有真源的并集**（`ARTIFACT_TEMPLATES` ∪ `ARTIFACT_OWNERS`）—— 同时把模板清单
+  提升为模块级单一真源 `ARTIFACT_TEMPLATES`，`authority` / `artifact-ownership` 两组断言改为**读这份真源**
+  （原先按源码字面量解析，重构后会"失去判据对象"—— 那比断言失败更危险，它看起来像通过）。
+- **验收样例**：7 个命中形态（`cat > SPEC.md`、`>>`、`tee`、`tee -a`、带引号绝对路径、`2>`）
+  + 9 个不命中形态（工作区代码、`/tmp`、无写目标、工作区根的 `SPEC.md`、非工件名、含变量、
+  `/dev/null`、只读命令、更深路径）全部符合预期（`artifact-redirect-watch.test.mjs`）。
+
+### D. 会话模型 effort 预检（**只告警，不阻断**）—— 一次真实故障的定性
+
+- **故障现象**：`model "deepseek-flash" does not support reasoning effort "low"`。**不是插件的错，
+  也不是宿主缺 `low`** —— 是用户 `~/.dsh/settings.yaml` 里会话默认路由（命名空间 `agent-default-model`）
+  的模型条目**漏写 `reasoningEfforts`** ⇒ 宿主能力表里该模型只剩 `off` ⇒ **任何**显式 effort 都被拒
+  （`dsh-llm` 的 `resolveCallWithInfo`：`reasoning === undefined` 时只要传了 `reasoningEffort` 就抛
+  `UNSUPPORTED_REASONING_EFFORT`）。而本 preset **8 个角色声明 `high`、4 个声明 `low`** ⇒ 该路由下
+  **12 个角色全会失败**；"只有 low 报错"是假象（先派谁先报谁）。宿主在**任何网络 I/O 之前**就拒。
+- **插件能做什么 / 不能做什么（如实写）**：派工由宿主 `tool-subagent` + LLM 运行时执行，插件**无法**
+  在派工前改变宿主行为；能做的是**提前一行告警** + 给出修法。因此本项**只告警、不阻断、不改 preset 的
+  effort 分档**（那是设计意图）。
+- **实现**：新增 `lib/effort-preflight.js`（纯函数判定 + 有界重探接线）：读 preset 声明的 effort（真源，
+  按行正则，不引 YAML 解析器）→ 读宿主公开入口 `agentDefaultModel.currentSelection()` 与
+  `llm.resolveModelInfo(provider, model)` → 覆盖不全就**打一行**（含"改哪个命名空间/字段/值域"）。
+  **读不到/抛错一律静默**（fail-open）；一次加载最多一行；服务晚挂则 `ctx.inject` 事件驱动重探。
+- **`scripts/validate-agent-preset.mjs`** 补**值域**校验（`reasoningEffort ∈ off/low/high/max`）+ 结尾指路
+  （脚本**不读用户机器**，只校验 preset 侧）。
+- **文档**：README 中英 FAQ 各补一条（自然语言问句，便于检索）+ `llms.txt` 一行故障排查指针。
+- **测试**：`effort-preflight.test.mjs`（真源分档 8/4 / 判定矩阵 / 只报一次且可操作 / fail-open 静默 / 只告警不阻断）；
+  变异体 `M140-effort-preflight-blind`（缺档也不报 ⇒ 预检变睁眼瞎）**已实测**能杀死测试（5 条断言失败）。
+### 其它
+
+- 新增变异体 `M139-artifact-redirect-watch-blind`（候选提取恒空 ⇒ 观测器变睁眼瞎），
+  catalog 139 条；**已实测**注入后该测试 **10 条断言失败**、还原后逐字节恢复。
+- 测试文件 **85 个**；`npm run test:all` EXIT=0。
 
 ## 1.3.15
 
@@ -760,116 +903,3 @@ DAG 并行扇出、角色 chip、工件脚注全部保留。
 - `/team` 命令面：一次性组队 / 持久化活团队 / 仅工件 / 先确认后开工 / 流程档位 / 画布 / 代码索引 /
   自学习 / 配额 / 冷启动清算
 - 零运行时依赖、无构建步骤、无安装钩子
-
-## 1.3.17
-
-**重活有界化 + 「为谁而做」前置与其主视觉。**
-
-### 性能：把两段最贵的活变成"有界"（不是"更快"）
-
-真机基线（30+ 子代理的重会话，用户实测）：`?section=people,feed` 单发 **5.4–9.2 s**，分段
-`subs` **2.9–3.7 s**、`roles` **2.4–5.5 s** —— 两段都**没有上限**，请求还压在事件循环上
-（`summary` 与重活并发时从 16 ms 涨到 **772 ms**）。
-
-- **`subs`**：枚举整棵 sessions 树是最贵的一步 ⇒ 两次之间至少 N 秒
-  （`DSH_EXPERT_TEAM_SUBS_ENUM_MIN_INTERVAL_MS`，默认 30 s），窗口内**零枚举**；另给枚举期限
-  （`DSH_EXPERT_TEAM_SUBS_DEADLINE_MS`，默认 800 ms），到点即停。被挡住的 id **不丢成员**：
-  它只是没有 header，按既有口径如实显示"细节不可得"（不假装 0）。
-- **`roles`**：读 MB 级子会话日志很贵且**不紧急** ⇒ 实时路径**默认零读**，未知角色如实显示为
-  **待解析**（新字段 `rolesPending`，替代旧名 `rolesDeferred`；客户端**真的渲染**它），解析交给
-  低频后台（每轮 ≤`DSH_EXPERT_TEAM_ROLES_PER_BURST`（默认 1）条、两次间隔
-  ≥`DSH_EXPERT_TEAM_ROLES_MIN_INTERVAL_MS`（默认 30 s）），期限
-  `DSH_EXPERT_TEAM_ROLES_DEADLINE_MS`（默认 600 ms）。已解析结果永久缓存 ⇒ `rolesPending`
-  **单调下降收敛到 0**（旧实现每请求从零重算 ⇒ 实测 16→40 **上涨**）。
-- **噪声纪律**（新）：**节流不是失败**，绝不每轮进 `degraded` —— 节流窗口内每次轮询都会命中，
-  否则面板会长期挂一个降级标记，把真告警一起降权。节流的事实由 `subsPending` / `rolesPending`
-  诚实表达；`degraded` 只承载**真截断**（`subs:deadline` / `roles:deadline`）。"缺块 ≠ 空数据"不变。
-- 护栏：新增 `state-bounded.test.mjs`（13 条）钉死"零枚举 / 期限即停 / 零读 / 收敛 / 字段单一真源
-  且被渲染 / 节流不进 degraded"。
-- 顺带修两处**源码级断言与文本强耦合**（加五行代码就假红，属"断言失去判据对象"那一类）：
-  `run-ownership` 的固定 2600 字符窗口改为**语义锚点切片**；`state-sections` 的正则改为只表达
-  意图（不再绑死参数表）。**断言本身一字未改**。
-- **诚实边界**：端到端墙钟需实机复测（本机装不进运行中的宿主）；本版给的是"机制级证据 +
-  单位成本账"。默认值都可用上面的环境变量覆盖 —— 想更激进就调小间隔。
-
-### 文档：「为谁而做」前置 + 主视觉（图 1）
-
-- 「为谁而做 / Who it is for」提到 hero + 指标行之后、`速览` 之前（中英同序）；
-- 新增 `docs/images/who-is-it-for.svg`（中）与 `.en.svg`（英，同布局同生成器）：顶带主张
-  「一句话 → 一支完整技术部」、左带三类对象、主带 **12 个岗位卡 4×3**、
-  「**你 · lead**」橙色胶囊**独占一带**、底带诚实边界；纯矢量、系统字体栈、配色克制；
-- **保留**「岗位 → 角色 → 做什么」对照表（图下方）：**图给冲击力、表给检索**（表格是机读文本，
-  比 SVG 里的字更可靠）；图号顺延为 图 1…图 8（中英一致、无重复）；图用绝对地址 + 关键词 alt；
-- 自检：包围盒估算 → 两两相交 → 带约束 → 越界 → **文字溢出父容器**；首轮抓到英文 chip 超框
-  16.8px 并修掉，最终两语言 无相交/无跨带/无越界/无溢出 + `xmllint` 良构；渲染由父会话浏览器核对。
-## 1.3.16
-
-**三件收尾：`/state` 重活的最大一段（`subs`）、冷启动、以及 R1 的"bash 绕过"坦白。**
-
-### A. `subs` 2,398 ms —— 根因不是缓存不够，而是"永远查不完"
-
-- **真机 profile 定位**：重活 `?section=people,feed` 单发 3,295 ms = `subs` **2,398** + `roles` 874 + 其余 ~2。
-- **根因（真 bug）**：`STATE.members → membersFromState().byRole` 这个 Map **同时**存了
-  `role→agentId` 与 `agentId→role` 两种键，而调用点直接取 `.values()` ⇒ **一半是角色名**
-  （`backend` / `reviewer`）。角色名永远不可能是 session header 的 id ⇒ `missingIds` **永久非空**
-  ⇒ **每个请求都重新枚举 475 个 artifact**，`SUB_HEADER_MEMO`（1.3.11 加的按 id 备忘）因此形同虚设。
-- **修法**：新增 `memberAgentIds()`（只取真 id）并在调用点使用；`isAgentIdLike()` **按角色名精确排除**
-  （等于角色 id，或首段是角色 id 的 `frontend-F4`/`reviewer-R1` 这类带后缀标签），**不按长度猜**
-  —— 长度阈值会误伤短 id（`ended-x`/`live-1`），那才是真丢数据。函数内**再兜一道过滤**，
-  防止未来调用方又把角色名传进来。顺带修掉 `buildRoleSubMap` 把 id 当角色的同一处根因。
-- **效果**（进程内、可复现）：同一份数据第二次请求 `listSessions` **调用 0 次**（原为每次 1 次）。
-
-### B. 冷启动 1,313 ms → 打**逐 run 戳缓存**（含落盘）
-
-- **真机 profile 定位**：重启后第一次 `?section=summary` = 1,313 ms，其中 `runs+select` **876 ms**
-  （每个 run 都要读 `STATE.json` + `TASKS.json` 再算 health/violations/owner）；随后 267 ms → 17 ms。
-- **修法**：按**每个 run 自己**的 `STATE.json`/`TASKS.json` 的 `(mtimeMs, size)` 作失效键缓存"列表行"，
-  索引**落盘**到 `$DSH_HOME/expert-team/runs-index.json`（可用 `DSH_EXPERT_TEAM_RUNS_INDEX` 覆盖位置）
-  ⇒ **重启后第一次**也只是 stat 校验 + 命中，不必从零算。
-- **为什么不能只戳 run 目录**：改文件**不会**改父目录 mtime（只有增删条目会）⇒ 那样会读到旧阶段/旧计数。
-  戳到文件本身才是"看到的就是真的"。
-- **实测**（进程内、`/tmp` 索引）：第一次算 5 个 run 并落盘 2,558 B；**模拟重启后第一次 1 ms、命中 5、零重算**；
-  只改一个 run 的 `STATE.json` ⇒ **恰好重算那 1 个**；新增 run ⇒ **立即可见**。
-- **顺带修**：`team/` 根下的**普通文件**（`CODEINDEX.json` / `LEARNINGS.md`…）过去被当作 run 读
-  `STATE.json` ⇒ 面板 run 下拉里出现一串假的 "broken run"（画布上真能看到）。现在**只列目录**。
-
-### C. R1 的 `bash` 绕过：**只报不拦**（刻意不阻断）
-
-- R1 硬门禁只覆盖 `write`/`edit`；持 `bash` 的 backend/frontend/researcher/qa/dba/devops 理论上可
-  `cat > SPEC.md` 绕过。**静默绕过**违背本仓纪律，但静态判断 bash 写目标不可靠（重定向/变量/子命令）
-  ⇒ 新增 `lib/artifact-redirect-watch.js`：挂在 `tools/post-execute`，**只在**"命令里明显写向
-  `<team 根>/<runId>/<已知工件>`"时**留痕一行 + onEvent**。
-- **绝不**阻断、**绝不**改结果、**绝不**抛错（沿用"监听器不得成为故障源"的纪律，有源码级禁令断言）；
-  含变量/`/dev/null`/工作区代码/更深路径一律**不命中**（宁可漏报，不可误伤）。
-- 已知工件名来自**两处既有真源的并集**（`ARTIFACT_TEMPLATES` ∪ `ARTIFACT_OWNERS`）—— 同时把模板清单
-  提升为模块级单一真源 `ARTIFACT_TEMPLATES`，`authority` / `artifact-ownership` 两组断言改为**读这份真源**
-  （原先按源码字面量解析，重构后会"失去判据对象"—— 那比断言失败更危险，它看起来像通过）。
-- **验收样例**：7 个命中形态（`cat > SPEC.md`、`>>`、`tee`、`tee -a`、带引号绝对路径、`2>`）
-  + 9 个不命中形态（工作区代码、`/tmp`、无写目标、工作区根的 `SPEC.md`、非工件名、含变量、
-  `/dev/null`、只读命令、更深路径）全部符合预期（`artifact-redirect-watch.test.mjs`）。
-
-### D. 会话模型 effort 预检（**只告警，不阻断**）—— 一次真实故障的定性
-
-- **故障现象**：`model "deepseek-flash" does not support reasoning effort "low"`。**不是插件的错，
-  也不是宿主缺 `low`** —— 是用户 `~/.dsh/settings.yaml` 里会话默认路由（命名空间 `agent-default-model`）
-  的模型条目**漏写 `reasoningEfforts`** ⇒ 宿主能力表里该模型只剩 `off` ⇒ **任何**显式 effort 都被拒
-  （`dsh-llm` 的 `resolveCallWithInfo`：`reasoning === undefined` 时只要传了 `reasoningEffort` 就抛
-  `UNSUPPORTED_REASONING_EFFORT`）。而本 preset **8 个角色声明 `high`、4 个声明 `low`** ⇒ 该路由下
-  **12 个角色全会失败**；"只有 low 报错"是假象（先派谁先报谁）。宿主在**任何网络 I/O 之前**就拒。
-- **插件能做什么 / 不能做什么（如实写）**：派工由宿主 `tool-subagent` + LLM 运行时执行，插件**无法**
-  在派工前改变宿主行为；能做的是**提前一行告警** + 给出修法。因此本项**只告警、不阻断、不改 preset 的
-  effort 分档**（那是设计意图）。
-- **实现**：新增 `lib/effort-preflight.js`（纯函数判定 + 有界重探接线）：读 preset 声明的 effort（真源，
-  按行正则，不引 YAML 解析器）→ 读宿主公开入口 `agentDefaultModel.currentSelection()` 与
-  `llm.resolveModelInfo(provider, model)` → 覆盖不全就**打一行**（含"改哪个命名空间/字段/值域"）。
-  **读不到/抛错一律静默**（fail-open）；一次加载最多一行；服务晚挂则 `ctx.inject` 事件驱动重探。
-- **`scripts/validate-agent-preset.mjs`** 补**值域**校验（`reasoningEffort ∈ off/low/high/max`）+ 结尾指路
-  （脚本**不读用户机器**，只校验 preset 侧）。
-- **文档**：README 中英 FAQ 各补一条（自然语言问句，便于检索）+ `llms.txt` 一行故障排查指针。
-- **测试**：`effort-preflight.test.mjs`（真源分档 8/4 / 判定矩阵 / 只报一次且可操作 / fail-open 静默 / 只告警不阻断）；
-  变异体 `M140-effort-preflight-blind`（缺档也不报 ⇒ 预检变睁眼瞎）**已实测**能杀死测试（5 条断言失败）。
-### 其它
-
-- 新增变异体 `M139-artifact-redirect-watch-blind`（候选提取恒空 ⇒ 观测器变睁眼瞎），
-  catalog 139 条；**已实测**注入后该测试 **10 条断言失败**、还原后逐字节恢复。
-- 测试文件 **85 个**；`npm run test:all` EXIT=0。

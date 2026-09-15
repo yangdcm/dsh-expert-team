@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - name: 全套测试（75 个测试文件，零依赖）
+      - name: 全套测试（零依赖、无需 install）
         run: |
           set -o pipefail
           npm run test:all 2>&1 | tee "$RUNNER_TEMP/test.log"
