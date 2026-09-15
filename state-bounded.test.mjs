@@ -9,6 +9,8 @@
 //      期限到点 ⇒ `ROLE_READ_STATS.cut='deadline'`；**"待解析"与"解析不出来"必须分得开**；
 //   ③ 收敛：`deferred` 单调下降至 0（旧实现每请求从零重算 ⇒ 实测 16→40 **上涨**）；
 //   ④ 负载字段是 `rolesPending`（单一真源），且客户端**真的渲染它**（字段不是没人读的摆设）。
+//   ⑤（2026-09-16）`warming`：重读挪到后台后，**请求路径立刻返回**；过期先给上一份**完整**快照；
+//      读失败**不覆盖**好快照；后台批单飞且队列空时不踢（否则 warming 会常亮成噪声）。
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -156,8 +158,31 @@ console.log('\n③ 负载与呈现：rolesPending 单一真源 + 客户端真的
   check(/rolesPending: budget\.deferred/.test(cmdSrc), '负载里字段名是 `rolesPending`（"还没解析"）', '');
   check(!/rolesDeferred:/.test(cmdSrc), '旧名 `rolesDeferred:` 已不再作为字段出现（单一真源，不留两个名字）', '');
   check(clientSrc.includes('rolesPending'), '客户端**真的渲染**"待解析"（字段不是没人读的摆设）', '');
-  check(/subs:deadline/.test(cmdSrc) && /roles:deadline/.test(cmdSrc),
-    'degraded 只承载**真截断**（subs:deadline / roles:deadline）', '');
+  // 2026-09-16 性能收口后 `degraded` 的取值空间**收窄**了（这是加强，不是放松）：
+  //   · `subs:deadline` 仍在（子代理行枚举的期限截断，仍在请求路径上）；
+  //   · `roles:deadline` **移出** degraded —— 请求路径现在一条日志都不读，读日志挪到后台单飞批；
+  //     "后台批被期限截断"这件事由 `rolesPending`（跨轮推进会下降）与 profile 的 rolesWarm 表达，
+  //     而不是把"我还没解析完"当告警每轮刷（那会把真告警一起降权）。
+  check(/subs:deadline/.test(cmdSrc) && !/degraded\.push\('roles:deadline'\)/.test(cmdSrc),
+    'degraded 只承载**请求路径上**的真截断（subs:deadline）；roles 读日志已离开请求路径', '');
+  // 反向护栏：请求路径不许再出现那两种"全量读"，它们正是"窗口重开 1–3 s"的来源。
+  check(/await resolveSubRoles\(ctx, subs, wfLabels, \{ maxReads: 0 \}\)/.test(cmdSrc),
+    '请求路径的角色解析是 `maxReads: 0`（零日志读）', '');
+  check(!/await workflowChildLabels\(ctx, peopleSid\)/.test(cmdSrc),
+    '请求路径不再 await `workflowChildLabels`（全量父会话日志读已挪到后台预热）', '');
+  check(/await workflowEventIndexForRequest\(ctx, peopleSid\)/.test(cmdSrc),
+    '改为 `workflowEventIndexForRequest`：有快照一次不等、没快照只按**有界**期限等一小会儿', '');
+  // warming 与 degraded **两个承载位**，语义不许混
+  check(/warming\.length \? \{ warming: warming\.slice\(\) \}/.test(cmdSrc) && /degraded\.length \? \{ degraded: true/.test(cmdSrc),
+    '`warming`（后台刷新中）与 `degraded`（真截断）分开承载', '');
+  check(/wfIdx\.state === 'missing'\) warming\.push\('wf'\)/.test(cmdSrc),
+    'wf 的 warming 判据是"**根本没有快照**"（missing），不是"备忘过期" —— 否则标记常亮成噪声', '');
+  check(/wfIndex: \{ state: wfIdx\.state, ageMs: wfIdx\.ageMs/.test(cmdSrc),
+    '快照新鲜度（state/ageMs）随负载下发：stale = 上一份完整快照，不假装是最新', '');
+  check(/clientSrc \(client\.js\) \? 1 : 1/.test('clientSrc (client.js) ? 1 : 1') && /exp-warming/.test(clientSrc),
+    '客户端**真的渲染** warming（`.exp-warming` 标签存在，不是没人读的字段）', '');
+  check(/warmingSeg/.test(clientSrc) && /wfWarming/.test(clientSrc),
+    '客户端把 warming 落到具体分段文案（且流转视图据此改口，不再编"无创建时间记录"）', '');
   // 噪声纪律：节流窗口内每轮都会命中 ⇒ 绝不能每轮都进 degraded（否则降级标记长期挂着，
   // 真告警被一起降权）。节流的事实由 subsPending / rolesPending 表达。
   check(!/degraded\.push\('subs:throttled'\)/.test(cmdSrc), '节流**不进** degraded（面板不许长期挂降级标记）', '');
@@ -195,6 +220,85 @@ console.log('\n④ profile 的键空间：分步耗时与附带账本不许同�
     '旧的"直接 Object.assign 覆盖"写法已消失（它正是撞名覆盖的来源）', '');
   check(/subsCounters: \{/.test(cmdSrc) && !/subs: \{\n\s+cut: SUB_HEADER_STATS/.test(cmdSrc),
     '计数器键名是 `subsCounters`，不再占用 `subs`', '');
+}
+
+console.log('\n⑤ warming 语义：重读挪到后台 + 过期先给完整旧快照 + 读失败不覆盖好快照');
+{
+  const { workflowEventIndexCached, warmWorkflowEventIndex, _resetWfEventMemo, WF_EVENT_STATS, WF_EVENT_CACHE,
+    warmSubRoles, _resetRoleWarm, isRoleWarmRunning, resolveSubRoles, roleReadBudgetSnapshot, _resetBoundedState,
+    wfWarmDelayMs, rolesWarmDelayMs } = _live;
+  // ⚠️ 2026-09-16 同机 A/B 的教训：把全量读"挪到后台"**还不够** —— 它是 CPU 密集型、跑在同一个
+  // 事件循环上，如果 kick 之后立刻开跑，就会抢在触发它的那一发请求收尾之前占住循环
+  // （实测 `wfLabels` 步 0 ms、`assemble` 步 441 ms：时间没消失，只是换了地方计入）。
+  // 所以后台批必须**延迟**开跑；这条断言就是那次教训的棘轮。
+  delete process.env.DSH_EXPERT_TEAM_WF_WARM_DELAY_MS;
+  delete process.env.DSH_EXPERT_TEAM_ROLES_WARM_DELAY_MS;
+  check(wfWarmDelayMs() > 0, 'workflow 后台预热默认**延迟**开跑（不抢触发它的那一发的收尾）', wfWarmDelayMs() + 'ms');
+  check(rolesWarmDelayMs() > 0, '角色后台批同样延迟开跑', rolesWarmDelayMs() + 'ms');
+  process.env.DSH_EXPERT_TEAM_WF_WARM_DELAY_MS = '10';
+  process.env.DSH_EXPERT_TEAM_ROLES_WARM_DELAY_MS = '10';
+  let reads = 0;
+  let mode = 'ok';
+  const events = [{ type: 'tool-workflow/agent-start', time: 1000, data: { runId: 'R1', childId: 'c1', label: '[pm]', seq: 1 } }];
+  const ctx = {
+    get: (k) => (k === 'sessionQuery' ? {
+      readSession: async () => {
+        reads += 1;
+        if (mode === 'throw') throw new Error('read boom');
+        return { events };
+      },
+    } : null),
+  };
+  _resetWfEventMemo();
+  // ① 没有快照：请求路径**立刻**返回，不等那次全量父会话日志读
+  const t0 = Date.now();
+  const first = workflowEventIndexCached(ctx, 'sess-warm');
+  const firstMs = Date.now() - t0;
+  check(firstMs < 50, '没有快照时请求路径**立刻返回**（不等全量父会话日志读）', firstMs + 'ms');
+  check(first.state === 'missing' && first.refreshing === true,
+    '如实标 missing + refreshing（上层据此标 warming）', JSON.stringify({ state: first.state, refreshing: first.refreshing }));
+  check(reads === 0, '同步阶段**一次读都没发**（我们没 await 那个后台批）', 'reads=' + reads);
+  // ② 后台读完 ⇒ 下次命中完整快照，**不许**标 warming
+  await warmWorkflowEventIndex(ctx, 'sess-warm');
+  const fresh = workflowEventIndexCached(ctx, 'sess-warm');
+  check(fresh.state === 'fresh' && fresh.refreshing === false && fresh.labels.size === 1,
+    '后台读完后 = fresh、数据完整（数据其实完整时**不许**标 warming）',
+    JSON.stringify({ state: fresh.state, labels: fresh.labels.size }));
+  // ③ 过期（人为把 at 改老，不真等 30 s）⇒ 先给**上一份完整快照**，同时踢后台刷新
+  WF_EVENT_CACHE.get('sess-warm').at = Date.now() - 60000;
+  const stale = workflowEventIndexCached(ctx, 'sess-warm');
+  check(stale.state === 'stale' && stale.labels.size === 1 && stale.refreshing === true,
+    '过期 ⇒ 立刻给上一份**完整**快照（不是空值）+ 踢后台刷新',
+    JSON.stringify({ state: stale.state, labels: stale.labels.size, refreshing: stale.refreshing }));
+  check(WF_EVENT_STATS.memoStale >= 1, '过期命中记进 `memoStale`（可测，不靠注释承诺）', 'memoStale=' + WF_EVENT_STATS.memoStale);
+  // ④ 读失败 ⇒ **不许**用空结果覆盖好快照（两种零分得开）
+  await warmWorkflowEventIndex(ctx, 'sess-warm');
+  const errBefore = WF_EVENT_STATS.readErrors;
+  mode = 'throw';
+  WF_EVENT_CACHE.get('sess-warm').at = Date.now() - 60000;
+  await warmWorkflowEventIndex(ctx, 'sess-warm');
+  check(WF_EVENT_STATS.readErrors > errBefore, '读失败被如实计数（`readErrors`）', 'readErrors=' + WF_EVENT_STATS.readErrors);
+  check(WF_EVENT_CACHE.get('sess-warm').labels.size === 1,
+    '读失败**没有**把已有的 1 条 label 抹成空', 'labels=' + WF_EVENT_CACHE.get('sess-warm').labels.size);
+  mode = 'ok';
+  // ⑤ roles：请求路径零读，读日志全部交给后台单飞批
+  _resetRoleWarm();
+  _resetBoundedState();
+  const subsR = [{ id: 'warm-r1', role: '', label: '' }];
+  await resolveSubRoles(ctx, subsR, {}, { maxReads: 0 });
+  check(subsR[0].role === '' && roleReadBudgetSnapshot().deferred === 1,
+    '请求路径 `maxReads: 0`：零日志读，缺的如实"待解析"', 'deferred=' + roleReadBudgetSnapshot().deferred);
+  const readsBefore = reads;
+  const p1 = warmSubRoles(ctx, subsR, {}, { maxReads: 1, deadlineAt: Date.now() + 1000 });
+  check(!!p1 && isRoleWarmRunning() === true, '后台批已踢出（单飞标记在位）', '');
+  const p2 = warmSubRoles(ctx, subsR, {}, { maxReads: 1, deadlineAt: Date.now() + 1000 });
+  check(p2 === null, '同刻再踢 ⇒ null（**单飞**：绝不并发全量读日志 —— 那是 283.6 s 冷态的老根因）', '');
+  await p1;
+  check(isRoleWarmRunning() === false && reads > readsBefore,
+    '后台批读完后单飞标记复位、确实读了日志', 'readDelta=' + (reads - readsBefore));
+  check(warmSubRoles(ctx, subsR, {}, { maxReads: 1, deadlineAt: Date.now() + 1000 }) === null,
+    '队列空时返回 null（没有可做的活 ⇒ 上层不标 warming，标记才不会是常亮噪声）', '');
+  check(roleReadBudgetSnapshot().deferred === 0, '后台批把队列读空（deferred 单调下降至 0）', '');
 }
 
 console.log('');

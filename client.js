@@ -96,6 +96,10 @@ window.__ModuleLoader__.load({
       '.exp-node-run{animation:exp-nodepulse 1.6s ease-in-out infinite}' +
       '@keyframes exp-nodepulse{0%,100%{stroke-opacity:1}50%{stroke-opacity:.3}}' +
       '.exp-live{width:7px;height:7px;border-radius:50%;background:#22b07d;animation:exp-pulse 1.4s infinite;display:inline-block;margin-right:6px}' +
+      // 「更新中」：服务端 `warming`（重读挪到后台）如实提示。**刻意用虚线边框 + 中性色**，
+      // 与 `degraded`（真截断）的告警色区分开 —— 不是失败，是"这一块正在后台刷新"。
+      '.exp-warming{margin-left:8px;font-size:10.5px;line-height:16px;padding:0 6px;border-radius:8px;border:1px dashed #d9a441;color:#8a5a00;background:rgba(217,164,65,.10);white-space:nowrap;flex:none}' +
+      '@media (prefers-color-scheme:dark){.exp-warming{color:#f7ad31;border-color:#7a5a22;background:rgba(247,173,49,.12)}}' +
       '.exp-mem-run{position:relative;overflow:hidden}' +
       '.exp-mem-run::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(59,110,245,.14),transparent);animation:exp-shimmer 1.8s infinite}' +
       '.exp-row.task{cursor:pointer;border-radius:8px;padding:7px 6px}' +
@@ -2021,10 +2025,16 @@ window.__ModuleLoader__.load({
         }
         var body = []
         // 顶部说明 + 控件
+        // 缺块 ≠ 空数据：`wf` 在 warming 时，workflow 元数据（含 agent-start 时间戳）本轮**没有**，
+        // 于是 `createdAt` 全 0 会让这里得出"无创建时间记录，无法分批"——那是一个**编出来的结论**
+        // （真实原因是"还没读到"）。两种情况必须分开说。
+        var wfWarming = ((data && data.warming) || []).indexOf('wf') >= 0
         var degradeNote = null
         if (!people.length && roles.length) degradeNote = t('⚠ 尚未派工：以下为计划编制，不代表已上场', '⚠ not dispatched yet: planned roster only')
         else if (!people.length) degradeNote = t('还没有可展示的人员流转（无任务、无子代理）', 'nothing to show yet (no tasks, no subagents)')
+        else if (!W.waves.length && wfWarming) degradeNote = t('⏳ 工作流元数据正在后台读取：本轮拿不到 agent-start 时间戳，批次划分暂时不可用（**不是**"没有记录"）', '⏳ workflow metadata is being read in the background: agent-start timestamps are unavailable this round, so batching is pending (**not** "no records")')
         else if (!W.waves.length) degradeNote = t('⚠ 无创建时间记录，无法分批（已按角色分组展示）', '⚠ no createdAt records — cannot batch (grouped by role)')
+        else if (W.waves.length === 1 && wfWarming) degradeNote = t('⏳ 工作流元数据正在后台读取：批次可能不止 1 个（本轮只见到 1 个）', '⏳ workflow metadata is being read: there may be more than one batch (only 1 seen this round)')
         else if (W.waves.length === 1) degradeNote = t('仅检测到 1 个批次（无先后可分）', 'only one batch detected (no ordering)')
         else if (!wfPh.length) degradeNote = null
         body.push(h('div', { className: 'etv-note' },
@@ -2040,6 +2050,9 @@ window.__ModuleLoader__.load({
           if (timing.header) srcBits.push(t(timing.header + ' 人取自子会话创建时间', timing.header + ' from child-session createdAt'))
           if (timing.event) srcBits.push(t(timing.event + ' 人取自父会话事件流 agent-start 时间戳（workflow 子代理无会话 header）', timing.event + ' from parent-session agent-start timestamps (workflow children have no session header)'))
           if (timing.none) srcBits.push(t(timing.none + ' 人无任何时间记录', timing.none + ' with no time record at all'))
+          // 新鲜度如实标注：stale = 给的是上一份完整快照（后台正在刷新），不是最新值。
+          var wfIx = (data && data.wfIndex) || null
+          if (wfIx && wfIx.state === 'stale') srcBits.push(t('工作流元数据为 ' + Math.round((wfIx.ageMs || 0) / 1000) + ' 秒前的快照（后台刷新中）', 'workflow metadata is a snapshot from ' + Math.round((wfIx.ageMs || 0) / 1000) + 's ago (refreshing in background)'))
           body.push(h('div', { className: 'etv-degrade info' }, esc(t('分批依据：', 'Layering source: ') + srcBits.join('；'))))
         }
         // ── 主视图：SVG 树 + 贝塞尔曲线（照 dsh-agent-teams 的 live 面板形态抄）──
@@ -2354,6 +2367,12 @@ window.__ModuleLoader__.load({
       var panelCls = viewMode ? 'exp-panel exp-canvas' : ('exp-panel' + (docked ? '' : ' exp-float'))
       var panelStyle = viewMode ? null : (docked ? { width: pw + 'px' } : { left: pos.x, top: pos.y, width: pw + 'px' })
       var headCls = 'exp-head' + (docked || viewMode ? '' : ' exp-grab')
+      // 服务端 `warming`（本次性能收口新增）：重读被挪到后台、数据取自上一份快照或暂时缺席。
+      // **必须显式渲染**，不许静默用旧数据假装一切正常；同时它**不是** degraded（真截断），
+      // 所以用中性样式 + 独立文案，而不是红/黄告警。
+      var warmingList = (data && Array.isArray(data.warming)) ? data.warming : []
+      var warmingSeg = { wf: t('工作流元数据', 'workflow metadata'), roles: t('角色解析', 'role resolution'), 'members:write-skipped': t('成员登记（等元数据就绪）', 'member registration (waiting for metadata)') }
+      var warmingTitle = warmingList.map(function (k) { return warmingSeg[k] || k }).join('、')
 
       try {
         // 「设」页签已移除：设置页搬进**官方「设置」菜单**（`settings.section` 槽，见 apply()）。
@@ -2590,6 +2609,7 @@ window.__ModuleLoader__.load({
         h('div', { className: headCls, onMouseDown: function (e) { startDrag(e, docked && !viewMode, pos) } },
           h('div', { className: 'exp-title' }, h('span', { className: 'exp-live', title: t('实时刷新中', 'live') }), '🧑‍🔬 ' + t('专家团', 'Team')),
           h('span', { className: 'exp-run' }, runId ? esc(runId) : ''),
+          warmingList.length ? h('span', { className: 'exp-warming', title: t('后台刷新中（', 'refreshing in background: ') + warmingTitle + t('）—— 本轮显示的是上一份完整快照', ') — showing the previous complete snapshot this round') }, t('更新中', 'warming')) : null,
           h('span', { style: { display: 'flex', gap: 6 } },
             !viewMode ? h('button', { className: 'exp-close', title: docked ? t('转为可拖动浮窗', 'Make floating') : t('停靠回右侧', 'Dock right'), onClick: function () { setDock(!docked) } }, docked ? t('浮动', 'Float') : t('停靠', 'Dock')) : null,
             viewMode ? h('button', { className: 'exp-close', onClick: function () { try { if (props && props.openView) props.openView('chat', '') } catch (e) {} } }, t('回到对话', 'Chat')) : null,

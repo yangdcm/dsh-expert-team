@@ -3,6 +3,86 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## Unreleased
+
+**主题：`/state`「窗口重开那一发」从秒级压回稳态，并纠正我上一轮读错的两个事实。**
+
+### 诊断（先把矛盾钉死再动手）
+
+- **`wfLabels` 贵在哪**：`workflowChildLabels(ctx, peopleSid)` → `workflowEventIndex` → `sessionQuery.readSession(父会话)`
+  ＝ **全量读一遍父会话日志**（本机那个带 workflow 扇出的会话：7.7 MB zstd / 4343 事件 / 走宿主的
+  `readStoredLog` + `Session.create` 重放校验）。`WF_EVENT_TTL_MS = 30000` 只是"多久允许重读一次"，
+  **不是期限** —— TTL 到点的那一发请求得把这次读**付满**（同机 `profile.wfLabels` 335–2683 ms）。
+- **`roles:35` / `feed:35` 里的 `35` 不是毫秒，是条数**（`subs.length - MAX_ROLE_SUBS` /
+  `subs.length - MAX_FEED_AGENTS`）。我上一轮把它读成"35 ms 预算"，并据此提了"抬预算"的方案 ——
+  那个结论是错的，**抬预算根本不是杠杆**（见下一条）。已纠正。
+- **`roles` 那 179–2023 ms 的来源**：`resolveSubRoles` 的期限检查在**每次读之前**，所以它只能拦住
+  "**下一次**读"，拦不住"**正在进行**的那一次读" —— 单条子会话日志的全量读就有这么长。
+- **客户端不会走"不传 `section`"的全量路径**：`heavySectionsForTab('board')` 返回 `''`，而订阅处是
+  `heavy ? stateHubSubscribe(stateUrl(heavy), …) : noop`；`stateUrl` 的其它调用点（summary / artifacts /
+  徽章 `liveUrl`）一律带 `section`。⇒ 冷实例上"不传 section 30 s 未返回"那条路是**遗留路径**，
+  不是活的 bug（本轮**没有**动它，理由见末尾"未做"）。
+
+### 改法
+
+- **请求路径零日志读**（两处"不受任何预算管辖的重读"一起摘掉）：
+  · `wfLabels` 改走 `workflowEventIndexForRequest` —— 有快照（不管新不新）**一次都不等**；没有快照才踢后台并
+    **有界**等一小会儿（`DSH_EXPERT_TEAM_WF_FIRST_DEADLINE_MS`，默认 800 ms，保住首屏"派工即可见"）。
+  · `roles` 的日志读整体挪到后台单飞批 `warmSubRoles`（请求路径只走便宜来源 + 缓存，`maxReads: 0`）。
+- **后台批必须延迟开跑**（本轮最有价值的一条教训）：把读"挪到后台"**还不够** —— 它是 **CPU 密集型**、跑在
+  **同一个事件循环**上。第一版实现（kick 之后立刻 `Promise.resolve().then(...)`）实测总体 444 ms：
+  `wfLabels` 步 0 ms，但 `assemble` 步 **441 ms** —— 时间没消失，只是换了地方计入（后台读抢在请求收尾的
+  文件 I/O 间隙里把循环占住）。现在后台批统一**延迟 1000 ms** 再开跑（`DSH_EXPERT_TEAM_WF_WARM_DELAY_MS` /
+  `DSH_EXPERT_TEAM_ROLES_WARM_DELAY_MS`），那一刻当前请求早已响应完毕，重读落在两次轮询的间隙里；
+  冷启动那一次例外（调用方本来就在等它，走 `immediate`）。
+- **`warming` 与 `degraded` 是两个承载位**（本仓纪律：两种零分得开）：
+  · `degraded` ＝ 本轮**真的少算了东西**（硬上限 / 软期限截断）⇒ 报警；
+  · `warming` ＝ 本轮把这次重读挪到了后台 ⇒ 数据来自上一份**完整**快照或暂时缺席，**不是失败**。
+  · 判据是"**真的有刷新在飞 / 这一段根本没有数据**"，不是"备忘过期" —— 否则 30 s TTL 配 6 s 轮询会让它常亮成噪声。
+  · **数据其实完整时不许标 warming**：`stale`（有旧快照、正在后台刷新）不标 warming，改成随负载下发
+    `wfIndex: {state, ageMs, refreshing}` 把"这是 N 秒前的快照"**明示**出来（客户端在分批依据里按秒显示）。
+- **读失败不再覆盖好快照**：`workflowEventIndex` 以前把 `readSession` 抛错当成"这个会话没有 workflow 事件"
+  缓存 30 s（假零）。现在区分 `readerAvailable` / `readOk`：读失败时**保住旧快照、不刷新 `at`**，下一个 tick 再试，
+  并如实计数 `readErrors`；从未有过快照时才给空值，且由 `state='missing'` 让上层标 warming。
+- **写盘守门：读可以拿不完整数据，写不行**。"派工即登记"的**退路**分支（本 run 还没登记过成员）依赖
+  `wfLabels` 判定"哪些子代理属于本 run"（R12/R17 那条串号事故链）；wf 索引不是 `fresh` 时**跳过本次登记**、
+  下一轮再登，并如实记 `warming: members:write-skipped`。**精确路径**（`STATE.members` 已有角色映射）不吃
+  `wfLabels`，照常落盘、不受影响。
+- **硬上限继续收口后台批**：交给后台的是 `subs.slice(0, MAX_ROLE_SUBS)`（`resolveSubRoles` 内部会按传入列表
+  重建队列）—— 否则超出上限的人迟早也会被解析，而 `degraded` 里的 `roles:N` 就成了一句假话。
+- **客户端显式渲染 warming**（不许静默用旧数据假装正常）：表头加 `.exp-warming`「更新中」标签（title 逐段说明
+  是哪一块在刷）；流转视图在 wf warming 时把话**改成**"工作流元数据正在后台读取…（**不是**"没有记录"）"，
+  不再用空数据得出"无创建时间记录，无法分批"这个**编出来的结论**；`stale` 时在分批依据里显示快照年龄。
+- **测试**（`state-bounded.test.mjs` 新增第 ⑤ 节 + 更新接线断言，**不新增测试文件**）：请求路径零日志读、
+  单飞（同刻再踢返回 `null`）、队列空时不踢（否则 warming 常亮）、过期先给完整旧快照、读失败不覆盖好快照、
+  后台批延迟开跑（这条是上面那个 441 ms 教训的棘轮）；`client.js` 的 warming 渲染与"流转视图改口"也有断言。
+
+### 同机 A/B（旧 `13834ca` vs 本提交；同一语料 + 同一 run 副本；`DSH_EXPERT_TEAM_STATE_PROFILE=1`）
+
+| 场景 | 旧 `13834ca` | 本提交 |
+|---|---|---|
+| 冷启动第一发 | 589 ms（`wfLabels` 528 + `roles` 51，**2 次**日志读） | 498 ms（`wfLabels` 489 ＝ 有界首等，**1 次**日志读）＋如实标 `warming: roles` |
+| 稳态 | 2–9 ms | 2–3 ms |
+| **窗口重开**（wf TTL 30 s 与 roles 窗口 30 s 同时到期） | **381 ms**（`wfLabels` 335 + `roles` 43，**2 次**读） | **13 ms**（请求路径 **0 次**读；`wfIndex=stale` + `warming: roles`） |
+| 全窗口重开（含 subs 120 s 窗口） | 49 ms | 7 ms |
+| 整段会话的日志读总次数 | 5 | **1**（只有冷启动那一次） |
+
+测量方式：同机、同一份**真实** session 日志与同一个 run 副本，桩里的 `readSession` **走宿主的真实读路径**
+（`dsh-session-persistence-jsonl` 的 `readStoredLog` 真解码多帧 zstd + `dsh-session` 的 `Session.create`
+真重放校验 + `snapshotSessionEvent` 真逐事件克隆），不是"假装慢一点"。
+
+### 诚实边界
+
+- **真机（浏览器里的那条链路）没验**：用户机器上装的是**已发布的 1.3.21**（不含本提交），我不会为了验收去重启
+  用户的 `dsh web`。上表全部来自同机**进程内** A/B。
+- 上表的绝对值是**下界**：真机 1.3.20 窗口重开实测 **1.196 s**，而 harness 里旧代码那一发只有 381 ms
+  （活的 host `sessionQuery.readSession` 还额外做语料/活源解析与 `structuredClone`）。**真机"改前"以 1.196 s 为准。**
+- **`roles:N` / `feed:N` 这类结构性上限每轮都进 `degraded`** ⇒ 大团队面板会长期挂降级标记、把真告警一起降权
+  （本机 95 个 agent 实测 `degradedReason="roles:35,feed:35"`）。本轮**没有**改这个语义 —— 它是用户可见的行为
+  变更，且用户正在就该点拍板；这里只如实记录。
+- **不传 `section` 的全量路径仍未界定**（冷实例上可 >30 s）：它在客户端不可达，但仍是任何外部调用者的雷。本轮未动。
+- 变异目录未新增条目（加一条要同步 `EXPECTED_CATALOG_SIZE` 140→141 并牵动 README/llms.txt 的数字棘轮）。
+
 ## 1.3.21
 
 **这一版有三件事：Hindsight 配置页从"只能看"变成"能改"；写入绕过棘轮从"一直红着没人知道"修到真绿；

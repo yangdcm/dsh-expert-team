@@ -102,7 +102,10 @@ console.log('\n⑥ 接线检查：查询路径必须真的用归属会话，而�
   const block = (at >= 0 && endAt > at) ? src.slice(at, endAt) : '';
   check(!!block, '找到人员解析块');
   check(/listSubagentStatusBySession\(ctx, peopleSid/.test(block), '列人员用 peopleSid（归属会话）而不是 sid', '');
-  check(/workflowChildLabels\(ctx, peopleSid\)/.test(block), 'workflow 事件流也走归属会话');
+  // 2026-09-16：入口从 `workflowChildLabels` 换成有界后台预热的 `workflowEventIndexForRequest`
+  // （函数名变了，但"取的是**归属会话** peopleSid"这条断言本身不变）。
+  check(/workflowEventIndexForRequest\(ctx, peopleSid\)/.test(block), 'workflow 事件流也走归属会话');
+  check(!/workflowEventIndexForRequest\(ctx, sid\)/.test(block), 'workflow 事件流**不**走请求会话（防回归）');
   check(/sel\.peopleSessionNote/.test(block), '不确定时产出如实提示（peopleSessionNote）');
   check(/ownerResolved/.test(block), '推断来源被显式区分');
   // createRun 必须写归属

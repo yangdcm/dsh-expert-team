@@ -102,7 +102,9 @@ console.log('\n⑦ 接线检查：状态路由真的会回写（且只在变化�
   const { fileURLToPath } = await import('node:url');
   const src = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'lib/command.js'), 'utf8');
   const at = src.indexOf('派工即登记（C3）');
-  const block = at >= 0 ? src.slice(at, at + 900) : '';
+  // 语义边界（2026-09-16）：旧写法 `at + 900` 会因登记块前新增注释而假红（本轮实测踩到）。
+  const endAt = at >= 0 ? src.indexOf('best-effort：登记失败不影响读取', at) : -1;
+  const block = (at >= 0 && endAt > at) ? src.slice(at, endAt) : '';
   check(!!block, '找到回写块');
   check(/deriveMemberEntries\(subById, sel\.stateMembers\)/.test(block), '用 subById 推导成员');
   check(/if \(derived\.changed\)/.test(block), '**只在变化时**写盘（防轮询刷写）');

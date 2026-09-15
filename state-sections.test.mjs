@@ -85,8 +85,19 @@ console.log('\n② 服务端：贵块真的关在分节后面（守卫点在位�
   check(/const needSubs = want\('people'\) \|\| want\('feed'\)/.test(src) && /needSubs \? await listSubagentStatusBySession\(ctx, peopleSid, knownIds/.test(src),
     'people/feed：子会话清单解析被分节挡住（这是重会话最大的一块）', '');
   check(/if \(needSubs && !subs\.length && peopleSid !== sid\)/.test(src), 'people/feed：归属回退也在同一分节内', '');
-  check(/want\('people'\) \? await workflowChildLabels\(ctx, peopleSid\) : \{\}/.test(src), 'people：workflow 标签只在分节内取', '');
-  check(/if \(want\('people'\)\) \{\n\s*if \(subs\.length > MAX_ROLE_SUBS\)/.test(src), 'people：角色解析带硬上限分支', '');
+  // 2026-09-16 性能收口：workflow 事件流改走**有界后台预热入口**，但"只在 people 分节里取"
+  // 与"取的是**归属会话** peopleSid"这两条事实不变（这里钉的就是这两条）。
+  check(/const wfIdx = want\('people'\)\n\s*\? await workflowEventIndexForRequest\(ctx, peopleSid\)/.test(src),
+    'people：workflow 索引只在分节内取，且走归属会话（改经有界后台预热入口）', '');
+  // 硬上限仍在，且它的语义被钉死：`roles:N` 里的 N = **超出上限、不做日志解析**的条数。
+  // 所以交给后台批的列表必须与请求路径**同口径地**按上限切过 —— 否则超出上限的人迟早也会被解析，
+  // `roles:N` 就成了一句假话（这里同时钉住"上限真的收口"这件事）。
+  check(/if \(subs\.length > MAX_ROLE_SUBS\) degraded\.push\('roles:' \+ \(subs\.length - MAX_ROLE_SUBS\)\)/.test(src),
+    'people：硬上限仍如实上报（roles:N = 超出上限的条数）', '');
+  check(/warmSubRoles\(ctx, subs\.slice\(0, MAX_ROLE_SUBS\), wfLabels/.test(src),
+    'people：后台批吃的是**按上限切过**的列表（超出上限的人不会被排进解析队列）', '');
+  check(/await resolveSubRoles\(ctx, subs, wfLabels, \{ maxReads: 0 \}\)/.test(src),
+    'people：请求路径零日志读（角色日志读已整体移出请求路径）', '');
   check(/want\('people'\) \? subs\.map\(\(s\) => \{/.test(src) && /\}\) : \[\];/.test(src),
     'people：agents 在摘要里是**空数组**（不是"没有成员"—— 由 sections 区分）', '');
   check(/if \(want\('people'\)\) sel\.members = enrichMembers\(/.test(src), 'people：成员 enrich 只在分节内（否则空 subById 会把名册糊成"未启动"）', '');
@@ -122,9 +133,13 @@ console.log('\n③ 硬上限 / 软期限：截断必须**如实上报**（不许
 console.log('\n④ summary 路径**不写盘**（否则一次摘要请求就覆写 STATE.json）');
 {
   const at = src.indexOf('派工即登记（C3）');
-  const block = at >= 0 ? src.slice(at, at + 900) : '';
+  // 锚点切片改成**语义边界**（2026-09-16）：旧写法 `at + 900` 与插入位置强耦合，本轮在登记块前
+  // 加了"wf 索引不新鲜就不落盘"的守门说明后，`ARTIFACT.must` 被挤出窗口 ⇒ **假红**。
+  const endAt = at >= 0 ? src.indexOf('best-effort：登记失败不影响读取', at) : -1;
+  const block = (at >= 0 && endAt > at) ? src.slice(at, endAt) : '';
   check(!!block, '找到登记块', '');
-  check(/if \(want\('people'\)\) try \{/.test(block), '登记块被 people 分节挡住（摘要轮询不再触发写）', '');
+  check(/if \(want\('people'\) && \(membersPrecise \|\| wfReadyForWrite\)\) try \{/.test(block),
+    '登记块被 people 分节挡住（摘要轮询不再触发写），且 wf 索引不新鲜时**退路**分支不落盘', '');
   check(/ARTIFACT\.must\(stPath, st\)/.test(block), '（原有不变）登记仍走受控写入', '');
 }
 
