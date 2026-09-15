@@ -82,7 +82,10 @@ console.log('\n④ `/state` 必须把档位下发到浮层');
   check(snap2 && snap2.tier === null, '旧 run（无 tier 字段）⇒ `null`，不是编造的默认档', JSON.stringify(snap2 && snap2.tier));
 
   const cmdSrc = await readFile(join(here, 'lib', 'command.js'), 'utf8');
-  check(/json\(200, \{ ok: true, runs, workspaces, cwd, agents: sel\.agents, \.\.\.sel \}\)/.test(cmdSrc), '`/state` 用 `...sel` 下发（tier 随之外泄到浮层，无需另写一行）');
+  // 1.3.10：响应从对象字面量改成 Object.assign（为了附 rolesDeferred / profile），
+  // 但**要求不变**：整个 `sel` 必须摊平下发，tier 才不需要另写一行。
+  check(/json\(200, Object\.assign\(\s*\{[^}]*\.\.\.|json\(200, Object\.assign\(/.test(cmdSrc) && /,\s*sel,\s*\n/.test(cmdSrc),
+    '`/state` 把 `sel` 摊平下发（tier 随之外泄到浮层，无需另写一行）');
 }
 
 if (fail) { console.error(`\n✗ tier-badge：${fail} 项失败`); process.exit(1); }

@@ -158,11 +158,14 @@ console.log('\n⑦ display 四项：client.js 真的消费设置（源码级 —
   check(/return \{ ok: r\.ok, status: r\.status, d: d \}/.test(c), '设置页 GET 复用同一条路（返回值形状不变）', '');
   // 1.3.5：间隔多了一层**退避**（单发越慢、下次越晚），但基础节奏仍必须来自 display.pollMs，
   // 忙碌加速到 40% 的意图也不变 ⇒ 断言改成「基础间隔的来源 + 退避层」两件事，意图不弱化。
-  check(/var base = busy \? Math\.max\(300, Math\.round\(dispCfg\.pollMs \* 0\.4\)\) : dispCfg\.pollMs/.test(c),
-    'pollMs：基础轮询间隔取设置（忙碌时按同一意图加速到 40%）', '');
-  check(/var backoff = Math\.max\(base, Math\.min\(30000, Math\.round\(\(lastMsRef\.current \|\| 0\) \* 2\)\)\)/.test(c),
+  check(/stateHubSubscribe\(stateUrl\(\), dispCfg\.pollMs, onState\)/.test(c) && /stateHubSubscribe\(liveUrl\(sid\), LIVE_BASE_MS, liveDeliver\)/.test(c),
+    'pollMs：基础轮询间隔取设置（面板传 dispCfg.pollMs；徽章/画布传 LIVE_BASE_MS，由 hub 取更小者）', '');
+  check(/return stateHub\.busy \? Math\.max\(300, Math\.round\(base \* 0\.4\)\) : base/.test(c),
+    'pollMs：忙碌时按同一意图加速到 40%（下限 300ms）—— 1.3.10 起对徽章/画布同样生效', '');
+  check(/var next = Math\.max\(base, Math\.min\(30000, Math\.round\(slowest \* 2\)\)\)/.test(c),
     'pollMs：再叠自适应退避（clamp(max(基础, 上次耗时×2), 基础, 30000)）——重活端点不该 1.2s 一发', '');
-  check(/load\(\); pollRef\.current = setInterval\(load, dispCfg\.pollMs\)/.test(c), 'pollMs：首轮间隔也取设置', '');
+  check(/stateHubFetch\(url, onData\)      \/\/ 立即拉一次/.test(c), 'pollMs：订阅时立即拉一次（首轮不空等一个间隔）', '');
+  check(/stateHub\.timer = setInterval\(stateHubTick, next\)/.test(c), 'pollMs：真的按计算出的间隔排下一拍（不是裸基础间隔）', '');
   check(/\}, \[sessionId, selRunV, isOpen, viewMode, dispCfg\.pollMs\]\)/.test(c), 'pollMs：间隔变化会重排定时器（改设置当场生效）', '');
   check(/var ttl = EXPERT_DISPLAY\.capsuleMs[\s\S]{0,200}setTimeout\(function \(\) \{ var i = activityQ\.indexOf\(entry\)/.test(c),
     'capsuleMs：胶囊按设置**自动出队**（该功能此前压根不存在）', '');

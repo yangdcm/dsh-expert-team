@@ -1342,7 +1342,6 @@ window.__ModuleLoader__.load({
       var draftMeta = useRef({ loadedAt: '', dirty: false })
       var planMsgS = useState(''); var planMsg = planMsgS[0], setPlanMsg = planMsgS[1]
       var err = useState(''); var errV = err[0], setErr = err[1]
-      var pollRef = useRef(0)
 
       function stateUrl() {
         var url = '/plugins/dsh-expert-team/state', q = []
@@ -1350,23 +1349,12 @@ window.__ModuleLoader__.load({
         if (selRunV && selRunV.workspace && selRunV.runId) { q.push('workspace=' + encodeURIComponent(selRunV.workspace)); q.push('run=' + encodeURIComponent(selRunV.runId)) }
         return url + (q.length ? ('?' + q.join('&')) : '')
       }
-      // ── single-flight + 自适应退避（2026-09-15 性能修复）──────────────────────────
-      // 实测：8 秒内曾发 5 个 /state、其中 4 个重叠，而单发可达 7–283 秒 ⇒ 队列只增不减，
-      // 服务端被压垮（连轻量端点 /settings 都涨到 20.7 s / 42.5 s，整个 dsh web 一起卡）。
-      // 两条纪律：① **未回绝不发下一个**（晚一点看到状态，好过把 web 拖死）；
-      //          ② 间隔随上次耗时**退避**（见 reschedule），重活端点不该 1.2 秒一发。
-      var inFlightRef = useRef(false)
-      var lastMsRef = useRef(0)
-      function load() {
-        if (inFlightRef.current) return
-        inFlightRef.current = true
-        var t0 = (window.performance && performance.now) ? performance.now() : Date.now()
-        var done = function () {
-          inFlightRef.current = false
-          var now = (window.performance && performance.now) ? performance.now() : Date.now()
-          lastMsRef.current = Math.max(0, now - t0)
-        }
-        fetch(stateUrl()).then(function (r) { return r.ok ? r.json() : null }).then(function (d) {
+      // ── 数据到达后的副作用（**本组件不再自带轮询器**；由 stateHub 统一驱动）─────────
+      // 2026-09-15 性能修复 #2：面板原先自己 hold 一个 setInterval + in-flight 守卫，而徽章与
+      // 画布另走 liveStore 的 setInterval ⇒ 画布一开就有 2–3 个轮询并发压同一个重端点
+      // （实测 10 秒 7 发、6 次重叠、单发被拖到 5.9/8.3 s）。现在全部经 stateHub：
+      // 同 URL 同刻只跑一次、全局单一时钟、统一退避（见 stateHub 的注释）。
+      function onState(d) {
           if (d && d.ok) {
             setData(d); setErr(''); reschedule(d)
             // N2: keep the composer takeover in sync with pendingDecision
@@ -1400,30 +1388,16 @@ window.__ModuleLoader__.load({
             } catch (e) {}
           } else if (d && !d.ok && d.runsAvailable === 0) { setData(null); if (d.runs) setRunsMeta(d.runs); setErr(t('还没有专家团 run。先运行 /team <task> 开一个。', 'No team run yet — run /team <task> first.')) }
           else if (d && !d.ok) { if (d.runs) setRunsMeta(d.runs); setErr(d.error || ''); }
-        }).catch(function () {}).then(done, done)
-      }
-      // Adaptive refresh: while any member is running, poll fast (workers are
-      // touching files right now); otherwise the configured cadence.
-      // 2026-09-15：再叠一层**退避** —— 间隔 = clamp(max(基础间隔, 上次耗时×2), 基础间隔, 30000)。
-      // 单发越慢 ⇒ 下次越晚；display.pollMs 仍是基础节奏（设置里那一项依然说了算）。
-      function reschedule(d) {
-        var m = (d && d.members) || {}
-        var busy = Object.keys(m).some(function (k) { var v = m[k]; return v && typeof v === 'object' && (v.activity === 'running' || v.shortStatus === 'running') })
-        clearInterval(pollRef.current)
-        // 1.3.4：间隔来自设置 display.pollMs（忙碌时按同一意图加速到 40%，下限 300ms）
-        var base = busy ? Math.max(300, Math.round(dispCfg.pollMs * 0.4)) : dispCfg.pollMs
-        var backoff = Math.max(base, Math.min(30000, Math.round((lastMsRef.current || 0) * 2)))
-        pollRef.current = setInterval(load, backoff)
       }
       useEffect(function () {
         if (!isOpen && !viewMode) return undefined // panel closed & not canvas → no polling
-        load(); pollRef.current = setInterval(load, dispCfg.pollMs)
+        var off = stateHubSubscribe(stateUrl(), dispCfg.pollMs, onState)
         // catch up instantly when the user returns to the tab / window
-        var onVis = function () { if (document.visibilityState === 'visible') load() }
-        var onFocus = function () { load() }
+        var onVis = function () { if (document.visibilityState === 'visible') stateHubFetch(stateUrl(), onState) }
+        var onFocus = function () { stateHubFetch(stateUrl(), onState) }
         document.addEventListener('visibilitychange', onVis)
         window.addEventListener('focus', onFocus)
-        return function () { clearInterval(pollRef.current); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('focus', onFocus) }
+        return function () { off(); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('focus', onFocus) }
       }, [sessionId, selRunV, isOpen, viewMode, dispCfg.pollMs])
 
       // Make the docked panel reserve space (shift the shell frame) instead of
@@ -2365,17 +2339,93 @@ window.__ModuleLoader__.load({
     function Boundary(props) { var e = useState(null); if (e[0]) return h('div', { className: 'exp-preview' }, t('专家团面板渲染出错：', 'Team panel render error: ') + esc(String(e[0] && e[0].message || e[0]))); return h('div', {}, props.children) }
     function wrap(Component) { return function (props) { return h(Boundary, null, h(Component, props || {})) } }
 
+    // ── 统一的 /state 加载器（2026-09-15 性能修复 #2）────────────────────────────
+    // 为什么必须统一：同一个重端点在客户端曾有三套轮询 —— 面板组件自己的 load()、
+    // HeaderButton 徽章与画布共用的 liveStore.liveTick()（还有画布标签自己那一份）。
+    // 画布一开就有 2–3 个 setInterval 并发压同一个 /state（实测 10 秒 7 发、6 次重叠，
+    // 单发被拖到 5.9/8.3 s；服务端每请求还有 ~2 s 同步 CPU ⇒ 把整个 web 一起拖慢）。
+    // 现在**所有** /state 拉取都经这里：
+    //   ① 同一 URL 同刻只跑一次（in-flight 合并，后来者复用在飞 promise 的结果）；
+    //   ② 全局**一个**时钟（不再每个组件一个 setInterval）；
+    //   ③ 间隔 = clamp(max(基础间隔, 上次耗时×2), 基础间隔, 30000)；
+    //      团队有人在跑时基础间隔按 40% 加速（面板原有意图，现在对徽章/画布同样生效）。
+    // 纪律不变：**未回绝不发下一个**（晚一点看到状态，好过把 web 拖死）。
+    var stateHub = { inflight: {}, lastMs: {}, subs: [], timer: 0, busy: false }
+    function stateHubNow() { return (window.performance && performance.now) ? performance.now() : Date.now() }
+    function stateHubUrls() { var out = []; stateHub.subs.forEach(function (x) { if (out.indexOf(x.url) < 0) out.push(x.url) }) ; return out }
+    function stateHubBase() {
+      var base = 0
+      stateHub.subs.forEach(function (x) { if (!base || x.base < base) base = x.base })
+      if (!base) base = 3000
+      return stateHub.busy ? Math.max(300, Math.round(base * 0.4)) : base
+    }
+    function stateHubSchedule() {
+      clearInterval(stateHub.timer)
+      stateHub.timer = 0
+      if (!stateHub.subs.length) return
+      var slowest = 0
+      stateHubUrls().forEach(function (u) { if ((stateHub.lastMs[u] || 0) > slowest) slowest = stateHub.lastMs[u] })
+      var base = stateHubBase()
+      var next = Math.max(base, Math.min(30000, Math.round(slowest * 2)))
+      stateHub.timer = setInterval(stateHubTick, next)
+    }
+    function stateHubDeliver(url) {
+      return function (d) {
+        var list = stateHub.subs.slice()
+        for (var i = 0; i < list.length; i++) { if (list[i].url === url) { try { list[i].onData(d) } catch (e) {} } }
+      }
+    }
+    function stateHubFetch(url, onData) {
+      if (typeof fetch === 'undefined') return
+      var p = stateHub.inflight[url]
+      if (p) { p.then(function (d) { try { onData(d) } catch (e) {} }); return }  // 同刻同 URL：复用在飞结果
+      var t0 = stateHubNow()
+      p = fetch(url).then(function (r) { return r.ok ? r.json() : null }).then(function (d) {
+        delete stateHub.inflight[url]
+        stateHub.lastMs[url] = Math.max(0, stateHubNow() - t0)
+        return d
+      }, function () { delete stateHub.inflight[url]; return null })
+      stateHub.inflight[url] = p
+      p.then(function (d) { try { onData(d) } catch (e) {} })
+    }
+    function stateHubTick() {
+      if (!stateHub.subs.length) { clearInterval(stateHub.timer); stateHub.timer = 0; return }
+      stateHubUrls().forEach(function (u) { stateHubFetch(u, stateHubDeliver(u)) })
+      stateHubSchedule()
+    }
+    function stateHubSubscribe(url, base, onData) {
+      var sub = { url: url, base: base || 3000, onData: onData }
+      stateHub.subs.push(sub)
+      stateHubFetch(url, onData)      // 立即拉一次（面板/徽章打开即有数据）
+      stateHubSchedule()
+      return function () {
+        var i = stateHub.subs.indexOf(sub)
+        if (i >= 0) stateHub.subs.splice(i, 1)
+        if (!stateHub.subs.length) { clearInterval(stateHub.timer); stateHub.timer = 0 }
+        else stateHubSchedule()
+      }
+    }
+
     // ── 共享 state 轮询（HeaderButton / LiveCapsule 复用，单例；无订阅者即停）──
-    var liveStore = { data: null, sid: '', timer: 0, subs: new Set() }
+    var liveStore = { data: null, sid: '', off: null, subs: new Set() }
+    var LIVE_BASE_MS = 2500   // 徽章/画布的基础节奏（与面板的 dispCfg.pollMs 取更小者由 hub 统一决定）
+    function liveUrl(sid) { return '/plugins/dsh-expert-team/state?sessionId=' + encodeURIComponent(sid) }
+    // 手动催一次（子代理刚出现时立刻刷新一次徽章，不必等下一个 tick）
     function liveTick() {
       var sid = liveStore.sid
       if (!sid || typeof fetch === 'undefined') return
-      fetch('/plugins/dsh-expert-team/state?sessionId=' + encodeURIComponent(sid)).then(function (r) { return r.ok ? r.json() : null }).then(function (d) {
-        if (!d) return
-        liveStore.data = d
-        try { harvestActivity(d) } catch (e) {}
-        liveStore.subs.forEach(function (f) { try { f(d) } catch (e) {} })
-      }).catch(function () {})
+      stateHubFetch(liveUrl(sid), liveDeliver)
+    }
+    function liveDeliver(d) {
+      if (!d) return
+      liveStore.data = d
+      try { harvestActivity(d) } catch (e) {}
+      try { stateHub.busy = teamBusy(d) } catch (e) {}
+      liveStore.subs.forEach(function (f) { try { f(d) } catch (e) {} })
+    }
+    function teamBusy(d) {
+      var m = (d && d.members) || {}
+      return Object.keys(m).some(function (k) { var v = m[k]; return v && typeof v === 'object' && (v.activity === 'running' || v.shortStatus === 'running') })
     }
     function useLiveState(sid) {
       var st = useState(liveStore.data); var data = st[0], setData = st[1]
@@ -2384,10 +2434,11 @@ window.__ModuleLoader__.load({
         liveStore.sid = sid
         var fn = function (d) { setData(d) }
         liveStore.subs.add(fn)
-        if (!liveStore.timer) { liveTick(); liveStore.timer = setInterval(liveTick, 2500) }
+        // 经 hub 订阅：与面板/画布共用同一个时钟与在飞守卫（这里**不再**自己 setInterval）
+        var off = stateHubSubscribe(liveUrl(sid), LIVE_BASE_MS, liveDeliver)
         return function () {
           liveStore.subs.delete(fn)
-          if (!liveStore.subs.size && liveStore.timer) { clearInterval(liveStore.timer); liveStore.timer = 0 }
+          off()
         }
       }, [sid])
       return data

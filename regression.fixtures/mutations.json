@@ -1365,8 +1365,8 @@
       "edits": [
         {
           "file": "lib/command.js",
-          "find": "                persistSessionRuns();\n                json(200, { ok: true, runs, workspaces, cwd, agents: sel.agents, ...sel });",
-          "replace": "                if (Date.now() > 0) { autoAggregate(sel.workspace); } // MUTANT: 读接口又写盘\n                persistSessionRuns();\n                json(200, { ok: true, runs, workspaces, cwd, agents: sel.agents, ...sel });"
+          "find": "                persistSessionRuns();\n                mark('tail');",
+          "replace": "                if (Date.now() > 0) { autoAggregate(sel.workspace); } // MUTANT: 读接口又写盘\n                persistSessionRuns();\n                mark('tail');"
         }
       ]
     },
