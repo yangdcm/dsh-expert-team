@@ -2194,6 +2194,11 @@ window.__ModuleLoader__.load({
           wfRunBlock,
           peopleNoteBlock,
           roster.length ? roster : h('div', { className: 'exp-empty' }, t('（暂无成员）', '(no members)')),
+          // 有界化（2026-09-15）：实时路径**不读**大日志解析角色 ⇒ 未知角色是"**待解析**"，
+          // 与下面那段"确实解析不出角色"是**两件事**（本仓纪律：两种零必须分得开，别混成一句话）。
+          (data && Number(data.rolesPending) > 0) ? h('div', { className: 'exp-legend', key: 'roles-pending' },
+            t('另有 ' + data.rolesPending + ' 条子代理的角色**待解析**（实时路径不读大日志，后台低频解析中；"待解析"≠"解析不出来"）',
+              'Roles for ' + data.rolesPending + ' subagent(s) are still **pending** (the live path does not read large logs; pending is not the same as unresolvable)')) : null,
           // 真实性提示：活子代理里没被名册认领的分两类，必须分开说 ——
           //   ① 同角色的重复派工/历史 leg（**有角色**，只是每个角色只展示 1 个成员）
           //   ② 真的解析不出角色的（label 为空、子会话日志不可读、事件流里也没有派工 label）
@@ -2500,10 +2505,25 @@ window.__ModuleLoader__.load({
       if (!sid || typeof fetch === 'undefined') return
       stateHubFetch(liveUrl(sid), liveDeliver)
     }
+    // 会话 id → 角色名（来自 /state 的 agents[]，**只用于把 id 翻译成可读名字**）。
+    // 为什么不参与判定：判定必须与页头同源（宿主会话态）。这份映射只是显示层的润色，
+    // 缺了它就回落 id 前 8 位；它来自本来就有的 /state 拉取（页头徽章/面板），**不新增任何请求**。
+    var liveRoles = {}
+    function harvestRoles(d) {
+      try {
+        var arr = (d && Array.isArray(d.agents)) ? d.agents : null
+        if (!arr) return
+        for (var i = 0; i < arr.length; i++) {
+          var a = arr[i]
+          if (a && a.id && a.role) liveRoles[String(a.id)] = String(a.role)
+        }
+      } catch (e) {}
+    }
     function liveDeliver(d) {
       if (!d) return
       liveStore.data = d
       try { harvestActivity(d) } catch (e) {}
+      try { harvestRoles(d) } catch (e) {}
       try { stateHub.busy = teamBusy(d) } catch (e) {}
       liveStore.subs.forEach(function (f) { try { f(d) } catch (e) {} })
     }
@@ -2512,30 +2532,81 @@ window.__ModuleLoader__.load({
       return Object.keys(m).some(function (k) { var v = m[k]; return v && typeof v === 'object' && (v.activity === 'running' || v.shortStatus === 'running') })
     }
     // ── 子代理运行状态条的**唯一**判据（纯函数，无 React、无 DOM：便于单测直接断言）──────
-    // 为什么用 /state 的 `agents[]` 而不是别的：它由 host 的 `subagents.listChildren` 产出，
-    // `activity === 'running'` 正是页头徽章用的同一个判据（两种指示同源，不会互相打架）。
-    // 两种"零"必须分清：`agents` 缺键/非数组（老 host、ok:false、?section=summary）是"未知"，
-    // 只有拿到数组且里面没有 running 才是"确实没有人在跑"。未知时显示占位符，不谎报"无人在跑"。
-    /** 从一份 /state 负载里取出 activity === 'running' 的子代理行（非数组/缺键 ⇒ 空数组）。 */
-    function runningAgents(d) {
-      var arr = (d && Array.isArray(d.agents)) ? d.agents : []
-      return arr.filter(function (a) { return a && String(a.activity || '') === 'running' })
+    // 与页头「N 个子代理」**同源**：宿主会话态（host session store）里 `running` 为真的子代理。
+    // 之前的版本读插件自己的 `/state` → `agents[].activity === 'running'`，那是**错的**：服务端把
+    // 子代理语料的归属会话解析成「当前 run 的 ownerSession」（`lib/command.js` 的 `peopleSid`），
+    // 客户端传的 sessionId 会被忽略 ⇒ 新 run 还没落 `STATE.json` 时视图会落到同工作区的旧 run 上，
+    // 面板拿到别人的（已冷的）子代理，状态条就谎报「无子代理在运行」。
+    // 两种"零"必须分清：拿不到会话态（null 快照 / 无 sid）是"未知"⇒ 不渲染；只有拿到会话态且
+    // 里面没有 running 的子代理后代，才是"确实没有人在跑"。
+
+    /**
+     * 正在运行的子代理 id（宿主会话态的 `running` 字段，**与页头「N 个子代理」同源**）。
+     *
+     * 为什么不再用插件自己的 `/state` → `agents[].activity`：服务端把子代理语料的**归属会话**
+     * 解析成「当前 run 的 ownerSession」（`lib/command.js` 的 `peopleSid`），于是**客户端传的
+     * sessionId 会被忽略**。真机实测的翻车场景：一个刚开跑、还没落 `STATE.json` 的新 run，
+     * 在 `newestRun` 按 `updatedAt` 排序时输给同工作区一个 13 天前的旧 run，于是本会话明明
+     * 有子代理在跑，面板却拿到旧 run 的 82 个**已冷**子代理（`activity:'inactive'`）⇒ 状态条
+     * 谎报「无子代理在运行」。改用宿主会话态后，既与页头同源，又不再经过那条会串会话的解析。
+     *
+     * 两个集合都要：`byId` 给 `running`/`origin`/`parentId`，`items` 给直接子会话
+     * （`parentSessionId` + `origin:'subagent'`）—— 只靠其一都会漏（与页头同一套数据源）。
+     * 计数按**会话是当前会话的子代理后代**判定（任一深度），不是只数直接子级。
+     */
+    function runningSubagentIds(sessions, sid) {
+      var out = []
+      if (!sid || !sessions || typeof sessions !== 'object') return out
+      var byId = sessions.byId || {}
+      var items = Array.isArray(sessions.items) ? sessions.items : []
+      var seen = {}
+      function consider(id, running) {
+        if (!id) return
+        var k = String(id)
+        if (seen[k] || !running) return
+        seen[k] = 1
+        out.push(k)
+      }
+      // ① 直接子会话：列表项自带 parentSessionId + origin
+      items.forEach(function (s) {
+        if (!s) return
+        if (s.origin !== 'subagent') return
+        if (String(s.parentSessionId || '') !== String(sid)) return
+        consider(s.sessionId, s.running === true)
+      })
+      // ② 任一深度的后代：沿 byId 的 parentId 往上走，只有 origin==='subagent' 才继续
+      Object.keys(byId).forEach(function (key) {
+        var e = byId[key]
+        if (!e || e.origin !== 'subagent') return
+        var cur = e
+        var guard = 0
+        while (cur && cur.parentId !== undefined && guard++ < 64) {
+          if (String(cur.parentId) === String(sid)) { consider(key, e.running === true); return }
+          var up = byId[String(cur.parentId)]
+          if (!up || up.origin !== 'subagent') return
+          cur = up
+        }
+      })
+      return out
     }
+
     /**
      * 状态条视图模型（纯函数）。返回值：
-     *   null                      → 不渲染（没有会话 / 还没拿到负载 / 拿不到 agents 块）
+     *   null                      → 不渲染（没有会话 / 会话态还没到）
      *   { kind: 'idle',  text }   → 一行灰字：确实没有子代理在跑
      *   { kind: 'busy',  n, text, names } → 运行中横幅
-     * 角色名取不到就回落到 id 前 8 位（如实显示"这是谁"，不编造角色名）。
+     * `names` 取不到角色名时回落 id 前 8 位（如实显示"这是谁"，不编造角色名）。
      */
-    function subagentBarModel(d, hasSession) {
-      if (!hasSession) return null
-      if (!d || d.ok !== true || !Array.isArray(d.agents)) return null
-      var run = runningAgents(d)
+    function subagentBarModel(sessions, sid) {
+      if (!sid || !sessions || typeof sessions !== 'object') return null
+      if (!sessions.byId && !Array.isArray(sessions.items)) return null
+      // `/state` 的 role 名（可选）：只用于把 id 翻成更好读的角色名，**不参与任何判定**
+      var roles = (sessions.__roles && typeof sessions.__roles === 'object') ? sessions.__roles : {}
+      var run = runningSubagentIds(sessions, sid)
       if (!run.length) return { kind: 'idle', n: 0, text: t('无子代理在运行', 'No subagents running'), names: [] }
-      var names = run.slice(0, 3).map(function (a) {
-        var nm = roleLabel(a.role)
-        return nm || String(a.id || '').slice(0, 8)
+      var names = run.slice(0, 3).map(function (id) {
+        var nm = roleLabel(roles[id])
+        return nm || String(id).slice(0, 8)
       })
       var more = run.length > 3 ? ' +' + (run.length - 3) : ''
       return {
@@ -2555,6 +2626,7 @@ window.__ModuleLoader__.load({
       // 收到一份只有 summary 的负载就把已知的成员/活动抹掉。
       liveStore.data = Object.assign({}, liveStore.data || {}, d)
       try { harvestActivity(liveStore.data) } catch (e) {}
+      try { harvestRoles(d) } catch (e) {}
       try { stateHub.busy = teamBusy(liveStore.data) } catch (e) {}
       liveStore.subs.forEach(function (f) { try { f(liveStore.data) } catch (e) {} })
     }
@@ -2627,13 +2699,47 @@ window.__ModuleLoader__.load({
     /**
      * 「子代理运行中」状态条（注册进 conversation.input.dock ⇒ 输入框正上方）。
      * 常驻：运行中给醒目横幅，无人运行给一行灰字（用户要求"能一眼区分有没有在跑"）。
+     * 判据 = 宿主会话态（与页头「N 个子代理」**同源**），**不再**读插件自己的 `/state`：
+     * 那条路会把子代理语料的归属会话解析成「当前 run 的 ownerSession」，客户端传的 sessionId
+     * 会被忽略 ⇒ 新 run 还没落 `STATE.json` 时视图落到旧 run，状态条谎报「无子代理在运行」。
+     * 取数全程 try/catch：宿主 API 形状一变就退化成"不渲染这一条"，绝不把界面炸掉。
      */
     function SubagentBar(props) {
-      var sid = useCurrentSessionId()
-      var barSessionId = (props && props.sessionId) || sid
-      var live = useLiveState(barSessionId)
+      // 会话 id 的解法与之前一致；`useCurrentSessionId()` **无条件**先调（钩子顺序必须稳定，
+      // 不能因为这一帧有没有 props.sessionId 就少调一次）。
+      var fallbackSid = useCurrentSessionId()
       ensureCss()
-      var m = subagentBarModel(live, !!barSessionId)
+      var sid = (props && props.sessionId) || fallbackSid
+      var snap = null
+      var useSessions = props && props.useSessions
+      if (typeof useSessions === 'function') {
+        // 标准 prop：宿主把会话 store 的 hook 直接递给槽组件（页头「N 个子代理」用的同一份数据）。
+        try { snap = useSessions(function (s) { return s }) } catch (e) { snap = null }
+      } else {
+        // 降级：宿主没递标准 prop（API 形状变了）时，直接向 `ctx.sessions` 的**同一个**会话
+        // store 要列表快照（`{ ids, byId, current, … }`）。任何一步拿不到或抛错 ⇒ 保持 null
+        // ⇒ subagentBarModel 返回 null ⇒ 不渲染（宁可不显示，也不显示"别人的会话"的子代理数）。
+        try {
+          var svc = ctxRoot && ctxRoot.sessions ? ctxRoot.sessions : null
+          var list = svc && svc.list ? svc.list : null
+          var st = (list && typeof list.getSnapshot === 'function') ? list.getSnapshot() : null
+          if (!st && svc && typeof svc.getSnapshot === 'function') st = svc.getSnapshot()
+          if (st && typeof st === 'object') snap = st
+        } catch (e) { snap = null }
+      }
+      // 角色映射只影响**命名**，不参与判定：把它挂在交给 `subagentBarModel` 的输入上。
+      // ⚠️ **不能写进 `snap`**：那是宿主会话 store 的共享/缓存快照，写进去会污染页头等别的视图。
+      // 因此需要时才做一层浅拷贝（只复制自有键），再挂 `__roles`；任何一步出错都退回原快照 ⇒
+      // 最坏也只是回落 id 前 8 位，绝不把状态条弄没。
+      var modelInput = snap
+      try {
+        if (snap && typeof snap === 'object' && snap.__roles !== liveRoles) {
+          modelInput = {}
+          for (var k in snap) { if (Object.prototype.hasOwnProperty.call(snap, k)) modelInput[k] = snap[k] }
+          modelInput.__roles = liveRoles
+        }
+      } catch (e) { modelInput = snap }
+      var m = subagentBarModel(modelInput, sid)
       if (!m) return null
       if (m.kind === 'idle') return h('div', { className: 'exp-subbusy-idle' }, esc(m.text))
       function openPanel() {
@@ -2782,11 +2888,16 @@ window.__ModuleLoader__.load({
     // suite assert text safety without booting the overlay in a browser.
     exports._live = { esc: esc, tierBadge: tierBadge, TIER_LABELS_ZH: TIER_LABELS_ZH, settingsFormModel: settingsFormModel }
     // 测试钩子（沿用 `_live` 的约定）：状态条的纯函数可脱离浏览器直接断言。
-    exports._subagentBar = { subagentBarModel: subagentBarModel, runningAgents: runningAgents }
+    exports._subagentBar = { subagentBarModel: subagentBarModel, runningSubagentIds: runningSubagentIds }
     exports.inject = ['slots', 'sessions', 'remote', 'uiSession', 'uiConversation', 'locale']
     var ctxUISession = null
+    // 宿主 ctx 本体：只给状态条**降级**取数用（标准 prop `useSessions` 拿不到时，退到
+    // `ctx.sessions.list` 的同一份会话 store 快照）。声明位置与 `ctxUISession` 同理：
+    // var 提升到工厂作用域，组件在 apply() 之后才渲染，读到的一定是已赋值的引用。
+    var ctxRoot = null
     exports.apply = function (ctx) {
       console.log('[dsh-expert-team] client apply() called')
+      try { ctxRoot = ctx || null } catch (e) { ctxRoot = null }
       try { ctxUISession = ctx && ctx.uiSession ? ctx.uiSession : null } catch (e) { ctxUISession = null }
       try {
         // N2：待拍板 pendingInteraction 发布（composer select 据此接管）

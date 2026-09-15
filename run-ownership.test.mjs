@@ -93,8 +93,13 @@ console.log('\n⑤ 多个 run 互不串味');
 console.log('\n⑥ 接线检查：查询路径必须真的用归属会话，而不是请求会话');
 {
   const src = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'lib/command.js'), 'utf8');
+  // 锚点切片（2026-09-15）：旧写法用**固定 2600 字符窗口**，与插入位置强耦合 ——
+  // 在它前面加五行代码就会把 `workflowChildLabels`/`peopleSessionNote` 挤出窗口而**假红**
+  // （实测：加"有界化"的 degraded 上报后红了两条）。断言本身不变，只把"块"的边界改成
+  // 语义锚点：从归属查询起、到 `mark('wfLabels')` 止 —— 这段就是"人员解析块"。
   const at = src.indexOf('const owner = sel.stateOwnerSession');
-  const block = at >= 0 ? src.slice(at, at + 2600) : '';
+  const endAt = at >= 0 ? src.indexOf("mark('wfLabels')", at) : -1;
+  const block = (at >= 0 && endAt > at) ? src.slice(at, endAt) : '';
   check(!!block, '找到人员解析块');
   check(/listSubagentStatusBySession\(ctx, peopleSid/.test(block), '列人员用 peopleSid（归属会话）而不是 sid', '');
   check(/workflowChildLabels\(ctx, peopleSid\)/.test(block), 'workflow 事件流也走归属会话');

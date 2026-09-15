@@ -53,7 +53,9 @@ console.log('① `parseStateSections`：语义正确，且**默认向后兼容**
 console.log('\n② 服务端：贵块真的关在分节后面（守卫点在位）');
 {
   check(/const secParsed = parseStateSections\(secRaw\)/.test(src), 'handler 用同一个纯函数解析（单一真源）', '');
-  check(/const needSubs = want\('people'\) \|\| want\('feed'\)/.test(src) && /needSubs \? await listSubagentStatusBySession\(ctx, peopleSid, knownIds\) : \[\]/.test(src),
+  // 判据只表达**意图**（缺省时被分节挡住 + 走归属会话），不再绑死参数表 —— 旧写法要求字面
+  // `knownIds) : []`，加一个 opts 参数就假红（2026-09-15 有界化时实测踩到）。
+  check(/const needSubs = want\('people'\) \|\| want\('feed'\)/.test(src) && /needSubs \? await listSubagentStatusBySession\(ctx, peopleSid, knownIds/.test(src),
     'people/feed：子会话清单解析被分节挡住（这是重会话最大的一块）', '');
   check(/if \(needSubs && !subs\.length && peopleSid !== sid\)/.test(src), 'people/feed：归属回退也在同一分节内', '');
   check(/want\('people'\) \? await workflowChildLabels\(ctx, peopleSid\) : \{\}/.test(src), 'people：workflow 标签只在分节内取', '');
