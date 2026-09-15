@@ -16,9 +16,9 @@ English | [中文](README.md)
 A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh):
 **zero runtime dependencies, no build step, no install hooks.**
 
-| 12 roles | 9 phases | 80 test files | 0 runtime deps | 0 build steps |
+| 12 roles | 9 phases | 83 test files | 0 runtime deps | 0 build steps |
 |---|---|---|---|---|
-| own persona / `toolFilter` / `maxDepth: 1` | 1 hard gate + 1 approval gate | incl. a 136-entry mutation catalog and several ratchets | `dependencies: {}` | no bundler, no `prepare` hook |
+| own persona / `toolFilter` / `maxDepth: 1` | 1 hard gate + 1 approval gate | incl. a 137-entry mutation catalog and several ratchets | `dependencies: {}` | no bundler, no `prepare` hook |
 
 > Zero runtime dependencies. Recommended: also install **Hindsight** (cross-project memory) — see [Dependencies and recommended plugins](#dependencies-and-recommended-plugins).
 
@@ -147,6 +147,8 @@ already passed, and the actual body of the artifact written in that phase (artif
 **saved on change and applied immediately** (caps, rounds, the tier gate and the oscillation detector are recomputed
 in-process). Values live in the host namespace `expert-team`, so they travel with the plugin market's backup/restore.</sub>
 
+A persistent status bar also sits directly above the chat input box (client slot `conversation.input.dock`, id `expert-team-subagents`, order 200): while at least one subagent is running it shows an amber banner ("N subagents running") with up to three role names and a pulsing dot, and clicking it opens the team panel; when none are running it shows a single dim gray line ("No subagents running"), and it renders nothing at all before a session or status is available (the same predicate as the header badge: `agents[].activity === 'running'` from `/state`).
+
 ## Why it is dependable
 
 - **The state machine is enforced by plugin code, not requested by prompt.** `lib/interception.js` moves the
@@ -156,7 +158,7 @@ in-process). Values live in the host namespace `expert-team`, so they travel wit
   that is the number-one source of rework.**
 - **Zero runtime dependencies, zero devDependencies, no build step, no `prepare`/`postinstall` hooks.**
   What you install is exactly what runs; there is no "unknown script at install time" layer.
-- **80 test files plus a 136-entry mutation catalog.** `npm run test:all` needs no `install` (it is what CI runs);
+- **83 test files plus a 137-entry mutation catalog.** `npm run test:all` needs no `install` (it is what CI runs);
   the mutation catalog requires every mutant to be killed by at least one test — the suite is not "green",
   it is *able to catch errors*.
 - **Several ratchet tests** pin down rules that were already thought through, so they cannot quietly regress:
@@ -386,7 +388,7 @@ evolve with the skill, without shipping a new package.
 ## Development
 
 ```sh
-npm run test:all        # 80 test files, zero dependencies, no install needed (this is what CI runs)
+npm run test:all        # 83 test files, zero dependencies, no install needed (this is what CI runs)
 npm run rename <name>   # after forking: syncs 4 package-name spellings across 13 files
 npm run check:name      # check for leftover placeholder package names
 ```

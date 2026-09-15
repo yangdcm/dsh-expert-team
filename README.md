@@ -14,9 +14,9 @@
 
 装在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 上的 dsh 插件：**零运行时依赖、无构建步骤、无安装钩子**。
 
-| 12 角色 | 9 阶段 | 80 个测试文件 | 0 运行时依赖 | 0 构建步骤 |
+| 12 角色 | 9 阶段 | 83 个测试文件 | 0 运行时依赖 | 0 构建步骤 |
 |---|---|---|---|---|
-| 各带人设 / `toolFilter` / `maxDepth: 1` | 含 1 道硬门 + 1 道确认门 | 含 136 条变异目录与多组棘轮 | `dependencies: {}` | 无 bundler、无 `prepare` 钩子 |
+| 各带人设 / `toolFilter` / `maxDepth: 1` | 含 1 道硬门 + 1 道确认门 | 含 137 条变异目录与多组棘轮 | `dependencies: {}` | 无 bundler、无 `prepare` 钩子 |
 
 > 零运行时依赖。推荐同时装 **Hindsight**（跨项目记忆）—— 见[依赖与推荐插件](#依赖与推荐插件--dependencies-and-recommended-plugins)。
 
@@ -131,6 +131,8 @@ $ /team 做一个带登录的支付模块
 
 <sub>图 7：**设置**。看官方 `设置 →「专家团」` 这一页 —— 18 个设置项、中文标签、**改动即保存并即时生效**（上限/轮次/档位门/振荡检测在进程内重算）；值存在宿主命名空间 `expert-team`，随插件市场的备份/恢复一起走。</sub>
 
+**输入框正上方还有一条常驻状态条**（client 槽 `conversation.input.dock`，id `expert-team-subagents`，order 200）—— 有子代理在跑时是琥珀色横幅「N 个子代理运行中」+ 最多 3 个角色名 + 一个跳动圆点，点击它直接打开团队面板；没有在跑时只剩一行暗灰字「无子代理在运行」，会话或状态尚未就绪时则完全不渲染（判据与页头徽章同一条：`/state` 的 `agents[].activity === 'running'`）。
+
 ## 它为什么可靠
 
 - **状态机由插件代码强制，不由提示词请求。** `lib/interception.js` 把「台账契约」与「规格边界」两条规则搬到宿主的
@@ -138,7 +140,7 @@ $ /team 做一个带登录的支付模块
   （`SPEC_COMPLETE_PHASES`）。**规格沉默等于允许，那正是头号返工源。**
 - **零运行时依赖、零 devDependencies、无构建步骤、无 `prepare`/`postinstall` 钩子。** 装完就是能跑的那份代码，
   没有"安装时执行未知脚本"这一层。
-- **80 个测试文件 + 136 条变异目录。** `npm run test:all` 无需 `install` 即可跑（CI 跑的就是它）；
+- **83 个测试文件 + 137 条变异目录。** `npm run test:all` 无需 `install` 即可跑（CI 跑的就是它）；
   `mutation-catalog` 要求每个变异体都至少被一个测试杀掉 —— 测试不是"跑绿了"，而是"能抓到错"。
 - **多组棘轮（ratchet）测试**，把"已经想清楚的规矩"钉住，防止悄悄退化：
   `vocab-consistency`（术语与角色标签单一真源）、`scan-single-source`（同一事实不许有两个家）、
@@ -344,7 +346,7 @@ presets/expert-team/   「专家团模式」preset：12 个角色 subagent 工�
 ## 开发
 
 ```sh
-npm run test:all        # 80 个测试文件，零依赖、无需 install（CI 跑的就是它）
+npm run test:all        # 83 个测试文件，零依赖、无需 install（CI 跑的就是它）
 npm run rename <新包名>  # fork 后改名：自动同步 13 个文件里 4 种包名写法
 npm run check:name      # 检查占位包名残留
 ```

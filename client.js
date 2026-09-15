@@ -254,6 +254,20 @@ window.__ModuleLoader__.load({
       '.exp-decbar-ic{font-size:18px;flex:none}' +
       '.exp-decbar-t{font-weight:700;font-size:13px;color:var(--dsw-alias-state-business-primary,#0969da)}' +
       '.exp-decbar-p{font-size:12px;color:var(--dsw-alias-label-secondary,#57606a);margin-top:2px}' +
+      // ── 子代理运行状态条（常驻在输入框正上方；conversation.input.dock）──
+      // 运行中 = 醒目横幅 + 呼吸点（可点击打开团队面板）；无人在跑 = 一行灰字（几乎不占位）。
+      // 为什么必须有它：原先只有会话页头一个小徽章 + 右侧面板，输入框附近没有任何指示，
+      // 用户无法一眼判断"现在到底有没有子代理在跑"。本条的运行态判据与页头徽章**同源**
+      // （都取 /state 的 agents[].activity === 'running'），两条指示不会互相矛盾。
+      // 宽度：dock 条目渲染在输入框根容器的左右内边距**之外**，必须自己让出 `--dsh-composer-side-clearance` 并 `margin:0 auto` 居中；宽度上限还必须再取卡片自己的上限 `--dsh-composer-card-max-width`（否则在宽窗口下会无视卡片上限、左右各鼓出一段 —— 真机实测过 card 846 vs bar 948）。绝不能写 width:100%。 +
+      '.exp-subbusy{display:flex;align-items:center;gap:8px;box-sizing:border-box;flex:none;width:auto;min-width:0;max-width:min(calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance)), var(--dsh-composer-card-max-width));margin:0 auto 4px;padding:1px 12px;border:1px solid #f0c36d;border-left:3px solid #e0a83c;border-radius:10px;background:linear-gradient(180deg,rgba(224,168,60,.13),var(--dsw-alias-bg-layer-1,#fff));color:#8a6100;font-size:12px;line-height:1.4}' +
+      '.exp-subbusy.on{cursor:pointer}' +
+      '.exp-subbusy.on:hover{border-color:#d99b1f}' +
+      '.exp-subbusy-dot{width:8px;height:8px;border-radius:50%;background:#e0a83c;flex:none;animation:exp-pulse 1.4s ease-in-out infinite}' +
+      '.exp-subbusy-t{font-weight:700}' +
+      '.exp-subbusy-who{color:#6a4a00;opacity:.9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.exp-subbusy-go{margin-left:auto;flex:none;font-size:11.5px;font-weight:700;color:#8a6100;opacity:.75}' +
+      '.exp-subbusy-idle{box-sizing:border-box;flex:none;width:auto;min-width:0;max-width:min(calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance)), var(--dsh-composer-card-max-width));margin:0 auto;padding:1px 12px 4px;font-size:11px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary,#8b949e))}' +
       // ── 任务人员流转（波次带）样式：来自 UI.md §4.2（.etv-*，主题变量 + 深色覆写，零依赖）──
       '/* ── 任务人员流转：竖直时间轴 + 波次带 ── */\n.etv-root{display:block;position:relative;padding:2px 0 4px}\n.etv-note{font-size:11px;color:var(--dsw-alias-label-secondary);margin:2px 0 8px;display:flex;align-items:center;gap:6px}\n.etv-wide-btn{margin-left:auto;font-size:10.5px;padding:1px 8px;border-radius:7px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:inherit;cursor:pointer}\n.etv-wave{position:relative;margin:0 0 var(--etv-wave-gap);border-radius:0 8px 8px 0}\n.etv-wave.cur{background:rgba(65,118,230,.055);border-left:2px solid var(--dsw-alias-state-business-primary)}\n.etv-wave-h{display:flex;align-items:center;gap:6px;height:22px;padding-left:var(--etv-indent);font-size:11.5px;font-weight:600;cursor:default}\n.etv-wave.collapsed .etv-wave-h{cursor:pointer}\n.etv-wave-no{display:inline-flex;align-items:center;justify-content:center;height:16px;min-width:16px;padding:0 5px;border-radius:8px;font-size:10px;font-weight:700;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}\n.etv-wave.cur .etv-wave-no{background:var(--dsw-alias-state-business-primary);color:#fff}\n.etv-time{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}\n.etv-delta{font-size:10px;color:var(--dsw-alias-label-tertiary)}\n.etv-wave-n{font-size:10.5px;color:var(--dsw-alias-label-tertiary)}\n.etv-wave-sum{margin-left:auto;font-size:10.5px;color:var(--dsw-alias-label-tertiary);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.etv-cards{display:flex;flex-wrap:wrap;gap:var(--etv-gap);padding:6px 0 2px var(--etv-indent)}\n.etv-scroll{overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}\n.etv-scroll .etv-cards{flex-wrap:nowrap}\n.etv-card{flex:1 1 var(--etv-card-min);min-width:0;max-width:100%;box-sizing:border-box;border:1.4px solid var(--etv-idle);border-radius:9px;background:var(--dsw-alias-bg-layer-1);padding:6px 8px 6px 7px;min-height:56px;cursor:pointer;position:relative;transition:border-color .12s,background .12s}\n.etv-card:hover{border-color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-interactive-bg-hover)}\n.etv-card.sel{background:var(--dsw-alias-state-business-tertiary);box-shadow:0 0 0 1px var(--dsw-alias-state-business-primary)}\n.etv-card.run{border-color:var(--etv-run);border-width:2px;background:rgba(59,110,245,.08)}\n.etv-card.done{border-color:var(--etv-ok);background:rgba(34,176,125,.10)}\n.etv-card.rework{border-color:var(--etv-rework);border-style:dashed;background:rgba(217,119,6,.10)}\n.etv-card.failed{border-color:var(--etv-fail);background:rgba(192,57,43,.09)}\n.etv-card.more{align-items:center;justify-content:center;display:flex;border-style:dashed;color:var(--dsw-alias-label-secondary);font-size:11.5px}\n.etv-card.tiny{min-height:40px}\n.etv-card.tiny .etv-task{display:none}\n.etv-card-h{display:flex;align-items:center;gap:5px;min-width:0}\n.etv-card .exp-ava{width:18px;height:18px;font-size:10px;margin-right:0;flex:none}\n.etv-role{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0}\n.etv-who{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0}\n.etv-task{margin-top:3px;font-size:11px;line-height:1.35;color:var(--dsw-alias-label-primary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}\n.etv-card-f{display:flex;align-items:center;gap:6px;margin-top:5px;height:16px}\n.etv-dot{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}\n.etv-dot.run{animation:exp-pulse 1.4s ease-in-out infinite}\n.etv-dot.hollow{background:transparent!important;border:1.5px solid var(--etv-idle)}\n.etv-dur{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}\n.etv-rework-tag{position:absolute;top:-7px;left:6px;font-size:9.5px;line-height:14px;padding:0 5px;border-radius:7px;background:var(--dsw-alias-state-warn-tertiary,#fff7ea);border:1px solid #f3c9a0;color:#a34a00}\n.etv-rail{position:absolute;left:0;top:0;bottom:0;width:16px;pointer-events:none}\n.etv-rail-i{position:absolute;left:7px;top:0;bottom:0;width:2px;background:var(--etv-line)}\n.etv-rail-n{position:absolute;left:3px;width:10px;height:10px;border-radius:50%;border:2px solid var(--dsw-alias-bg-layer-1);box-sizing:content-box}\n.etv-handoff{stroke:#8aa8e8;stroke-width:1.4;fill:none}\n.etv-rework-link{stroke:var(--etv-rework);stroke-width:1.5;stroke-dasharray:4 3;fill:none}\n.etv-para{font-size:10px;color:var(--dsw-alias-label-tertiary);margin-left:2px}\n.etv-group{border:1px dashed var(--dsw-alias-border-l2);border-radius:9px;padding:6px 8px;margin:0 0 var(--etv-gap) var(--etv-indent);background:var(--dsw-alias-bg-module-platform)}\n/* ── 深色主题覆写（零依赖：prefers-color-scheme 兜底；若 shell 在根节点暴露主题标记，优先用它） ── */\n@media (prefers-color-scheme:dark){\n  .exp-panel{--etv-run:#679efe;--etv-ok:#4ed17e;--etv-rework:#f7ad31;--etv-fail:#ff7b7b;--etv-idle:#adb2b8;\n             --etv-text-ok:#4ed17e;--etv-text-run:#679efe;--etv-text-rework:#f7ad31}\n  .etv-handoff{stroke:#679efe}\n  .etv-rework-tag{background:#3a2c14;border-color:#7a5a22;color:#f7ad31}\n  .etv-degrade.warn{background:rgba(247,173,49,.12);color:#f7ad31}\n  .etv-degrade.info{color:#9dc0ff}\n  .etv-wave.cur{background:rgba(103,158,254,.10)}\n}\n/* ── 无障碍：减少动效 ── */\n@media (prefers-reduced-motion:reduce){.etv-dot.run,.etv-skel{animation:none!important}}'
 
@@ -2497,6 +2511,38 @@ window.__ModuleLoader__.load({
       var m = (d && d.members) || {}
       return Object.keys(m).some(function (k) { var v = m[k]; return v && typeof v === 'object' && (v.activity === 'running' || v.shortStatus === 'running') })
     }
+    // ── 子代理运行状态条的**唯一**判据（纯函数，无 React、无 DOM：便于单测直接断言）──────
+    // 为什么用 /state 的 `agents[]` 而不是别的：它由 host 的 `subagents.listChildren` 产出，
+    // `activity === 'running'` 正是页头徽章用的同一个判据（两种指示同源，不会互相打架）。
+    // 两种"零"必须分清：`agents` 缺键/非数组（老 host、ok:false、?section=summary）是"未知"，
+    // 只有拿到数组且里面没有 running 才是"确实没有人在跑"。未知时显示占位符，不谎报"无人在跑"。
+    /** 从一份 /state 负载里取出 activity === 'running' 的子代理行（非数组/缺键 ⇒ 空数组）。 */
+    function runningAgents(d) {
+      var arr = (d && Array.isArray(d.agents)) ? d.agents : []
+      return arr.filter(function (a) { return a && String(a.activity || '') === 'running' })
+    }
+    /**
+     * 状态条视图模型（纯函数）。返回值：
+     *   null                      → 不渲染（没有会话 / 还没拿到负载 / 拿不到 agents 块）
+     *   { kind: 'idle',  text }   → 一行灰字：确实没有子代理在跑
+     *   { kind: 'busy',  n, text, names } → 运行中横幅
+     * 角色名取不到就回落到 id 前 8 位（如实显示"这是谁"，不编造角色名）。
+     */
+    function subagentBarModel(d, hasSession) {
+      if (!hasSession) return null
+      if (!d || d.ok !== true || !Array.isArray(d.agents)) return null
+      var run = runningAgents(d)
+      if (!run.length) return { kind: 'idle', n: 0, text: t('无子代理在运行', 'No subagents running'), names: [] }
+      var names = run.slice(0, 3).map(function (a) {
+        var nm = roleLabel(a.role)
+        return nm || String(a.id || '').slice(0, 8)
+      })
+      var more = run.length > 3 ? ' +' + (run.length - 3) : ''
+      return {
+        kind: 'busy', n: run.length, names: names,
+        text: t(run.length + ' 个子代理运行中', run.length + ' subagent(s) running') + more
+      }
+    }
     // ── 面板/画布 → 徽章的**发布**路径（性能收尾批次）────────────────────────────
     // 为什么需要：徽章订阅的是 `people,feed`（重分节）。若它一直自己轮询，而当前标签是「料」
     // （重分节 = `artifacts`），同一时刻就有**两条重活并发** —— 真机上那正是单发从 2.4 s 变
@@ -2553,6 +2599,59 @@ window.__ModuleLoader__.load({
       if (live.status === 'complete' || live.phase === 'deliver') return { text: '✅ 已完成', cls: ' done', title: '已完成 · ' + phaseLabel(live.phase || '') + '/' + statusLabel(live.status || '') }
       if (!tasks.length && !Object.keys(members).length) return { text: '🧑‍💼 专家团', title: '本工作区还没有 run' }
       return { text: '🧑‍💼 ' + done + '/' + tasks.length, title: phaseLabel(live.phase || '') + '/' + statusLabel(live.status || '') }
+    }
+
+    /**
+     * 当前会话 id。优先用宿主 `uiSession` 适配器的 current 绑定（贴会话作用域真源）；
+     * 拿不到（宿主 API 形状变了）就回落到 HeaderButton 维护的会话 store —— 两种都拿不到
+     * 就返回 null ⇒ 状态条不渲染（宁可不显示，也不显示"别人的会话"的子代理数）。
+     */
+    function useCurrentSessionId() {
+      var sid = useCurrentSession()
+      var st = useState(function () {
+        try { var u = ctxUISession; var snap = (u && u.current && u.current.getSnapshot) ? u.current.getSnapshot() : null; return (snap && snap.value && snap.value.key) ? snap.value.key : null } catch (e) { return null }
+      })
+      var hostSid = st[0], setHostSid = st[1]
+      useEffect(function () {
+        var u = ctxUISession
+        if (!u || !u.current || typeof u.current.subscribe !== 'function') return undefined
+        function pull() {
+          try { var s = u.current.getSnapshot(); setHostSid((s && s.value && s.value.key) ? s.value.key : null) } catch (e) { setHostSid(null) }
+        }
+        pull()
+        return u.current.subscribe(pull)
+      }, [])
+      return hostSid || sid || null
+    }
+
+    /**
+     * 「子代理运行中」状态条（注册进 conversation.input.dock ⇒ 输入框正上方）。
+     * 常驻：运行中给醒目横幅，无人运行给一行灰字（用户要求"能一眼区分有没有在跑"）。
+     */
+    function SubagentBar(props) {
+      var sid = useCurrentSessionId()
+      var barSessionId = (props && props.sessionId) || sid
+      var live = useLiveState(barSessionId)
+      ensureCss()
+      var m = subagentBarModel(live, !!barSessionId)
+      if (!m) return null
+      if (m.kind === 'idle') return h('div', { className: 'exp-subbusy-idle' }, esc(m.text))
+      function openPanel() {
+        try {
+          if (!open) { dockState = true; saveLS('et-dock', true); notify(); setOpen() }
+        } catch (e) {}
+        focusPanelRight()
+      }
+      return h('div', {
+        className: 'exp-subbusy on',
+        role: 'status',
+        title: t(m.n + ' 个子代理正在运行（本会话）· 点击打开团队面板', m.n + ' subagent(s) running in this session · click to open the team panel'),
+        onClick: openPanel
+      },
+        h('span', { className: 'exp-subbusy-dot' }),
+        h('span', { className: 'exp-subbusy-t' }, esc(m.text)),
+        m.names.length ? h('span', { className: 'exp-subbusy-who' }, esc(m.names.join(' · '))) : null,
+        h('span', { className: 'exp-subbusy-go' }, esc(t('打开面板 ›', 'open panel ›'))))
     }
 
     function HeaderButton(props) {
@@ -2682,9 +2781,13 @@ window.__ModuleLoader__.load({
     // Test hook (same convention as the host half's `_live`): lets the regression
     // suite assert text safety without booting the overlay in a browser.
     exports._live = { esc: esc, tierBadge: tierBadge, TIER_LABELS_ZH: TIER_LABELS_ZH, settingsFormModel: settingsFormModel }
+    // 测试钩子（沿用 `_live` 的约定）：状态条的纯函数可脱离浏览器直接断言。
+    exports._subagentBar = { subagentBarModel: subagentBarModel, runningAgents: runningAgents }
     exports.inject = ['slots', 'sessions', 'remote', 'uiSession', 'uiConversation', 'locale']
+    var ctxUISession = null
     exports.apply = function (ctx) {
       console.log('[dsh-expert-team] client apply() called')
+      try { ctxUISession = ctx && ctx.uiSession ? ctx.uiSession : null } catch (e) { ctxUISession = null }
       try {
         // N2：待拍板 pendingInteraction 发布（composer select 据此接管）
         var publishPending = (ctx.uiSession && ctx.uiSession.registerPendingInteraction) ? ctx.uiSession.registerPendingInteraction(function () { return 5 }) : null
@@ -2726,6 +2829,13 @@ window.__ModuleLoader__.load({
 
         ctx.slots.inject('conversation.session.header.actions', function () {
           return ctx.slots.register({ name: 'conversation.session.header.actions', id: 'expert-team-open', order: 900, inject: function (sessionId) { return sessionId ? { sessionId: sessionId } : {} } }, wrap(HeaderButton))
+        })
+        // 子代理运行状态条：`conversation.input.dock` 是官方声明在 composer 之上的 list 槽
+        // （文档原文 "Full-width entries above the composer card."），渲染位置在消息列表之后、
+        // 输入框卡片之前 ⇒ 正是"对话框与输入框之间"。list 槽是**纯增**的（不接管、不遮蔽
+        // queue/todo/goal 三个既有条目），所以这里 order 排在它们之后。
+        ctx.slots.inject('conversation.input.dock', function () {
+          return ctx.slots.register({ name: 'conversation.input.dock', id: 'expert-team-subagents', order: 200 }, wrap(SubagentBar))
         })
         ctx.slots.inject('shell.overlay', function () {
           return ctx.slots.register({ name: 'shell.overlay', id: 'expert-team-panel', order: 100 }, wrap(Panel))
