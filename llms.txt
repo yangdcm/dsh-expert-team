@@ -30,7 +30,7 @@
 
 ## 文档
 
-- [README（中文）](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/README.md)：定位、速览、30 秒看懂、截图、FAQ、术语表、安装与排障
+- [README（中文）](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/README.md)：**为谁而做**（中小公司 / 个人接单 / 独立开发者；12 个技术部岗位 → 角色 id 对照表）、速览、30 秒看懂、截图、FAQ、术语表、安装与排障
 - [README (English)](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/README.en.md)：same content in English
 - [CHANGELOG](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/CHANGELOG.md)：逐版本变更与实测数字
 - [SKILL.md](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/skills/expert-team/SKILL.md)：编排协议（团队怎么跑）

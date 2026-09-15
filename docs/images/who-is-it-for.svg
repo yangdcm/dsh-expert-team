@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="100%" role="img" aria-label="一句话 → 一支完整技术部">
+<rect id="bg" x="0" y="0" width="1200" height="660" fill="#f8fafc"/>
+<text id="claim" x="30" y="56" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="30" font-weight="700" fill="#0f172a">一句话 → 一支完整技术部</text>
+<text id="sub" x="30" y="86" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="14" fill="#64748b">12 个岗位 · 9 阶段门控流水线 · 实现者直接改你的代码库</text>
+<text id="who-label" x="30" y="116" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="600" fill="#2563eb">为谁而做（典型场景）</text>
+<rect id="chip0" x="30" y="128" width="360" height="56" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="chip0-t" x="46" y="152" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="600" fill="#0f172a">中小公司</text>
+<text id="chip0-s" x="46" y="171" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">内部工具与产品迭代</text>
+<rect id="chip1" x="420" y="128" width="360" height="56" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="chip1-t" x="436" y="152" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="600" fill="#0f172a">个人接单 / 外包</text>
+<text id="chip1-s" x="436" y="171" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">按单交付，过程与验收可查</text>
+<rect id="chip2" x="810" y="128" width="360" height="56" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="chip2-t" x="826" y="152" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="600" fill="#0f172a">独立开发者</text>
+<text id="chip2-s" x="826" y="171" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">一个人做完整项目</text>
+<text id="seats-label" x="30" y="208" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="600" fill="#2563eb">岗位编织（12 个岗位，各有独立人设与工具边界）</text>
+<rect id="seat0" x="30" y="214" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat0-job" x="44" y="240" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">产品经理</text>
+<text id="seat0-role" x="44" y="260" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">pm</text>
+<text id="seat0-d0" x="44" y="284" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">澄清需求、写 SPEC.md，</text>
+<text id="seat0-d1" x="44" y="299" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">把边界与禁止项前置</text>
+<rect id="seat1" x="320" y="214" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat1-job" x="334" y="240" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">架构师</text>
+<text id="seat1-role" x="334" y="260" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">architect</text>
+<text id="seat1-d0" x="334" y="284" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">方案与模块划分、</text>
+<text id="seat1-d1" x="334" y="299" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">依赖 DAG、AUTHORITY.md 单源</text>
+<rect id="seat2" x="610" y="214" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat2-job" x="624" y="240" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">技术调研</text>
+<text id="seat2-role" x="624" y="260" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">researcher</text>
+<text id="seat2-d0" x="624" y="284" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">取舍与出处，</text>
+<text id="seat2-d1" x="624" y="299" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">给结论不给流水账</text>
+<rect id="seat3" x="900" y="214" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat3-job" x="914" y="240" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">UI/UX</text>
+<text id="seat3-role" x="914" y="260" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">ui</text>
+<text id="seat3-d0" x="914" y="284" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">界面结构与交互设计</text>
+<rect id="seat4" x="30" y="334" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat4-job" x="44" y="360" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">后端</text>
+<text id="seat4-role" x="44" y="380" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">backend</text>
+<text id="seat4-d0" x="44" y="404" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">服务端实现，</text>
+<text id="seat4-d1" x="44" y="419" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">只改自己那份文件</text>
+<rect id="seat5" x="320" y="334" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat5-job" x="334" y="360" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">前端</text>
+<text id="seat5-role" x="334" y="380" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">frontend</text>
+<text id="seat5-d0" x="334" y="404" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">界面实现，</text>
+<text id="seat5-d1" x="334" y="419" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">只改自己那份文件</text>
+<rect id="seat6" x="610" y="334" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat6-job" x="624" y="360" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">数据</text>
+<text id="seat6-role" x="624" y="380" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">dba</text>
+<text id="seat6-d0" x="624" y="404" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">schema / 迁移 / 查询</text>
+<rect id="seat7" x="900" y="334" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat7-job" x="914" y="360" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">安全审计</text>
+<text id="seat7-role" x="914" y="380" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">sec</text>
+<text id="seat7-d0" x="914" y="404" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">越权、注入、</text>
+<text id="seat7-d1" x="914" y="419" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">密钥与依赖风险</text>
+<rect id="seat8" x="30" y="454" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat8-job" x="44" y="480" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">代码评审</text>
+<text id="seat8-role" x="44" y="500" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">reviewer</text>
+<text id="seat8-d0" x="44" y="524" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">独立评审，</text>
+<text id="seat8-d1" x="44" y="539" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">不能自批自过</text>
+<rect id="seat9" x="320" y="454" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat9-job" x="334" y="480" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">测试</text>
+<text id="seat9-role" x="334" y="500" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">qa</text>
+<text id="seat9-d0" x="334" y="524" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">覆盖缺口、边界用例、</text>
+<text id="seat9-d1" x="334" y="539" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">验收判据</text>
+<rect id="seat10" x="610" y="454" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat10-job" x="624" y="480" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">运维</text>
+<text id="seat10-role" x="624" y="500" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">devops</text>
+<text id="seat10-d0" x="624" y="524" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">构建、发布、</text>
+<text id="seat10-d1" x="624" y="539" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">环境与配置</text>
+<rect id="seat11" x="900" y="454" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat11-job" x="914" y="480" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">技术文档</text>
+<text id="seat11-role" x="914" y="500" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">docs</text>
+<text id="seat11-d0" x="914" y="524" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">README / 手册 / 变更记录</text>
+<rect id="lead" x="30" y="572" width="1140" height="48" rx="10" fill="#fff7ed" stroke="#f59e0b"/>
+<text id="lead-label" x="48" y="602" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#b45309">你 · lead</text>
+<text id="lead-text" x="148" y="602" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="12.5" fill="#78350f">只拍板产品级与范围级决策，其余由团队推进（你不写代码，只读工件做门控）</text>
+<text id="boundary" x="30" y="646" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="12" fill="#64748b">诚实边界：它不是一个人类团队 —— 产品级与范围级决策仍由你拍板。</text>
+</svg>

@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="100%" role="img" aria-label="One sentence → a complete engineering department">
+<rect id="bg" x="0" y="0" width="1200" height="660" fill="#f8fafc"/>
+<text id="claim" x="30" y="56" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="30" font-weight="700" fill="#0f172a">One sentence → a complete engineering department</text>
+<text id="sub" x="30" y="86" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="14" fill="#64748b">12 seats · a 9-phase gated pipeline · implementers edit your codebase directly</text>
+<text id="who-label" x="30" y="116" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="600" fill="#2563eb">Who it is for (typical uses)</text>
+<rect id="chip0" x="30" y="128" width="360" height="56" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="chip0-t" x="46" y="152" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="600" fill="#0f172a">Small companies</text>
+<text id="chip0-s" x="46" y="171" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">internal tools and product iteration</text>
+<rect id="chip1" x="420" y="128" width="360" height="56" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="chip1-t" x="436" y="152" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="600" fill="#0f172a">Freelance / outsourcing</text>
+<text id="chip1-s" x="436" y="171" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">per-engagement delivery, auditable</text>
+<rect id="chip2" x="810" y="128" width="360" height="56" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="chip2-t" x="826" y="152" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="600" fill="#0f172a">Solo developers</text>
+<text id="chip2-s" x="826" y="171" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">shipping a complete project alone</text>
+<text id="seats-label" x="30" y="208" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="600" fill="#2563eb">The seats (12, each with its own persona and tool boundary)</text>
+<rect id="seat0" x="30" y="214" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat0-job" x="44" y="240" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">Product manager</text>
+<text id="seat0-role" x="44" y="260" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">pm</text>
+<text id="seat0-d0" x="44" y="284" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">Clarifies the ask, writes</text>
+<text id="seat0-d1" x="44" y="299" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">SPEC.md, front-loads boundaries</text>
+<rect id="seat1" x="320" y="214" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat1-job" x="334" y="240" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">Architect</text>
+<text id="seat1-role" x="334" y="260" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">architect</text>
+<text id="seat1-d0" x="334" y="284" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">Approach and module split,</text>
+<text id="seat1-d1" x="334" y="299" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">dependency DAG, AUTHORITY.md</text>
+<rect id="seat2" x="610" y="214" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat2-job" x="624" y="240" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">Technical research</text>
+<text id="seat2-role" x="624" y="260" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">researcher</text>
+<text id="seat2-d0" x="624" y="284" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">Trade-offs with sources;</text>
+<text id="seat2-d1" x="624" y="299" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">conclusions, not commentary</text>
+<rect id="seat3" x="900" y="214" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat3-job" x="914" y="240" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">UI/UX</text>
+<text id="seat3-role" x="914" y="260" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">ui</text>
+<text id="seat3-d0" x="914" y="284" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">Interface structure</text>
+<text id="seat3-d1" x="914" y="299" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">and interaction design</text>
+<rect id="seat4" x="30" y="334" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat4-job" x="44" y="360" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">Backend</text>
+<text id="seat4-role" x="44" y="380" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">backend</text>
+<text id="seat4-d0" x="44" y="404" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">Server-side implementation;</text>
+<text id="seat4-d1" x="44" y="419" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">own files only</text>
+<rect id="seat5" x="320" y="334" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat5-job" x="334" y="360" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">Frontend</text>
+<text id="seat5-role" x="334" y="380" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">frontend</text>
+<text id="seat5-d0" x="334" y="404" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">UI implementation;</text>
+<text id="seat5-d1" x="334" y="419" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">own files only</text>
+<rect id="seat6" x="610" y="334" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat6-job" x="624" y="360" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">Data</text>
+<text id="seat6-role" x="624" y="380" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">dba</text>
+<text id="seat6-d0" x="624" y="404" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">Schema, migrations, queries</text>
+<rect id="seat7" x="900" y="334" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat7-job" x="914" y="360" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">Security audit</text>
+<text id="seat7-role" x="914" y="380" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">sec</text>
+<text id="seat7-d0" x="914" y="404" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">Privilege escalation, injection,</text>
+<text id="seat7-d1" x="914" y="419" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">secrets and dependency risk</text>
+<rect id="seat8" x="30" y="454" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat8-job" x="44" y="480" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">Code review</text>
+<text id="seat8-role" x="44" y="500" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">reviewer</text>
+<text id="seat8-d0" x="44" y="524" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">Independent review —</text>
+<text id="seat8-d1" x="44" y="539" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">cannot approve its own work</text>
+<rect id="seat9" x="320" y="454" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat9-job" x="334" y="480" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">QA</text>
+<text id="seat9-role" x="334" y="500" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">qa</text>
+<text id="seat9-d0" x="334" y="524" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">Coverage gaps, boundary</text>
+<text id="seat9-d1" x="334" y="539" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">cases, acceptance criteria</text>
+<rect id="seat10" x="610" y="454" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat10-job" x="624" y="480" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">DevOps</text>
+<text id="seat10-role" x="624" y="500" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">devops</text>
+<text id="seat10-d0" x="624" y="524" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">Build, release,</text>
+<text id="seat10-d1" x="624" y="539" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">environments and config</text>
+<rect id="seat11" x="900" y="454" width="270" height="104" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+<text id="seat11-job" x="914" y="480" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#0f172a">Technical docs</text>
+<text id="seat11-role" x="914" y="500" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#2563eb">docs</text>
+<text id="seat11-d0" x="914" y="524" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="11" fill="#64748b">README, manual, changelog</text>
+<rect id="lead" x="30" y="572" width="1140" height="48" rx="10" fill="#fff7ed" stroke="#f59e0b"/>
+<text id="lead-label" x="48" y="602" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#b45309">You · lead</text>
+<text id="lead-text" x="148" y="602" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="12.5" fill="#78350f">You only decide product-level and scope-level questions; the team drives the rest (you never write code — you read artifacts and gate).</text>
+<text id="boundary" x="30" y="646" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif" font-size="12" fill="#64748b">Honest boundary: this is not a human team — product-level and scope-level decisions remain yours.</text>
+</svg>

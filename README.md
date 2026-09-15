@@ -20,30 +20,14 @@
 
 > 零运行时依赖。推荐同时装 **Hindsight**（跨项目记忆）—— 见[依赖与推荐插件](#依赖与推荐插件--dependencies-and-recommended-plugins)。
 
-## 速览 / At a glance
-
-| 项目 | 值 |
-|---|---|
-| 包名 | `@yangdcm/dsh-expert-team`（npm 公开包） |
-| 仓库 | <https://github.com/yangdcm/dsh-expert-team> |
-| 宿主 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) ≥ **0.1.5-rc.1**（`web` profile） |
-| 运行时依赖 | **无**（`dependencies: {}`；`lib/` 只 import 同目录文件与 Node 内建） |
-| Node.js | ≥ 20 |
-| License | MIT |
-| 安装（一行） | `dsh plugin --profile web add @yangdcm/dsh-expert-team` |
-| 上手（一行） | 会话切到「专家团模式」→ `/team 做一个带登录的支付模块` |
-| 过程产物 | `<你的工作区>/team/<run-id>/`（`SPEC.md` · `PLAN.md` · `TASKS.json` · `REVIEW.md` · `TEST.md` · `SUMMARY.md` …） |
-| 本机数据 | `$DSH_HOME/expert-team/`（`settings.json` · `LEARNINGS.md` · `session-runs.json`） |
-
-> dsh 插件 · DeepSeek Harness 多智能体（multi-agent）编排器：角色化 subagent 团队 · 依赖 DAG 并行 · 阶段门控 · 质量门禁 · 工件留痕。
->
-> 给 LLM / 检索用的索引：[`llms.txt`](https://github.com/yangdcm/dsh-expert-team/blob/main/llms.txt)
-
 ## 为谁而做
 
 **给中小团队与个人接单者的一支「完整技术部」** —— 不用招人、不用攒团队：一句话拉起产品、架构、调研、
 UI/UX、前后端、数据、安全、评审、测试、运维、文档这 12 个岗位，按 9 阶段门控流程交付，
 实现者直接改你的代码库，全程留痕成可复核的工件。
+![为谁而做：给中小团队与个人接单者的一支完整技术部 —— 产品经理/架构师/技术调研/UI/UX/后端/前端/数据/安全审计/代码评审/测试/运维/技术文档 12 个岗位编织进 9 阶段门控流水线](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/who-is-it-for.svg)
+
+<sub>图 1：**为谁而做**。三类对象（中小公司内部工具与产品迭代 · 个人接单 / 外包交付 · 独立开发者做完整项目）共用同一套做法：把 12 个技术部岗位编织进一条 9 阶段门控流水线。注意底部那条橙色带 —— **你（lead）与 12 个岗位不在同一层**：你把关产品级与范围级决策，其余由团队推进。</sub>
 
 | 技术部岗位 | 角色 | 在这个流程里做什么 |
 |---|---|---|
@@ -67,9 +51,28 @@ UI/UX、前后端、数据、安全、评审、测试、运维、文档这 12 �
 
 ![专家团 9 阶段门控流水线：澄清→调研→设计→规格评审（硬门）→方案确认→实现（依赖 DAG 并行）→审查→测试→交付](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/pipeline.svg)
 
-<sub>图 1：9 阶段门控流水线。「规格评审」是**硬门** —— SPEC.md 的「边界与禁止项」没填就不放行（`lib/interception.js`）；「方案确认」是默认开启的**确认门**（`identity.keepPlanGate`，可在设置里关掉）；「实现」阶段按依赖 DAG **并行扇出**，多个实现者同时开工、各自只改自己那份文件。</sub>
+<sub>图 2：9 阶段门控流水线。「规格评审」是**硬门** —— SPEC.md 的「边界与禁止项」没填就不放行（`lib/interception.js`）；「方案确认」是默认开启的**确认门**（`identity.keepPlanGate`，可在设置里关掉）；「实现」阶段按依赖 DAG **并行扇出**，多个实现者同时开工、各自只改自己那份文件。</sub>
 
 ---
+## 速览 / At a glance
+
+| 项目 | 值 |
+|---|---|
+| 包名 | `@yangdcm/dsh-expert-team`（npm 公开包） |
+| 仓库 | <https://github.com/yangdcm/dsh-expert-team> |
+| 宿主 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) ≥ **0.1.5-rc.1**（`web` profile） |
+| 运行时依赖 | **无**（`dependencies: {}`；`lib/` 只 import 同目录文件与 Node 内建） |
+| Node.js | ≥ 20 |
+| License | MIT |
+| 安装（一行） | `dsh plugin --profile web add @yangdcm/dsh-expert-team` |
+| 上手（一行） | 会话切到「专家团模式」→ `/team 做一个带登录的支付模块` |
+| 过程产物 | `<你的工作区>/team/<run-id>/`（`SPEC.md` · `PLAN.md` · `TASKS.json` · `REVIEW.md` · `TEST.md` · `SUMMARY.md` …） |
+| 本机数据 | `$DSH_HOME/expert-team/`（`settings.json` · `LEARNINGS.md` · `session-runs.json`） |
+
+> dsh 插件 · DeepSeek Harness 多智能体（multi-agent）编排器：角色化 subagent 团队 · 依赖 DAG 并行 · 阶段门控 · 质量门禁 · 工件留痕。
+>
+> 给 LLM / 检索用的索引：[`llms.txt`](https://github.com/yangdcm/dsh-expert-team/blob/main/llms.txt)
+
 
 ## 30 秒看懂
 
@@ -109,27 +112,27 @@ $ /team 做一个带登录的支付模块
 
 ![专家团全屏画布：阶段条与进度、角色化 subagent 团队编制（谁在跑、用哪个模型）](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/canvas.png)
 
-<sub>图 2：**全屏画布**。看阶段条与进度、团队编制（谁在跑、用哪个模型）、以及 `人 / 事 / 料 / 盘` 四个视角 —— 比浮层更完整的一层视图。</sub>
+<sub>图 3：**全屏画布**。看阶段条与进度、团队编制（谁在跑、用哪个模型）、以及 `人 / 事 / 料 / 盘` 四个视角 —— 比浮层更完整的一层视图。</sub>
 
 ![专家团任务依赖图：任务按依赖 DAG 并行，含 repair 与 review 的返工闭环](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/canvas-tasks.png)
 
-<sub>图 3：**任务依赖图** —— 11 个任务按依赖 DAG 并行推进；7 个完成、4 个失败。失败会触发 `repair` 与**独立复验**（`repair-1 → review-2 → repair-2 → review-3`），直到通过或被如实判为需修订 —— 这就是「返工不收敛」的硬门禁在真实运行里的样子。</sub>
+<sub>图 4：**任务依赖图** —— 11 个任务按依赖 DAG 并行推进；7 个完成、4 个失败。失败会触发 `repair` 与**独立复验**（`repair-1 → review-2 → repair-2 → review-3`），直到通过或被如实判为需修订 —— 这就是「返工不收敛」的硬门禁在真实运行里的样子。</sub>
 
 ![专家团质量门禁违规实时横幅：规格边界未填即被插件代码拦下](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-gate.png)
 
-<sub>图 4：**门禁违规**。看顶部那条横幅 —— 违规项与拒绝理由（例如"SPEC.md 的边界章节已进入 `implement` 但仍无任何一行填写"）由 `lib/interception.js` 挂在宿主 `tools/post-execute` 上当场判出后推出，不是提示词提醒。</sub>
+<sub>图 5：**门禁违规**。看顶部那条横幅 —— 违规项与拒绝理由（例如"SPEC.md 的边界章节已进入 `implement` 但仍无任何一行填写"）由 `lib/interception.js` 挂在宿主 `tools/post-execute` 上当场判出后推出，不是提示词提醒。</sub>
 
 ![专家团浮层：角色成员列表、各自使用的模型、任务详情与工件预览](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-live.png)
 
-<sub>图 5：**角色编制**。看成员列表 —— 谁在跑、用哪个模型、当前在做什么；展开任一成员可看它的任务与产物。模型可按角色分别配置，异构模型用于交叉验证。</sub>
+<sub>图 6：**角色编制**。看成员列表 —— 谁在跑、用哪个模型、当前在做什么；展开任一成员可看它的任务与产物。模型可按角色分别配置，异构模型用于交叉验证。</sub>
 
 ![专家团阶段推进视图：当前阶段、已过阶段与该阶段的工件正文](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-flow.png)
 
-<sub>图 6：**阶段与工件**。看阶段条与预览区 —— 当前阶段、已过阶段、以及该阶段真正写下的工件正文（工件是唯一真源，浮层只是它的视图）。</sub>
+<sub>图 7：**阶段与工件**。看阶段条与预览区 —— 当前阶段、已过阶段、以及该阶段真正写下的工件正文（工件是唯一真源，浮层只是它的视图）。</sub>
 
 ![DeepSeek Harness 官方设置页里的「专家团」分节：18 个设置项、中文标签、改动即时生效](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
 
-<sub>图 7：**设置**。看官方 `设置 →「专家团」` 这一页 —— 18 个设置项、中文标签、**改动即保存并即时生效**（上限/轮次/档位门/振荡检测在进程内重算）；值存在宿主命名空间 `expert-team`，随插件市场的备份/恢复一起走。</sub>
+<sub>图 8：**设置**。看官方 `设置 →「专家团」` 这一页 —— 18 个设置项、中文标签、**改动即保存并即时生效**（上限/轮次/档位门/振荡检测在进程内重算）；值存在宿主命名空间 `expert-team`，随插件市场的备份/恢复一起走。</sub>
 
 **输入框正上方还有一条常驻状态条**（client 槽 `conversation.input.dock`，id `expert-team-subagents`，order 200）—— 有子代理在跑时是琥珀色横幅「N 个子代理运行中」+ 最多 3 个角色名 + 一个跳动圆点，点击它直接打开团队面板；没有在跑时只剩一行暗灰字「无子代理在运行」，会话或状态尚未就绪时则完全不渲染（判据与页头徽章同一条：`/state` 的 `agents[].activity === 'running'`）。
 

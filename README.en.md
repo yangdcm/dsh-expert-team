@@ -22,31 +22,15 @@ A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 > Zero runtime dependencies. Recommended: also install **Hindsight** (cross-project memory) — see [Dependencies and recommended plugins](#dependencies-and-recommended-plugins).
 
-## At a glance
-
-| Item | Value |
-|---|---|
-| Package | `@yangdcm/dsh-expert-team` (public npm package) |
-| Repository | <https://github.com/yangdcm/dsh-expert-team> |
-| Host | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) ≥ **0.1.5-rc.1** (`web` profile) |
-| Runtime dependencies | **none** (`dependencies: {}`; `lib/` imports only sibling files and Node builtins) |
-| Node.js | ≥ 20 |
-| License | MIT |
-| Install (one line) | `dsh plugin --profile web add @yangdcm/dsh-expert-team` |
-| First run (one line) | switch the session to "Expert team mode" → `/team build a payments module with login` |
-| Process artifacts | `<your workspace>/team/<run-id>/` (`SPEC.md` · `PLAN.md` · `TASKS.json` · `REVIEW.md` · `TEST.md` · `SUMMARY.md` …) |
-| Machine-local data | `$DSH_HOME/expert-team/` (`settings.json` · `LEARNINGS.md` · `session-runs.json`) |
-
-> A dsh plugin · a DeepSeek Harness multi-agent (agent team) orchestrator: role-based subagents · DAG parallelism · staged gates · quality gates · artifact trail.
->
-> Index for LLMs and retrieval: [`llms.txt`](https://github.com/yangdcm/dsh-expert-team/blob/main/llms.txt)
-
 ## Who it is for
 
 **A complete engineering department for small teams and solo builders** — no hiring, no assembling a team:
 one sentence spins up the twelve seats (product, architecture, research, UI/UX, backend, frontend, data,
 security, review, QA, devops, docs) and delivers through a 9-phase gated pipeline. Implementers edit your
 codebase directly, and everything is logged as reviewable artifacts.
+![Who it is for: a complete engineering department for small teams and solo builders — product, architecture, research, UI/UX, backend, frontend, data, security, review, QA, devops and docs woven into a 9-phase gated pipeline](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/who-is-it-for.en.svg)
+
+<sub>Figure 1: **who it is for**. Three audiences (internal tools and product iteration in small companies · freelance and outsourced delivery · solo developers shipping a complete project) share one way of working: twelve department seats woven into a 9-phase gated pipeline. Note the amber strip at the bottom — **you (lead) sit on a different layer from the twelve seats**: you decide product-level and scope-level questions, the team drives the rest.</sub>
 
 | Department seat | Agent | What it does in the pipeline |
 |---|---|---|
@@ -70,12 +54,31 @@ solo developers shipping a complete project · any long task where "someone inde
 
 ![The expert-team 9-phase gated pipeline: clarify → research → design → spec-review (hard gate) → plan approval → implement (DAG parallel) → review → test → deliver](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/pipeline.svg)
 
-<sub>Figure 1: the 9-phase gated pipeline. `spec-review` is a **hard gate** — if the SPEC.md
+<sub>Figure 2: the 9-phase gated pipeline. `spec-review` is a **hard gate** — if the SPEC.md
 "boundaries and prohibitions" section is empty, the run does not advance (`lib/interception.js`).
 `plan-approval` is an approval gate that is **on by default** (`identity.keepPlanGate`, can be turned off in settings).
 The `implement` phase **fans out** along the dependency DAG: several implementers start at once, each touching only its own files.</sub>
 
 ---
+## At a glance
+
+| Item | Value |
+|---|---|
+| Package | `@yangdcm/dsh-expert-team` (public npm package) |
+| Repository | <https://github.com/yangdcm/dsh-expert-team> |
+| Host | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) ≥ **0.1.5-rc.1** (`web` profile) |
+| Runtime dependencies | **none** (`dependencies: {}`; `lib/` imports only sibling files and Node builtins) |
+| Node.js | ≥ 20 |
+| License | MIT |
+| Install (one line) | `dsh plugin --profile web add @yangdcm/dsh-expert-team` |
+| First run (one line) | switch the session to "Expert team mode" → `/team build a payments module with login` |
+| Process artifacts | `<your workspace>/team/<run-id>/` (`SPEC.md` · `PLAN.md` · `TASKS.json` · `REVIEW.md` · `TEST.md` · `SUMMARY.md` …) |
+| Machine-local data | `$DSH_HOME/expert-team/` (`settings.json` · `LEARNINGS.md` · `session-runs.json`) |
+
+> A dsh plugin · a DeepSeek Harness multi-agent (agent team) orchestrator: role-based subagents · DAG parallelism · staged gates · quality gates · artifact trail.
+>
+> Index for LLMs and retrieval: [`llms.txt`](https://github.com/yangdcm/dsh-expert-team/blob/main/llms.txt)
+
 
 ## In 30 seconds
 
@@ -118,32 +121,32 @@ answer them:
 
 ![Expert-team full-screen canvas: phase bar, progress, and the role-based subagent roster (who is running, on which model)](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/canvas.png)
 
-<sub>Figure 2: **the full-screen canvas**. Look at the phase bar and progress, the roster (who is running, on which model), and the four views (people / tasks / artifacts / board) — one layer above the floating panel.</sub>
+<sub>Figure 3: **the full-screen canvas**. Look at the phase bar and progress, the roster (who is running, on which model), and the four views (people / tasks / artifacts / board) — one layer above the floating panel.</sub>
 
 ![Expert-team task dependency graph: tasks running in parallel along the DAG, including the repair/review rework loop](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/canvas-tasks.png)
 
-<sub>Figure 3: **the task dependency graph** — 11 tasks advance in parallel along the dependency DAG; 7 completed, 4 failed. A failure triggers `repair` plus **independent re-verification** (`repair-1 → review-2 → repair-2 → review-3`) until it passes or is honestly marked as needing revision — this is what the "rework does not converge" hard gate looks like in a real run.</sub>
+<sub>Figure 4: **the task dependency graph** — 11 tasks advance in parallel along the dependency DAG; 7 completed, 4 failed. A failure triggers `repair` plus **independent re-verification** (`repair-1 → review-2 → repair-2 → review-3`) until it passes or is honestly marked as needing revision — this is what the "rework does not converge" hard gate looks like in a real run.</sub>
 
 ![Expert-team quality-gate violation banner: a missing spec boundary blocked by plugin code, not by a prompt](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-gate.png)
 
-<sub>Figure 4: **gate violations**. Look at the banner at the top — the violation and its refusal reason
+<sub>Figure 5: **gate violations**. Look at the banner at the top — the violation and its refusal reason
 (e.g. "SPEC.md's boundary section has entered `implement` but still has no 'expected rejection' row")
 is decided by `lib/interception.js`, hooked onto the host's `tools/post-execute` waterfall, and surfaced
 immediately. This is code, not a prompt reminder.</sub>
 
 ![Expert-team overlay: role members, the model each one uses, task detail and artifact preview](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-live.png)
 
-<sub>Figure 5: **the roster**. Look at the member list — who is running, on which model, and what it is doing;
+<sub>Figure 6: **the roster**. Look at the member list — who is running, on which model, and what it is doing;
 expand a member for its tasks and artifacts. Models are configurable per role; heterogeneous models are used for cross-checking.</sub>
 
 ![Expert-team phase progress: current and completed phases, plus the artifact body written at that phase](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-flow.png)
 
-<sub>Figure 6: **phases and artifacts**. Look at the phase bar and the preview pane — the current phase, the phases
+<sub>Figure 7: **phases and artifacts**. Look at the phase bar and the preview pane — the current phase, the phases
 already passed, and the actual body of the artifact written in that phase (artifacts are the single source of truth; the overlay is just a view of them).</sub>
 
 ![The expert-team section inside the official DeepSeek Harness settings page: 18 settings, Chinese labels, applied on change](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
 
-<sub>Figure 7: **settings**. Look at the official `Settings → Expert team` page — 18 settings, Chinese labels,
+<sub>Figure 8: **settings**. Look at the official `Settings → Expert team` page — 18 settings, Chinese labels,
 **saved on change and applied immediately** (caps, rounds, the tier gate and the oscillation detector are recomputed
 in-process). Values live in the host namespace `expert-team`, so they travel with the plugin market's backup/restore.</sub>
 
