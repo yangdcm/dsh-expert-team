@@ -3,6 +3,37 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.3.15
+
+**R1 从"协议约定"升级为 `write`/`edit` 通道的硬门禁**（写盘之前拦）+ 三处文档口径改准。
+
+- **门禁语义：创建放行、覆写才拦。** 判据只需一次存在性查询、**不读内容**，因此可以挂在宿主
+  `tools/pre-execute`（**写盘之前**，`{kind:"deny"}` 会短路在 dispatch 之前 ⇒ 真拦得住），
+  与既有的 `post-execute` 内容级校验（台账/规格边界）分工并存、互不冲突。
+  为什么必须"创建放行"：`SKILL.md` §3 要求**首个成员**一次性把 13 份骨架落到 `team/<run-id>/`，
+  其中大多数**不属于它** —— 天真的"角色 ≠ 负责人就拦"会**直接打死建 run**。
+- **唯一机读真源**：`lib/artifact-ownership.js` 的 `ARTIFACT_OWNERS`（"哪份工件归谁"只有这一份）。
+  表格从两张真源推导（`SKILL.md` 的角色/产出表 + `WORKSPACE.md` 的文件/维护者表），
+  口径是**宁可漏拦、不可误伤**：真源有歧义/多负责人就取宽松（`PLAN.md` = pm/architect/dba），
+  `STATE.json`/`ROSTER.json` **显式为空数组**（运行时专属 ⇒ 角色一律不得覆写），
+  "lead 口述 + 指派成员落盘"的那几份（`TASK.md`/`任务看板.md`/`SUMMARY.md`/`RUN.log.md`/`RETRO.md`）**不限制**。
+- **fail-open 的每一种理由都有断言守着**：角色认不出、存在性查不到、目标不在 run 目录、非 `write`/`edit`、
+  终态 run、门禁自身抛错 —— 一律放行，且**降级必留痕**（`ownership-gate-degraded`）。
+  真实事故教训（`post-execute` 签名写错曾让**全工具瘫痪**）在这里被写成断言：门禁**绝不允许**成为工具故障源。
+- ⚠️ **诚实边界**：只覆盖 `write`/`edit` 通道。preset 里持有 `bash` 的角色（backend/frontend/researcher/
+  qa/dba/devops）理论上可用重定向绕过；**首版刻意不对 bash 参数做启发式检查**（易误伤）。
+  对外表述应为"normal 通道有门"，不是"不可能违反"。
+- **测试**：新增 `r1-ownership-gate.test.mjs`（判定矩阵 + 接线断言 + "所有权表只有一份"的单源棘轮）；
+  `artifact-ownership.test.mjs` 扩到 8 条，新增 **F/G 双向一致性**（表→真源防发明拼错；真源→表防漏项）；
+  变异目录 **+M138**（表失效 ⇒ 门禁静默失效 ⇒ 三处断言必红）。
+- **文档改准**：
+  ① `WORKSPACE.md` 的 `STATE.json.members` 示例原写作 `"backend:<subagentId>"`（**与代码相反**）
+  ⇒ 改为 `<agentSessionId>:backend` 并标注真源（`ROSTER.json.members` 的对象形状是另一回事，未动）；
+  ② `SKILL.md` 的 R1 段补"机读真源"与上述诚实边界；
+  ③ **更正两版 README 里一处不成立的强声明** —— 原文写"`mutation-catalog` 要求每个变异体都至少被一个测试杀掉"，
+  而 CI 实际只校验目录**形状**（id 唯一 / `find` 恰好命中一次 / 目标测试存在 / 条数一致），**变异体需手动注入**；
+  同时把两处数字改准（测试文件 **84**、变异 **138**，中英与 `llms.txt` 一致）。
+
 ## 1.3.14
 
 **性能收尾：同一时刻至多一条重活 + profile 补账**（性能修复 #4）
