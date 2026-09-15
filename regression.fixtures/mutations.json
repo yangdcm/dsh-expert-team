@@ -1825,6 +1825,19 @@
           "replace": "  const redir = /(?:\\d?&?>>?|&>>?)\\s*(\"[^\"]+\"|'[^']+'|[^\\s;|&<>()]+)/g; if (true) return []; // MUTANT: 候选提取恒空"
         }
       ]
+    },
+    {
+      "id": "M140-effort-preflight-blind",
+      "title": "effort 预检变睁眼瞎（能力表缺档也不告警 ⇒ 用户又回到\"派工被拒才知道\"）",
+      "why": "2026-09-15 新增（D 项的防回归登记）。这条预检的全部价值在于\"提前说清\"：一旦覆盖判定恒为 ok，用户只能在角色派工被宿主拒绝时才看到那句 UNSUPPORTED_REASONING_EFFORT —— 那正是本次故障的形态（12 个角色全挂，且\"只有 low 报错\"是假象：先派谁先报谁）。本变异体让 missing 恒为空 ⇒ effort-preflight.test.mjs 的 ②③ 段必红。",
+      "test": "effort-preflight.test.mjs",
+      "edits": [
+        {
+          "file": "lib/effort-preflight.js",
+          "find": "  const missing = req.filter((r) => !set.has(String(r).toLowerCase()));",
+          "replace": "  const missing = []; // MUTANT: 缺档也不报（预检变睁眼瞎）"
+        }
+      ]
     }
   ]
 }

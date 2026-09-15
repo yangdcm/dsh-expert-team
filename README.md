@@ -297,7 +297,9 @@ dsh plugin --profile web add dshmarket
 
 **不切「专家团模式」preset 也能用吗？** 能。`/team` 是 host 平面命令，任何预设下都能跑；此时退回通用 `subagent`（角色人设写进 prompt），少的是配置层的边界保证（`toolFilter` / `maxDepth: 1`）。
 
-**浮层/画布打开很慢？** 见[排障](#排障) —— 1.3.5 起 `/state` 不再逐条全量读子会话日志；升级到 ≥ 1.3.5 后重启 `dsh web` 即可。
+**浮层/画布打开很慢？** 见[排障](#排障)
+
+**角色子代理起不来、报 `does not support reasoning effort`？** 这是**会话路由的模型没声明** `reasoningEfforts` 造成的，**不是本插件的问题** —— 宿主在**任何网络 I/O 之前**就把"请求的 effort"与"该模型公布的 efforts"比对，不匹配即拒。修法：在 `~/.dsh/settings.yaml` 的 `agent-default-model` 条目里给该模型补 `reasoningEfforts`（`off/low/high/max`），或把会话切到官方路由。**注意**：本 preset 里 **8 个角色声明 `high`、4 个声明 `low`** ⇒ 漏声明时**任何**带 effort 的角色都会被拒（"只有 low 失败"是假象：先派谁先报谁）。插件加载时会**预检并告警一行**（只告警、不阻断）。 —— 1.3.5 起 `/state` 不再逐条全量读子会话日志；升级到 ≥ 1.3.5 后重启 `dsh web` 即可。
 
 ## 术语 / Glossary
 

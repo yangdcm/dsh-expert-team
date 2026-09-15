@@ -341,7 +341,9 @@ Full command list (`/team codeindex` code index, `/team limit` quotas, `/team se
 
 **Does it work without the "Expert team mode" preset?** Yes. `/team` is a host-plane command and runs under any preset; it then falls back to the generic `subagent` (role personas go into the prompt), losing only the configuration-level boundaries (`toolFilter` / `maxDepth: 1`).
 
-**Why is the overlay/canvas slow to open?** See [Troubleshooting](#troubleshooting) — since 1.3.5 `/state` no longer reads every sub-session log in full; upgrade to ≥ 1.3.5 and restart `dsh web`.
+**Why is the overlay/canvas slow to open?** See [Troubleshooting](#troubleshooting)
+
+**A role subagent fails with `does not support reasoning effort`?** That is the **session route's model** not declaring `reasoningEfforts` — **not this plugin**: the host compares the requested effort against the model's published efforts **before any network I/O** and rejects a mismatch. Fix: add `reasoningEfforts` (`off/low/high/max`) to that model's entry under `agent-default-model` in `~/.dsh/settings.yaml`, or switch the session to an official route. **Note:** this preset declares **`high` for 8 roles and `low` for 4** — with none declared, **every** role that carries an effort is rejected ("only `low` fails" is an illusion: whoever is dispatched first reports first). The plugin runs a **one-line preflight warning** at load (warn only, never blocks). — since 1.3.5 `/state` no longer reads every sub-session log in full; upgrade to ≥ 1.3.5 and restart `dsh web`.
 
 ## Glossary
 

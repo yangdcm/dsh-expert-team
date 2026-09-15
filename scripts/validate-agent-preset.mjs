@@ -117,6 +117,16 @@ let lintWarns = 0;
  * / `ReasoningEffort` 这类必是拼错）；完全无关的键只提示，不判失败 —— 上游新增字段时不会误伤。
  */
 const KNOWN_AGENT_OPTION_KEYS = ['provider', 'model', 'reasoningEffort', 'maxTokens'];
+/**
+ * `reasoningEffort` 的**合法值域**（与宿主 `dsh-llm` 的 effort id 一致）。
+ *
+ * 为什么在这里也校验（2026-09-15 真实故障）：宿主在**任何网络 I/O 之前**就用
+ * `llm.resolveCallWithInfo` 把"请求的 effort"与"该模型公布的 efforts"比对，不匹配即抛
+ * `UNSUPPORTED_REASONING_EFFORT`。preset 侧写一个不在值域里的字符串（例如 `medium`），
+ * 或用户路由侧**漏声明** `reasoningEfforts`，都会让带 effort 的角色派工全部失败。
+ * 本脚本只做 preset 侧的**值域**校验；用户机器上的路由能力表不在这里读（脚本不许依赖用户环境）。
+ */
+const EFFORT_DOMAIN = ['off', 'low', 'high', 'max'];
 const normKey = (k) => String(k || '').toLowerCase().replace(/[_-]/g, '');
 /** 去掉一个尾随的 `s`（`reasoningEfforts` → `reasoningeffort` 这种复数拼错很常见）。 */
 const depluralize = (s) => (s.length > 1 && s.endsWith('s') ? s.slice(0, -1) : s);
@@ -225,6 +235,11 @@ for (const file of files) {
         failures++;
         console.log(`    ✗ agentOptions 键名疑似拼错，运行时会被**静默忽略**：${near.map((n) => `${n.key}（应为 ${n.should}）`).join('、')}`);
       }
+      const effRaw = ao && ao.reasoningEffort;
+      if (effRaw !== undefined && !EFFORT_DOMAIN.includes(String(effRaw).toLowerCase())) {
+        failures++;
+        console.log('    ✗ reasoningEffort="' + effRaw + '" 不在合法值域（' + EFFORT_DOMAIN.join('/') + '）⇒ 该角色派工会被宿主拒绝（UNSUPPORTED_REASONING_EFFORT）');
+      }
       const unknown = unknownKeys(ao, KNOWN_AGENT_OPTION_KEYS);
       if (unknown.length) {
         lintWarns++;
@@ -238,4 +253,10 @@ for (const file of files) {
 }
 
 console.log(`\n合计：校验 ${checked} 行通过，${failures} 个失败，${skipped} 个跳过${lintWarns ? `，${lintWarns} 个键名提示` : ''}`);
+if (failures === 0) {
+  console.log('ⓘ 提醒：上面只校验了 **preset 侧**。会话默认路由（~/.dsh/settings.yaml 的 agent-default-model）');
+  console.log('  里的模型条目**必须**声明 reasoningEfforts（' + EFFORT_DOMAIN.join('/') + '）—— 否则该模型下');
+  console.log('  **任何**带 effort 的角色派工都会被宿主在派工前拒绝（UNSUPPORTED_REASONING_EFFORT）。');
+  console.log('  插件在加载时会对此做一次预检告警（只告警、不阻断）。');
+}
 process.exit(failures ? 1 : 0);

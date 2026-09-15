@@ -778,6 +778,26 @@ DAG 并行扇出、角色 chip、工件脚注全部保留。
   + 9 个不命中形态（工作区代码、`/tmp`、无写目标、工作区根的 `SPEC.md`、非工件名、含变量、
   `/dev/null`、只读命令、更深路径）全部符合预期（`artifact-redirect-watch.test.mjs`）。
 
+### D. 会话模型 effort 预检（**只告警，不阻断**）—— 一次真实故障的定性
+
+- **故障现象**：`model "deepseek-flash" does not support reasoning effort "low"`。**不是插件的错，
+  也不是宿主缺 `low`** —— 是用户 `~/.dsh/settings.yaml` 里会话默认路由（命名空间 `agent-default-model`）
+  的模型条目**漏写 `reasoningEfforts`** ⇒ 宿主能力表里该模型只剩 `off` ⇒ **任何**显式 effort 都被拒
+  （`dsh-llm` 的 `resolveCallWithInfo`：`reasoning === undefined` 时只要传了 `reasoningEffort` 就抛
+  `UNSUPPORTED_REASONING_EFFORT`）。而本 preset **8 个角色声明 `high`、4 个声明 `low`** ⇒ 该路由下
+  **12 个角色全会失败**；"只有 low 报错"是假象（先派谁先报谁）。宿主在**任何网络 I/O 之前**就拒。
+- **插件能做什么 / 不能做什么（如实写）**：派工由宿主 `tool-subagent` + LLM 运行时执行，插件**无法**
+  在派工前改变宿主行为；能做的是**提前一行告警** + 给出修法。因此本项**只告警、不阻断、不改 preset 的
+  effort 分档**（那是设计意图）。
+- **实现**：新增 `lib/effort-preflight.js`（纯函数判定 + 有界重探接线）：读 preset 声明的 effort（真源，
+  按行正则，不引 YAML 解析器）→ 读宿主公开入口 `agentDefaultModel.currentSelection()` 与
+  `llm.resolveModelInfo(provider, model)` → 覆盖不全就**打一行**（含"改哪个命名空间/字段/值域"）。
+  **读不到/抛错一律静默**（fail-open）；一次加载最多一行；服务晚挂则 `ctx.inject` 事件驱动重探。
+- **`scripts/validate-agent-preset.mjs`** 补**值域**校验（`reasoningEffort ∈ off/low/high/max`）+ 结尾指路
+  （脚本**不读用户机器**，只校验 preset 侧）。
+- **文档**：README 中英 FAQ 各补一条（自然语言问句，便于检索）+ `llms.txt` 一行故障排查指针。
+- **测试**：`effort-preflight.test.mjs`（真源分档 8/4 / 判定矩阵 / 只报一次且可操作 / fail-open 静默 / 只告警不阻断）；
+  变异体 `M140-effort-preflight-blind`（缺档也不报 ⇒ 预检变睁眼瞎）**已实测**能杀死测试（5 条断言失败）。
 ### 其它
 
 - 新增变异体 `M139-artifact-redirect-watch-blind`（候选提取恒空 ⇒ 观测器变睁眼瞎），
