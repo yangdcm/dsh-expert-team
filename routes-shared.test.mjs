@@ -202,9 +202,9 @@ console.log('\n⑥ 棘轮：每条路由都经过守卫（新加路由不许裸�
   const bare = (src.match(/wctx\.webServer\.register\(\{/g) || []).length;
   check(bare === 1, '真正调宿主 register 的地方只有 registerLocal 内部那一处', `命中 ${bare}`);
   const sites = (src.match(/registerLocal\(\{/g) || []).length;
-  check(sites === 11, '11 条路由全部走 registerLocal（新增路由必须也走它）', `命中 ${sites}`);
+  check(sites === 12, '12 条路由全部走 registerLocal（新增路由必须也走它）', `命中 ${sites}`);
   const methods = (src.match(/^            methods: \[/gm) || []).length;
-  check(methods === 11, '每条注册都声明了 methods（守卫据此决定校验哪些方法）', `命中 ${methods}`);
+  check(methods === 12, '每条注册都声明了 methods（守卫据此决定校验哪些方法）', `命中 ${methods}`);
   check(/handler: localOnly\(rest\.handler, \{ methods \}\)/.test(src), 'registerLocal 确实套了 localOnly', '');
   for (const [p, m] of [['state', "['GET']"], ['decide', "['POST']"], ['settings', "['GET', 'POST']"]]) {
     const at = src.indexOf(`path: '/plugins/dsh-expert-team/${p}',`);

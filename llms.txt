@@ -26,6 +26,7 @@
 - 写侧门禁：`write`/`edit` 通道有工件归属硬门禁（`tools/pre-execute`；创建放行、覆写他人工件当场拒绝；持 `bash` 的角色仍可能绕过）
 - 设置页：官方 `设置 →「专家团」`（宿主命名空间 `expert-team`，改动即时生效，随插件市场备份/恢复）
 - 故障排查：角色子代理报 `does not support reasoning effort` ⇒ 会话路由的模型需在 `~/.dsh/settings.yaml` 的 `agent-default-model` 条目声明 `reasoningEfforts`（`off/low/high/max`）；插件加载时会预检并告警一行（只告警、不阻断）
+- 记忆后端诊断（**只读**）：`设置 →「专家团」→「记忆后端（Hindsight）· 只读诊断」` —— 配置路径 / 形态（`cloud`·`self-hosted`·`daemon`）/ 地址 / **token 是否已配置（值不显示）** / 最近一条失败的分类与处理建议（WAF 403 与 PG 共享内存 500 是两类不同故障），可按需探测一次连通性（**连通 ≠ 鉴权**：401/403 也算可达）
 - 关键词：dsh 插件 · DeepSeek Harness · 多智能体 · multi-agent · agent team · orchestration · 角色化 subagent · 依赖 DAG 并行 · 阶段门控 · 质量门禁 · 工件留痕 · role-based subagents
 
 ## 文档

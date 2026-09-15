@@ -213,6 +213,19 @@ window.__ModuleLoader__.load({
       '.exp-settings-msg.bad{color:#b3291e;font-weight:600}' +
       '.exp-settings-retry{margin-top:10px;padding:4px 12px;border:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));border-radius:8px;background:var(--dsw-alias-bg-layer-3,var(--bg,#fff));color:inherit;cursor:pointer;font-size:12px}' +
       '.exp-settings-retry:hover{background:var(--dsw-alias-bg-layer-2,var(--bg-subtle,#f6f8fa))}' +
+      // 记忆后端（Hindsight）只读诊断块（1.3.18 一期）
+      '.exp-hs{margin-top:18px;padding-top:6px;border-top:1px solid var(--dsw-alias-border-l1,var(--border,#eef1f4))}' +
+      '.exp-hs-kv{display:flex;align-items:flex-start;gap:10px;padding:6px 0;border-top:1px solid var(--dsw-alias-border-l1,var(--border,#eef1f4))}' +
+      '.exp-hs-k{flex:0 0 152px;max-width:152px;font-size:12.5px;line-height:1.5}' +
+      '.exp-hs-v{flex:1;min-width:0;font-size:12px;line-height:1.5;word-break:break-all}' +
+      '.exp-hs-v code{font-size:11.5px;background:var(--dsw-alias-bg-layer-2,var(--bg-subtle,#f6f8fa));padding:1px 4px;border-radius:4px}' +
+      '.exp-hs-ok{color:#1a7f5a;font-weight:700}' +
+      '.exp-hs-bad{color:#b3291e;font-weight:700}' +
+      '.exp-hs-warn{margin:8px 0;padding:8px 10px;border:1px solid #f0c36d;border-left:3px solid #e0a83c;border-radius:8px;background:linear-gradient(180deg,rgba(224,168,60,.12),transparent);font-size:11.5px;line-height:1.6}' +
+      '.exp-hs-tag{display:inline-block;font-weight:700;color:#8a6100;background:rgba(224,168,60,.18);border-radius:4px;padding:0 5px;margin-right:6px}' +
+      '.exp-hs-hint{color:var(--dsw-alias-label-secondary,var(--text,#57606a))}' +
+      '.exp-hs-notes{margin:6px 0 0;padding-left:16px;font-size:11px;line-height:1.6;color:var(--dsw-alias-label-secondary,var(--text,#57606a))}' +
+      '.exp-hs-copy{margin-left:6px;padding:1px 8px;border:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));border-radius:6px;background:var(--dsw-alias-bg-layer-3,var(--bg,#fff));color:inherit;cursor:pointer;font-size:11px}' +
       '.exp-viol{color:#fff;background:linear-gradient(90deg,#c62828,#e53935);font-size:12px;font-weight:600;padding:7px 10px;border-radius:8px;margin:0 0 8px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
       '.exp-decision{margin:8px 0;padding:12px 14px;border:1px solid var(--dsw-alias-state-business-primary,#0969da);border-radius:10px;background:linear-gradient(180deg,#f6f9ff,var(--dsw-alias-bg-layer-1,#fff))}' +
       '.exp-decision-title{font-weight:700;font-size:13px;color:var(--dsw-alias-state-business-primary,#0969da)}' +
@@ -1243,7 +1256,107 @@ window.__ModuleLoader__.load({
           ? t('改动即保存并即时生效（上限 / 轮次 / 档位门 / 振荡检测开关在进程内重算）。标着「暂未生效」的项尚未接线，改了不会有作用。', 'Saved on change and applied immediately (caps, rounds, the tier gate and the oscillation switch are recomputed in-process). Items marked as not yet in effect are not wired up — changing them does nothing.')
           : t('改动即保存并即时生效（上限 / 轮次 / 档位门 / 振荡检测开关在进程内重算）。', 'Saved on change and applied immediately (caps, rounds, the tier gate and the oscillation switch are recomputed in-process).'))),
         rows,
+        h(HindsightBlock),
         h('div', { className: 'exp-settings-msg' + (err ? ' bad' : '') }, esc(err ? '✗ ' + err : (msg || ''))))
+    }
+
+    /**
+     * 记忆后端（Hindsight）**只读诊断块**（1.3.18 一期）。
+     *
+     * 为什么要有它：用户遇到的两类故障（服务端 PG 共享内存 500 / WAF 403 防火墙页）都在**服务端**，
+     * 此前客户端只把一长串 JSON/HTML 原样抛出 ⇒ 用户不知道该改哪里。本块把"看"做扎实：
+     * 配置文件路径 · 形态（cloud/self-hosted/daemon）· 地址 · **token 是否已配置**（值绝不回显）
+     * · 最近失败（已分类 + 可操作 hint）· 可选的一次连通性探测。
+     *
+     * 三条纪律：① **只读** —— 本块没有任何写入控件；② token 只显示"已配置/未配置"（连长度都不给）；
+     * ③ 读不到/探测失败**只说事实**（notes），绝不装作成功，也绝不刷屏。
+     */
+    function HindsightBlock() {
+      var dS = useState(null); var d = dS[0], setD = dS[1]
+      var pS = useState(null); var probed = pS[0], setProbed = pS[1]
+      var eS = useState(''); var err = eS[0], setErr = eS[1]
+      var bS = useState(false); var busy = bS[0], setBusy = bS[1]
+      var sid = useCurrentSessionId()
+      function load(withProbe) {
+        var q = '/plugins/dsh-expert-team/hindsight-config'
+        var sep = '?'
+        if (withProbe) { q += sep + 'probe=1'; sep = '&' }
+        if (sid) q += sep + 'sessionId=' + encodeURIComponent(String(sid))
+        if (withProbe) { setBusy(true); setErr('') }
+        return fetch(q).then(function (r) {
+          return r.json().catch(function () { return null }).then(function (dd) { return { ok: r.ok, d: dd } })
+        }).then(function (res) {
+          setBusy(false)
+          if (!res.ok || !res.d || !res.d.ok) {
+            setErr(t('读取记忆后端诊断失败：', 'Reading memory-backend diagnostics failed: ') + String((res.d && res.d.error) || ''))
+            return
+          }
+          if (withProbe) setProbed(res.d); else setD(res.d)
+        }).catch(function (e) { setBusy(false); setErr(String(e && e.message ? e.message : e)) })
+      }
+      // 进页面只拉一次（**不带 probe** ⇒ 不发任何探测请求；探测必须由用户点）。
+      useEffect(function () { load(false) }, [])
+      function copyPath() {
+        try { navigator.clipboard.writeText(String((d && d.path) || '')) } catch (e) { /* 复制失败不影响只读展示 */ }
+      }
+      if (!d) {
+        return h('div', { className: 'exp-hs' },
+          h('div', { className: 'exp-settings-group' }, esc(t('记忆后端（Hindsight）· 只读诊断', 'Memory backend (Hindsight) · read-only diagnostics'))),
+          h('div', { className: 'exp-settings-note' }, esc(err || t('（正在读取记忆后端配置…）', '(loading memory backend…)')))
+        )
+      }
+      var rows = []
+      rows.push(h('div', { key: 'hs-path', className: 'exp-hs-kv' },
+        h('span', { className: 'exp-hs-k' }, esc(t('配置文件', 'Config file'))),
+        h('span', { className: 'exp-hs-v' }, h('code', null, esc(String(d.path || ''))),
+          h('button', { className: 'exp-hs-copy', onClick: copyPath }, esc(t('复制路径', 'Copy path'))))))
+      rows.push(h('div', { key: 'hs-exists', className: 'exp-hs-kv' },
+        h('span', { className: 'exp-hs-k' }, esc(t('是否已配置', 'Configured'))),
+        h('span', { className: 'exp-hs-v' }, d.exists
+          ? h('span', { className: 'exp-hs-ok' }, esc(t('已找到配置文件', 'config file found')))
+          : h('span', { className: 'exp-hs-bad' }, esc(t('未找到（可能未配置或使用默认值）', 'not found (unconfigured or using defaults)'))))))
+      rows.push(h('div', { key: 'hs-mode', className: 'exp-hs-kv' },
+        h('span', { className: 'exp-hs-k' }, esc(t('部署形态', 'Server mode'))),
+        h('span', { className: 'exp-hs-v' }, esc(String(d.serverMode || t('（未声明）', '(not declared)'))))))
+      rows.push(h('div', { key: 'hs-url', className: 'exp-hs-kv' },
+        h('span', { className: 'exp-hs-k' }, esc(t('服务地址', 'API URL'))),
+        h('span', { className: 'exp-hs-v' }, esc(String(d.apiUrlEffective || d.apiUrl || t('（未声明）', '(not declared)'))),
+          d.apiUrl && d.apiUrlEffective && d.apiUrl !== d.apiUrlEffective
+            ? h('span', { className: 'exp-settings-note' }, esc(t('（daemon 形态会强制本地地址）', ' (daemon mode forces the local URL)'))) : null)))
+      rows.push(h('div', { key: 'hs-token', className: 'exp-hs-kv' },
+        h('span', { className: 'exp-hs-k' }, esc(t('访问令牌', 'API token'))),
+        h('span', { className: 'exp-hs-v' }, d.apiTokenConfigured
+          ? h('span', { className: 'exp-hs-ok' }, esc(t('已配置 ✓（值不显示）', 'configured ✓ (value never shown)')))
+          : h('span', { className: 'exp-hs-bad' }, esc(t('未配置', 'not configured'))))))
+      if (d.bankForWorkspace) {
+        rows.push(h('div', { key: 'hs-bank', className: 'exp-hs-kv' },
+          h('span', { className: 'exp-hs-k' }, esc(t('本工作区的 bank', 'Bank for this workspace'))),
+          h('span', { className: 'exp-hs-v' }, h('code', null, esc(String(d.bankForWorkspace))))))
+      }
+      if (d.lastFailure && d.lastFailure.summary) {
+        rows.push(h('div', { key: 'hs-fail', className: 'exp-hs-warn' },
+          h('div', null, h('span', { className: 'exp-hs-tag' }, esc(String(d.lastFailure.classification || 'unknown'))),
+            esc(' ' + String(d.lastFailure.at || '') + (d.lastFailure.event ? ' · ' + String(d.lastFailure.event) : ''))),
+          h('div', null, esc(String(d.lastFailure.summary || ''))),
+          h('div', { className: 'exp-hs-hint' }, esc(t('处理建议：', 'Suggested fix: ') + String(d.lastFailure.hint || '')))))
+      }
+      if (probed) {
+        rows.push(h('div', { key: 'hs-probe', className: 'exp-hs-kv' },
+          h('span', { className: 'exp-hs-k' }, esc(t('连通性', 'Reachability'))),
+          h('span', { className: 'exp-hs-v' }, probed.reachable === true
+            ? h('span', { className: 'exp-hs-ok' }, esc(t('可达 ✓ ', 'reachable ✓ ') + String(probed.probeMs == null ? '' : probed.probeMs + ' ms')))
+            : h('span', { className: 'exp-hs-bad' }, esc(t('不可达 ✗ ', 'unreachable ✗ ') + String(probed.probeMs == null ? '' : probed.probeMs + ' ms'))))))
+      }
+      var notes = (d.notes || []).concat(probed && probed.notes ? probed.notes : [])
+      return h('div', { className: 'exp-hs' },
+        h('div', { className: 'exp-settings-group' }, esc(t('记忆后端（Hindsight）· 只读诊断', 'Memory backend (Hindsight) · read-only diagnostics'))),
+        rows,
+        h('div', { className: 'exp-settings-note' },
+          esc(t('重启语义：改 `serverMode` / `apiUrl` 需重启 dsh web；只改 `apiToken` 免重启（401 时会重读）。本期只读：这里没有任何写入控件。',
+            'Restart semantics: changing `serverMode` / `apiUrl` needs a dsh web restart; `apiToken` alone does not (re-read on 401). Read-only: there are no write controls here.'))),
+        h('button', { className: 'exp-settings-retry', onClick: function () { load(true) }, disabled: busy },
+          esc(busy ? t('探测中…', 'probing…') : t('检测连通性', 'Check connectivity'))),
+        notes.length ? h('ul', { className: 'exp-hs-notes' }, notes.map(function (n, i) { return h('li', { key: 'n' + i }, esc(String(n))) })) : null)
     }
 
     function DecisionCard(props) {

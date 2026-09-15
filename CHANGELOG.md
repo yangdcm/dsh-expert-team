@@ -3,6 +3,35 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.3.18
+
+**记忆后端（Hindsight）的只读诊断面板**（一期：只"看"，**不改它的任何行为**）。
+
+- 背景：用户的两类记忆故障都发生在**服务端**，客户端此前只把原始 JSON/HTML 抛出来 ——
+  `… -> 500 {"detail":"could not resize shared memory segment … No space left on device"}`
+  （服务端 PostgreSQL 分配共享内存失败；自托管最常见成因是容器 `/dev/shm` 只有 64 MB）
+  与 `… -> 403 <!doctype html>…网站防火墙…`（**WAF 返回 HTML 防火墙页**，**不是 token 问题**）。
+  两者此前只能看到一坨原文 ⇒ 用户不知道该改哪里。
+- 新路由 `GET /plugins/dsh-expert-team/hindsight-config`（走 `registerLocal` 的同源守卫；**只读**）：
+  读配置真源 `HINDSIGHT_CONFIG || ~/.hindsight/coding-agent.json`（只输出 `serverMode` / `apiUrl` /
+  **token 是否已配置**）、读诊断日志尾部（`diag.jsonl`）、**启发式分类 + 可操作 hint**；
+  **只有 `?probe=1` 才**探一次连通性，且**任何 HTTP 响应（含 401/403）都算「可达」** ⇒ "连通 ≠ 鉴权"。
+- **错误分类**（两类真实故障各自成类、不混成一个）：`waf-blocked`（403 + HTML 防火墙页 ⇒ 查 WAF/白名单，
+  **不是 token**）· `server-shm-or-disk`（PG 共享内存/磁盘 ⇒ `--shm-size=1g`、`df -h`、并行度）·
+  `server-5xx` · `auth`（401/403 且无 HTML）· `unreachable` · `unknown`。
+  **分类是启发式提示、不是断言**（hint 的措辞如实说明）。
+- 设置页新增「记忆后端（Hindsight）· 只读诊断」块：配置路径（可复制）· 形态 · 地址 ·
+  **token 是否已配置（值不显示）** · 本工作区 bank（`coding-agent::<workspace>`）· 最近一条失败
+  （分类 + 处理建议）· 可选的一次连通性探测；并写明**重启语义**（改 `serverMode`/`apiUrl` 需重启
+  `dsh web`，只改 `apiToken` 免重启）。
+- **两条硬纪律（有测试盯着）**：① **只读** —— 模块内没有任何写入 API、路由**只暴露 GET**、界面无写入控件；
+  ② **token 值绝不回显** —— 只给布尔，连长度/前后缀都不给（测试用哨兵串断言**响应全文不含它**）。
+  另外：**不带 `?probe=1` 时一次网络请求都不发**（进设置页不会去打服务端）。
+- `inject_empty`（召回为空）**不算失败** —— 与本仓"两种零必须分得开"的纪律一致（`deferred`/`unresolved` 同理）。
+- **诚实边界**：本版只做"看"，**不写任何文件、不改 Hindsight 的行为**（配置仍由它自己读）；
+  三种形态的**写入**（读-改-写合并 / 0600 原子写 / 明确重启提示）在**二期**。
+- 顺带修 README FAQ 两处**被串行**的条目（"浮层/画布很慢"答案的尾巴被误粘到"reasoning effort"那条后面，中英各一处）。
+
 ## 1.3.15
 
 **R1 从"协议约定"升级为 `write`/`edit` 通道的硬门禁**（写盘之前拦）+ 三处文档口径改准。

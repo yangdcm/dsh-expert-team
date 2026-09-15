@@ -300,9 +300,16 @@ dsh plugin --profile web add dshmarket
 
 **不切「专家团模式」preset 也能用吗？** 能。`/team` 是 host 平面命令，任何预设下都能跑；此时退回通用 `subagent`（角色人设写进 prompt），少的是配置层的边界保证（`toolFilter` / `maxDepth: 1`）。
 
-**浮层/画布打开很慢？** 见[排障](#排障)
+**浮层/画布打开很慢？** 见[排障](#排障)。1.3.5 起 `/state` 不再逐条全量读子会话日志；升级到 ≥ 1.3.5 后重启 `dsh web` 即可（1.3.13 起首屏走 `?section=summary`，1.3.17 起重活也**有界**）。
 
-**角色子代理起不来、报 `does not support reasoning effort`？** 这是**会话路由的模型没声明** `reasoningEfforts` 造成的，**不是本插件的问题** —— 宿主在**任何网络 I/O 之前**就把"请求的 effort"与"该模型公布的 efforts"比对，不匹配即拒。修法：在 `~/.dsh/settings.yaml` 的 `agent-default-model` 条目里给该模型补 `reasoningEfforts`（`off/low/high/max`），或把会话切到官方路由。**注意**：本 preset 里 **8 个角色声明 `high`、4 个声明 `low`** ⇒ 漏声明时**任何**带 effort 的角色都会被拒（"只有 low 失败"是假象：先派谁先报谁）。插件加载时会**预检并告警一行**（只告警、不阻断）。 —— 1.3.5 起 `/state` 不再逐条全量读子会话日志；升级到 ≥ 1.3.5 后重启 `dsh web` 即可。
+**角色子代理起不来、报 `does not support reasoning effort`？** 这是**会话路由的模型没声明** `reasoningEfforts` 造成的，**不是本插件的问题** —— 宿主在**任何网络 I/O 之前**就把"请求的 effort"与"该模型公布的 efforts"比对，不匹配即拒。修法：在 `~/.dsh/settings.yaml` 的 `agent-default-model` 条目里给该模型补 `reasoningEfforts`（`off/low/high/max`），或把会话切到官方路由。**注意**：本 preset 里 **8 个角色声明 `high`、4 个声明 `low`** ⇒ 漏声明时**任何**带 effort 的角色都会被拒（"只有 low 失败"是假象：先派谁先报谁）。插件加载时会**预检并告警一行**（只告警、不阻断）。
+
+**记忆没生效：报 `could not resize shared memory` 或返回一张 HTML 防火墙页？** 这两类错误都发生在**记忆后端（Hindsight）的服务端**，**不是本插件**，也不要把它们混成一件事：
+
+- `… -> 500 {"detail":"could not resize shared memory segment … No space left on device"}` ⇒ 服务端 **PostgreSQL 分配共享内存失败**：自托管最常见成因是容器 `/dev/shm` 只有 64 MB（用 `--shm-size=1g` 重启容器），也可能是磁盘/inode 满（`df -h`）或并行度太高；
+- `… -> 403 <!doctype html>…网站防火墙…` ⇒ 服务端 **WAF 拦下了 POST**（返回的是**HTML 防火墙页**，不是 API 的 JSON 错误）⇒ 检查 WAF 是否拦了 `/v1/` 的请求，或把该客户端 IP/UA 加入白名单。**这不是 token 问题。**
+
+**怎么看**：`设置 →「专家团」→「记忆后端（Hindsight）· 只读诊断」` 会显示配置文件路径、部署形态（`cloud`/`self-hosted`/`daemon`）、服务地址、**token 是否已配置（值不显示）**、以及**最近一条失败的分类与处理建议**，并可按需**探测一次连通性**（**连通 ≠ 鉴权成功**：401/403 也算"可达"）。重启语义：改 `serverMode`/`apiUrl` 需重启 `dsh web`；只改 `apiToken` 免重启（401 时会重读）。本页**只读**，没有任何写入控件。
 
 ## 术语 / Glossary
 
