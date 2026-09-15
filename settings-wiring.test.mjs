@@ -156,8 +156,12 @@ console.log('\n⑦ display 四项：client.js 真的消费设置（源码级 —
   check(/var EXPERT_DISPLAY = \{ pollMs: 3000, capsuleMs: 4000, panelWidth: 420, defaultTab: 'team' \}/.test(c), '有共享的 display 设置桥（EXPERT_DISPLAY + 默认值与 spec 一致）', '');
   check(/function fetchSettingsPayload\(\)/.test(c) && /function applyDisplaySettings\(settings\)/.test(c), '共享取数/应用函数存在（不再是"每个组件各拉一次"）', '');
   check(/return \{ ok: r\.ok, status: r\.status, d: d \}/.test(c), '设置页 GET 复用同一条路（返回值形状不变）', '');
-  check(/setInterval\(load, busy \? Math\.max\(300, Math\.round\(dispCfg\.pollMs \* 0\.4\)\) : dispCfg\.pollMs\)/.test(c),
-    'pollMs：轮询间隔取设置（忙碌时按同一意图加速到 40%）', '');
+  // 1.3.5：间隔多了一层**退避**（单发越慢、下次越晚），但基础节奏仍必须来自 display.pollMs，
+  // 忙碌加速到 40% 的意图也不变 ⇒ 断言改成「基础间隔的来源 + 退避层」两件事，意图不弱化。
+  check(/var base = busy \? Math\.max\(300, Math\.round\(dispCfg\.pollMs \* 0\.4\)\) : dispCfg\.pollMs/.test(c),
+    'pollMs：基础轮询间隔取设置（忙碌时按同一意图加速到 40%）', '');
+  check(/var backoff = Math\.max\(base, Math\.min\(30000, Math\.round\(\(lastMsRef\.current \|\| 0\) \* 2\)\)\)/.test(c),
+    'pollMs：再叠自适应退避（clamp(max(基础, 上次耗时×2), 基础, 30000)）——重活端点不该 1.2s 一发', '');
   check(/load\(\); pollRef\.current = setInterval\(load, dispCfg\.pollMs\)/.test(c), 'pollMs：首轮间隔也取设置', '');
   check(/\}, \[sessionId, selRunV, isOpen, viewMode, dispCfg\.pollMs\]\)/.test(c), 'pollMs：间隔变化会重排定时器（改设置当场生效）', '');
   check(/var ttl = EXPERT_DISPLAY\.capsuleMs[\s\S]{0,200}setTimeout\(function \(\) \{ var i = activityQ\.indexOf\(entry\)/.test(c),

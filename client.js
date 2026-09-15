@@ -1345,7 +1345,22 @@ window.__ModuleLoader__.load({
         if (selRunV && selRunV.workspace && selRunV.runId) { q.push('workspace=' + encodeURIComponent(selRunV.workspace)); q.push('run=' + encodeURIComponent(selRunV.runId)) }
         return url + (q.length ? ('?' + q.join('&')) : '')
       }
+      // ── single-flight + 自适应退避（2026-09-15 性能修复）──────────────────────────
+      // 实测：8 秒内曾发 5 个 /state、其中 4 个重叠，而单发可达 7–283 秒 ⇒ 队列只增不减，
+      // 服务端被压垮（连轻量端点 /settings 都涨到 20.7 s / 42.5 s，整个 dsh web 一起卡）。
+      // 两条纪律：① **未回绝不发下一个**（晚一点看到状态，好过把 web 拖死）；
+      //          ② 间隔随上次耗时**退避**（见 reschedule），重活端点不该 1.2 秒一发。
+      var inFlightRef = useRef(false)
+      var lastMsRef = useRef(0)
       function load() {
+        if (inFlightRef.current) return
+        inFlightRef.current = true
+        var t0 = (window.performance && performance.now) ? performance.now() : Date.now()
+        var done = function () {
+          inFlightRef.current = false
+          var now = (window.performance && performance.now) ? performance.now() : Date.now()
+          lastMsRef.current = Math.max(0, now - t0)
+        }
         fetch(stateUrl()).then(function (r) { return r.ok ? r.json() : null }).then(function (d) {
           if (d && d.ok) {
             setData(d); setErr(''); reschedule(d)
@@ -1380,16 +1395,20 @@ window.__ModuleLoader__.load({
             } catch (e) {}
           } else if (d && !d.ok && d.runsAvailable === 0) { setData(null); if (d.runs) setRunsMeta(d.runs); setErr(t('还没有专家团 run。先运行 /team <task> 开一个。', 'No team run yet — run /team <task> first.')) }
           else if (d && !d.ok) { if (d.runs) setRunsMeta(d.runs); setErr(d.error || ''); }
-        }).catch(function () {})
+        }).catch(function () {}).then(done, done)
       }
       // Adaptive refresh: while any member is running, poll fast (workers are
-      // touching files right now); otherwise 3s. Re-schedules after each load.
+      // touching files right now); otherwise the configured cadence.
+      // 2026-09-15：再叠一层**退避** —— 间隔 = clamp(max(基础间隔, 上次耗时×2), 基础间隔, 30000)。
+      // 单发越慢 ⇒ 下次越晚；display.pollMs 仍是基础节奏（设置里那一项依然说了算）。
       function reschedule(d) {
         var m = (d && d.members) || {}
         var busy = Object.keys(m).some(function (k) { var v = m[k]; return v && typeof v === 'object' && (v.activity === 'running' || v.shortStatus === 'running') })
         clearInterval(pollRef.current)
         // 1.3.4：间隔来自设置 display.pollMs（忙碌时按同一意图加速到 40%，下限 300ms）
-        pollRef.current = setInterval(load, busy ? Math.max(300, Math.round(dispCfg.pollMs * 0.4)) : dispCfg.pollMs)
+        var base = busy ? Math.max(300, Math.round(dispCfg.pollMs * 0.4)) : dispCfg.pollMs
+        var backoff = Math.max(base, Math.min(30000, Math.round((lastMsRef.current || 0) * 2)))
+        pollRef.current = setInterval(load, backoff)
       }
       useEffect(function () {
         if (!isOpen && !viewMode) return undefined // panel closed & not canvas → no polling
