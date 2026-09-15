@@ -6,67 +6,140 @@ English | [中文](README.md)
 [![license](https://img.shields.io/npm/l/@yangdcm/dsh-expert-team)](LICENSE)
 [![CI](https://github.com/yangdcm/dsh-expert-team/actions/workflows/ci.yml/badge.svg)](https://github.com/yangdcm/dsh-expert-team/actions/workflows/ci.yml)
 
+![expert-team: one sentence in, a gated team delivery out](docs/images/hero.svg)
+
 > **One sentence in, a gated team delivery out.** `/team build a payments module with login`
 > assembles a 12-role expert team and runs
 > clarify → research → design → spec-review → plan-approval → implement → review → test → deliver,
 > with implementers editing your workspace directly and every hand-off persisted as a reviewable artifact.
 
-A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh).
-**Zero runtime dependencies, no build step, no install hooks.**
+A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh):
+**zero runtime dependencies, no build step, no install hooks.**
 
-![Quality-gate violations surfaced live](docs/images/panel-gate.png)
-![Members, models and task detail](docs/images/panel-live.png)
-![Phase progress and artifact preview](docs/images/panel-flow.png)
+| 12 roles | 9 phases | 80 test files | 0 runtime deps | 0 build steps |
+|---|---|---|---|---|
+| own persona / `toolFilter` / `maxDepth: 1` | 1 hard gate + 1 approval gate | incl. a 136-entry mutation catalog and several ratchets | `dependencies: {}` | no bundler, no `prepare` hook |
 
-<sub>Real screenshots of the overlay: the gate-violation banner, the roster (who is running, on which model), and task/artifact detail.</sub>
+![The 9-phase gated pipeline](docs/images/pipeline.svg)
+
+<sub>Figure 1: the 9-phase gated pipeline. `spec-review` is a **hard gate** — if the SPEC.md
+"boundaries and prohibitions" section is empty, the run does not advance (`lib/interception.js`).
+`plan-approval` is an approval gate that is **on by default** (`identity.keepPlanGate`, can be turned off in settings).
+The `implement` phase **fans out** along the dependency DAG: several implementers start at once, each touching only its own files.</sub>
 
 ---
 
-## What it solves
+## In 30 seconds
+
+```text
+$ /team build a payments module with login
+  │
+  ├─ clarify       pm           pins down boundaries & acceptance   → SPEC.md ("boundaries and prohibitions")
+  ├─ research      researcher   evidence and options                → RESEARCH.md
+  ├─ design        architect    module split, dependency DAG        → PLAN.md
+  ├─ spec-review   reviewer     ▣ HARD GATE: no boundaries, no pass  ← cannot advance
+  ├─ plan-approval you          ▣ approval gate (on by default)
+  ├─ implement     backend …    fan out along the DAG                → edits your workspace directly
+  ├─ review        sec·reviewer independent review (cross-model)     → REVIEW.md
+  ├─ test          qa           repro, coverage, regressions         → TEST.md
+  └─ deliver       docs         wrap-up and cost                     → SUMMARY.md · METRICS.md
+
+  Persisted throughout: TASKS.json · ROSTER.json · STATE.json · AUTHORITY.md · RUN.log.md
+  On disk at: <your workspace>/team/<run-id>/
+```
+
+<sub>This is the "phase → who works → which artifact" mapping (phase names come from the single source
+`lib/vocab.js`; artifact names are taken from the shipped templates and code). To watch what it is doing
+*right now*, use the overlay in `dsh web`, or `/team canvas` for the full-screen canvas.</sub>
+
+## Why not "one agent doing it all"
 
 A single agent doing large work fails in three predictable ways: **context drift** (long tasks wander),
-**self-review** (nobody verifies independently), and **rework that never converges**. The team attacks
-all three:
+**self-review** (nobody verifies independently), and **rework that never converges**. Four mechanisms
+answer them:
 
 | Mechanism | How |
 |---|---|
-| **Role separation** | 12 roles, each with its own persona, tool boundary (`toolFilter`) and delegation depth (`maxDepth: 1`). PM/architect only read and write planning artifacts, reviewers are read-only, only implementers touch code |
-| **Phase gating** | 9 phases; every hand-off travels as *structured return value + artifact file*, not as chat history |
-| **Quality gates enforced in code** | State-machine consistency is enforced by the plugin (not requested in a prompt): unfinished tasks cannot be marked completed, quality findings must be adjudicated by qa/reviewer, coverage gaps and rework over budget are flagged. Violations appear **live** in the overlay and in `/team status` |
-| **Convergence and accounting** | Per-run token/time/first-runnable/closing-budget metrics; `/team learn` distils cross-run lessons and re-injects them before the next run starts |
+| **Role separation** | 12 roles, each with its own persona, tool boundary (`toolFilter`) and delegation depth (`maxDepth: 1`); product/architecture roles only read and write planning artifacts, review/security are read-only, only implementers touch code |
+| **Phase gates** | 9 phases; every hand-off travels two channels — a structured return value **and** an artifact file. State never rides on chat history |
+| **Quality gates** | State-machine consistency is **enforced by plugin code**, not requested in a prompt: a task cannot be marked completed while unfinished, quality issues must be adjudicated by qa/reviewer, coverage gaps and over-budget rework are caught — violations show up **live** in the overlay and in `/team status` |
+| **Convergence & accounting** | Every run records tokens, elapsed time, time-to-first-artifact and a closing budget; `/team learn` distills cross-run experience and feeds it back before the next run starts |
 
-## Roles and phases
+## What it looks like in action
 
-**12 roles**: pm · architect · researcher · ui · backend · frontend · dba · sec · reviewer · qa · devops · docs.
-The roster is trimmed per task; small jobs start only the roles they need.
+![Quality-gate violations surfaced live](docs/images/panel-gate.png)
 
-**9 phases**: `clarify → research → design → spec-review → plan-approval → implement → review → test → deliver`
-(`/team --tier` picks a quick / standard / strict pipeline).
+<sub>Figure 2: **gate violations**. Look at the banner at the top — the violation and its refusal reason
+(e.g. "SPEC.md's boundary section has entered `implement` but still has no 'expected rejection' row")
+is decided by `lib/interception.js`, hooked onto the host's `tools/post-execute` waterfall, and surfaced
+immediately. This is code, not a prompt reminder.</sub>
+
+![Members, models and task detail](docs/images/panel-live.png)
+
+<sub>Figure 3: **the roster**. Look at the member list — who is running, on which model, and what it is doing;
+expand a member for its tasks and artifacts. Models are configurable per role; heterogeneous models are used for cross-checking.</sub>
+
+![Phase progress and artifact preview](docs/images/panel-flow.png)
+
+<sub>Figure 4: **phases and artifacts**. Look at the phase bar and the preview pane — the current phase, the phases
+already passed, and the actual body of the artifact written in that phase (artifacts are the single source of truth; the overlay is just a view of them).</sub>
+
+![The expert-team section inside the official settings page](docs/images/settings.png)
+
+<sub>Figure 5: **settings**. Look at the official `Settings → Expert team` page — 18 settings, Chinese labels,
+**saved on change and applied immediately** (caps, rounds, the tier gate and the oscillation detector are recomputed
+in-process). Values live in the host namespace `expert-team`, so they travel with the plugin market's backup/restore.</sub>
+
+## Why it is dependable
+
+- **The state machine is enforced by plugin code, not requested by prompt.** `lib/interception.js` moves the
+  "task-ledger contract" and the "spec boundary" rules onto the host's `tools/post-execute` waterfall:
+  duplicate ids / cycles / self-dependencies are rejected on the spot (`HARD_GRAPH_CODES`), and an empty SPEC
+  boundary section cannot enter `implement` (`SPEC_COMPLETE_PHASES`). **Silence in the spec means permission —
+  that is the number-one source of rework.**
+- **Zero runtime dependencies, zero devDependencies, no build step, no `prepare`/`postinstall` hooks.**
+  What you install is exactly what runs; there is no "unknown script at install time" layer.
+- **80 test files plus a 136-entry mutation catalog.** `npm run test:all` needs no `install` (it is what CI runs);
+  the mutation catalog requires every mutant to be killed by at least one test — the suite is not "green",
+  it is *able to catch errors*.
+- **Several ratchet tests** pin down rules that were already thought through, so they cannot quietly regress:
+  `vocab-consistency` (one source for vocabulary and role labels), `scan-single-source` (no fact with two homes),
+  `write-bypass-ratchet` (no write path may bypass interception), `settings-consumers`
+  (**every setting must have a consumer**; the allow-list is compared as a set, so it can only shrink),
+  `state-perf-guard` (sub-session timing must perform **zero** log reads — a performance regression fails the suite).
+- **Two kinds of zero, kept apart.** "I don't know what exists" must not look like "there is nothing":
+  a failed tool-face narrowing distinguishes `no-known-names` from `nothing-to-deny`; when `/state` cannot obtain
+  a timestamp it returns `hasTimestamp: false` instead of passing `0` off as a measurement.
+- **Failures must be loud.** Out-of-bounds writes, artifact divergence and over-budget rework always raise an
+  explicit error; nothing is truncated silently — silent failure is the most expensive bug class in this repo.
+- **Performance is measured and guarded.** `/state` used to read every sub-session log in full: measured at
+  7.1–9.8 s warm and 283.6 s cold (75 sub-sessions), and it blocked the whole `dsh web` event loop. 1.3.5
+  replaced that with a table lookup (measured at 0.0026 ms per call, zero `readSession` calls);
+  **the end-to-end post-fix number is still pending a re-measurement on a real host**.
+  `state-perf-guard.test.mjs` keeps it from coming back.
 
 ## Install
 
 **Requirements**
 
-- `dsh web` (developed and verified against **0.1.5-rc.1**; earlier versions are untested)
+- `dsh web` (developed and verified on **0.1.5-rc.1**; earlier versions are untested)
 - Node.js ≥ 20
-- The 12 role tools (`subagent_pm`, `subagent_architect`, …) require a session running the
-  **「专家团模式」 ("Expert Team mode")** preset. Without it the team falls back to the generic
-  `subagent` tool with personas written into the prompt — nothing breaks, you just lose the
-  config-level boundary guarantees.
+- The 12 role tools (`subagent_pm` / `subagent_architect` / …) are available when the session uses the
+  **"Expert team mode"** preset; otherwise the plugin falls back to the generic `subagent`
+  (role personas go into the prompt) — nothing is lost except the configuration-level boundary guarantees
 
-**Option 1 — CLI (recommended)**
+**Option 1: command line (recommended)**
 
 ```sh
 dsh plugin --profile web add @yangdcm/dsh-expert-team
 # then restart dsh web so the new bundle joins the composition
 ```
 
-**Option 2 — plugin market** (listing not submitted yet, so it may not be searchable)
+**Option 2: plugin market** (listing not submitted yet ⇒ it may not be searchable today)
 
-If it has been listed: `dsh web` → **Settings → Plugin market** → search for "专家团" / "expert team" → install → refresh.
-```
+Once listed: `dsh web` → **Settings → Plugin market** → search "expert team" → install → refresh the page.
 
-**Option 3 — from source (development)**
+**Option 3: from source (development / unpublished)**
 
 ```sh
 cd ~/.dsh/profiles/web
@@ -75,141 +148,157 @@ cd ~/.dsh/profiles/web
 pnpm install && dsh web
 ```
 
-> **The skill is never copied to disk**: when the plugin loads it registers the `expert-team` skill as a
-> **runtime entry** in the host skill registry (relative resources resolve through `resourceBase` back into
-> the package), so nothing appears under `$DSH_HOME/skills/` — uninstalling stays clean. Only when the host
-> has no skill registry does it fall back to copying.
+> **The skill is not copied to disk**: on load the plugin registers the `expert-team` skill as a **runtime entry**
+> in the host's skill registry (relative resources point back into the package via `resourceBase`), so nothing
+> appears under `$DSH_HOME/skills/` — uninstalling leaves no residue. It only falls back to copying into
+> `$DSH_HOME/skills/` when the host has no skill registry.
 >
-> **The 「专家团模式」 preset is still copied** into `$DSH_HOME/.agent-presets/` (the host offers no
-> runtime API to add a preset scan root), but it carries a version stamp and is re-materialised in full on
-> upgrade instead of silently going stale. `/team uninstall` reclaims the copies this plugin laid down —
-> it only removes directories carrying our stamp, and never touches content you authored yourself.
+> **The "Expert team mode" preset is copied** into `$DSH_HOME/.agent-presets/` (the host exposes no runtime API
+> to add a scan root), but it carries a version stamp: on upgrade the whole directory is re-laid, so it never
+> silently stays behind. **The plugin lays it down at load time** — after `/team uninstall`, a restart of
+> `dsh web` re-lays it automatically; no manual rescue needed.
 >
-> **The preset is laid down when the plugin loads**: after `/team uninstall`, a restart of `dsh web`
-> re-materialises it automatically (no manual rescue needed).
+> **Where settings live**: **Settings → Expert team** — a full page inside the official settings menu
+> (the `settings.section` slot, `id: expert-team`, `order: 50`), sharing the same entry point and panel chrome
+> as other plugins' settings. The data layer is the host namespace `expert-team` (owned by the host, travels with
+> the plugin market's **backup and restore**; after a change, caps/rounds/the tier gate are recomputed
+> **in-process** — no restart). The overlay's old "settings" tab was removed so the same form renders in one place.
+> **Honest boundary**: `default roster` (an array of role ids) is deliberately not part of the host schema
+> (unreliable to express there); the control on that page and `$DSH_HOME/expert-team/settings.json` cover it.
+> When the host has no settings service, every setting falls back to that file.
 >
-> **Where settings live**: **Settings →「专家团」** — a full page inside the host's official settings menu
-> (the `settings.section` slot, `id: expert-team`, `order: 50`), sharing the entry point and panel chrome with
-> every other plugin's settings. The data layer is the host namespace `expert-team` (the host owns it, it travels
-> with the plugin market's **backup and restore**, and a changed value recomputes limits, round caps and the tier
-> gate in-process — no restart). The overlay's old "settings" tab has been removed: one form, one place.
-> **Honest boundary**: the default roster (an array of role ids) is deliberately *not* in the host schema (its value
-> type cannot be expressed reliably); it stays with the corresponding control on that page and
-> `$DSH_HOME/expert-team/settings.json`. On a host with no settings service every setting falls back to that file.
->
-> **The A-line switch**: the "narrow the lead's tool face" gate (`gates.leadToolFace`, default `on`)
-> decides whether execution tools (`bash/write/edit/grep/glob`) are taken away from the lead and given
-> to the role subagents. Turn it off with `config.leadToolFace` or `DSH_EXPERT_TEAM_LEAD_TOOLFACE=off`.
+> **The A-line switch**: "Gates → Narrow the lead's tool face" (`gates.leadToolFace`, default `on`) decides whether
+> execution tools (`bash/write/edit/grep/glob`) are taken away from the lead and given to the role subagents.
+> Turn it off with `config.leadToolFace` or `DSH_EXPERT_TEAM_LEAD_TOOLFACE=off`.
 
 ### After installing
 
-1. **Restart `dsh web` once**: on load the plugin lays the 「专家团模式」 preset down into
+1. **Restart `dsh web` once**: on load the plugin lays the "Expert team mode" preset into
    `$DSH_HOME/.agent-presets/expert-team` (version-stamped; upgrades re-lay the whole directory) —
-   **no manual preset creation needed**. After that restart the preset picker lists it, and all 12 role
-   subagent tools are in place (visible under `Settings → Plugins → Plugin list → Session plugins`).
-2. Switch the session to that preset, then run `/team <one-line goal>`.
-3. Change settings under **Settings →「专家团」** (values live in the host namespace `expert-team`, so they
+   **you never create a preset by hand**. After the restart the preset appears in the picker and all 12 role
+   subagent tools are in place (see them under `Settings → Plugins → Plugin list → Session plugins`).
+2. Switch the session to "Expert team mode", then run `/team <one-sentence goal>`.
+3. Change settings under **Settings → Expert team** (values live in the host namespace `expert-team`, so they
    travel with the plugin market's backup/restore).
 
-**Troubleshooting**: a missing preset, or a same-id preset squatting on ours, is healed by **one `dsh web`
-restart** (the plugin re-lays on load); running `/team <task>` once does the same. See the
-[Troubleshooting](#troubleshooting) section below for the details — including the easiest trap to fall into:
-**never** create a preset with the id `expert-team`.
-
-### Custom presets (when you want to change expert-team's defaults)
-
-- **Create**: `Settings → Agent presets → create a custom preset with "creation mode"` (its mechanism is
-  "copy an existing preset"; the result lands in `$DSH_HOME/.agent-presets/<id>/`).
-- **To customise expert-team, copy 「专家团模式」 as the source under an id of your own** (e.g. `my-team`): the
-  copy already carries the 12 role tools and their skill directory, and your edits stay inside `my-team/`.
-  **Never edit files under `expert-team/`** — that copy belongs to the plugin and is re-laid wholesale on
-  load/upgrade.
-- A newly created preset **may only appear in the picker after a `dsh web` restart** (the host reads its roster
-  at startup).
+**Troubleshooting**: if the preset is gone or occupied by an unrelated preset of the same id, **one restart of
+`dsh web` heals it** (the plugin re-lays it at load); alternatively run `/team <task>` once. See the
+[Troubleshooting](#troubleshooting) section for the easiest trap to fall into: **do not** use the id
+`expert-team` when creating a preset.
 
 ## Quick start
 
 ```
-/team build a payments module with login   # one-shot: assemble, deliver, report
-/team --persist refactor the orders module # persistent live team; members stay commandable, resumable across sessions
-/team --no-code review the existing API    # artifacts only (plan/review/test), no code changes
-/team --confirm <task>                     # scaffold the run but do not dispatch until you click "execute"
-/team status                               # phases, roster, model plan and live gate violations
-/team resume <run-id>                      # resume a run in a later session
+/team build a payments module with login   # one sentence in, a one-shot team delivery out
+/team --persist refactor the orders module # persistent live team: members can be re-tasked, survives sessions
+/team --one-shot run a small chore         # inverse override: run once even if persistence is the default
+/team --no-code review the existing API    # produce planning/review/test artifacts only, change no code
+/team --code implement it                  # inverse override: touch code even if "artifacts only" is the default
+/team --confirm a big redesign             # create the run but do not dispatch; click "run" in the overlay
+/team uninstall                            # reclaim what this plugin laid down under $DSH_HOME
+/team status                               # phase, members, model plan and live violations for every run
+/team resume <run-id>                      # resume across sessions
 ```
 
-`/team help` lists the full surface (`/team canvas` visual canvas, `/team codeindex` code index,
-`/team learn` self-learning, `/team limit` quota, `/team settle` cold-start settlement, …).
+Full command list (`/team canvas` visual canvas, `/team codeindex` code index, `/team learn` self-learning,
+`/team limit` quotas, `/team settle` cold-start settlement, …) — see `/team help`.
 
-**Where output lands**
+**Where artifacts land**
 
-- `<your workspace>/team/<run-id>/` — artifacts: `SPEC / PLAN / TASKS / ROSTER / STATE / REVIEW / TEST / SUMMARY / RUN.log.md`
-- `$DSH_HOME/expert-team/` — machine-local preferences and cross-project lessons: `settings.json`, `session-runs.json`, `LEARNINGS.md`
+- `<your workspace>/team/<run-id>/` — `SPEC / PLAN / TASKS / ROSTER / STATE / REVIEW / TEST / SUMMARY / RUN.log.md` etc.
+- `$DSH_HOME/expert-team/` — machine-local preferences and cross-project experience: `settings.json`,
+  `session-runs.json`, `LEARNINGS.md`
 
 ## Layout
 
 ```
-cordis.patch.yml       the only composition contribution: one host-plane /team command row
-lib/command.js         /team command: parse + scaffold workspace + install skill + launch + 11 overlay routes
-lib/validate.js        pure validators for state machine, quality gates and capacity limits
-lib/tier.js            single source of truth for pipeline tiers
-lib/metrics/           token accounting, first-runnable timing, closing budget, METRICS rendering
-lib/routes/            shared route plumbing (uniform 405/500/JSON handling)
-client.js              the overlay panel (module-loader bundle; requires only 'react')
-skills/expert-team/    the orchestration "brain": SKILL.md + references/ + artifact templates
-presets/expert-team/   the 「专家团模式」 preset: 12 role subagent tool instances
+cordis.patch.yml       the only composition contribution: a host-plane /team command line
+lib/command.js         /team command: parse + create workspace + install skill + launch team + 11 overlay routes
+lib/validate.js        pure-function validators for the state machine / quality gates / capacity caps
+lib/interception.js    moves the ledger contract and spec boundary onto tools/post-execute (gates in code)
+lib/tier.js            single source for the process-tier vocabulary
+lib/vocab.js           single source for phases/roles/tiers (both host and client derive from it)
+lib/metrics/           token accounting, time-to-first-artifact, closing budget, METRICS rendering
+lib/routes/            shared route helpers (uniform 405/500/JSON handling, local-origin guard)
+client.js              the client overlay (module-loader bundle, only require('react'))
+skills/expert-team/    the orchestration "brain": SKILL.md + references/ + assets/templates/
+presets/expert-team/   the "Expert team mode" preset: 12 role subagent tool instances
 ```
 
-The orchestration protocol lives in the skill rather than in code, so the team protocol can evolve
-without a package release.
+Almost all of the orchestration protocol lives in the skill rather than in code — so the team protocol can
+evolve with the skill, without shipping a new package.
 
 ## Development
 
 ```sh
-npm run test:all        # 75 test files, zero dependencies, no install needed (this is what CI runs)
-npm run rename <name>   # re-brand a fork: syncs 4 spellings of the package name across 13 files
-npm run check:name      # verify no placeholder package name is left behind
+npm run test:all        # 80 test files, zero dependencies, no install needed (this is what CI runs)
+npm run rename <name>   # after forking: syncs 4 package-name spellings across 13 files
+npm run check:name      # check for leftover placeholder package names
 ```
 
-`npm run gate` (`gate:preset` / `gate:sync` / `gate:evidence` / `gate:bypass` / `gate:mutation`) is a
-**developer-machine-only** set: `gate:sync` diffs the self-installed copies under your local
-`$DSH_HOME`, and `gate:preset` borrows the Config schemas shipped inside your local dsh install
-(the dsh path is auto-detected; override with `DSH_INSTALL`). Neither runs in CI.
+`npm run gate` (`gate:preset` / `gate:sync` / `gate:evidence` / `gate:bypass` / `gate:mutation`) are
+**development-machine-only** gates: `gate:sync` compares against the bootstrap copy under your local
+`$DSH_HOME`, and `gate:preset` borrows the Config schema shipped with the dsh installation
+(auto-detected; override with `DSH_INSTALL`). They are therefore **not run in CI**.
 
 ## Troubleshooting
 
-**No「专家团」page in the settings menu?** Make sure you are on 1.3.0 or newer
-(`dsh plugin --profile web add @yangdcm/dsh-expert-team` to upgrade) and then **restart `dsh web`** — the page
-did not exist before 1.3.0.
+**The "Expert team" page is missing from the settings menu?** Check the version (≥ 1.3.0):
+`dsh plugin --profile web add @yangdcm/dsh-expert-team`, or `npm view @yangdcm/dsh-expert-team version`,
+then **restart `dsh web`** — the page did not exist before 1.3.0.
 
-**The「专家团模式」preset shows as the bare id (`expert-team`) and sessions have none of the 12 role tools?**
-That means `$DSH_HOME/.agent-presets/expert-team/` does not hold our preset (it was deleted, or a same-named
-preset took the id). Fix it in this order:
+**The preset shows as a bare id (`expert-team`) and the session has no role tools?** Then
+`$DSH_HOME/.agent-presets/expert-team/` does not hold our copy (it was deleted, or an unrelated preset
+took the id). Fix in this order:
 
-1. Run `/team <any small task>` once — the plugin re-lays a version-stamped copy from the package (simplest; from
-   1.3.0 it also does this automatically on load);
-2. Or copy over it: `cp -f <package>/presets/expert-team/{agent.cordis.yml,preset.yml} ~/.dsh/.agent-presets/expert-team/`;
-3. Do **not** "create preset" with the same id in Settings → Agent presets — that only gives you a composition of
-   the *source* you picked (e.g. standard mode), not ours.
+1. run `/team <any small task>` — the plugin re-lays a version-stamped copy from the package (easiest; since 1.3.0
+   it is also laid down at plugin load);
+2. or copy from the package: `cp -f <package>/presets/expert-team/{agent.cordis.yml,preset.yml} ~/.dsh/.agent-presets/expert-team/`;
+3. **do not** create a preset with the same id in `Settings → Agent presets` — you would only get a copy of the
+   **source** you picked (e.g. standard mode), not our preset.
 
-Afterwards **restart `dsh web`** (the preset roster is fixed at startup; a page refresh is not enough) and open a
-**new session** (a session's preset is fixed when it is created).
+Then **restart `dsh web`** (the preset roster is read at startup; refreshing the page is not enough) and open a
+**new session** (the preset is fixed when a session is created).
 
-## Known limitations
+**The overlay opens slowly / `dsh web` feels sluggish?** Before 1.3.5, `/state` read every sub-session log in full
+(measured 7–10 s warm, 283 s cold) and blocked the event loop. Upgrade to ≥ 1.3.5 and restart `dsh web`.
 
-- **The local routes are guarded, but that is not authentication**: all 11 overlay routes now check
-  `Host` (blocks DNS rebinding), the `Origin` of write requests (blocks cross-site writes), and the
-  client address (blocks non-loopback clients); write requests must also send `application/json`
-  (blocks form / text-plain "simple requests" that never trigger a preflight). `/file` now goes through
-  the host `ctx.fs` policy and reports 403 instead of falling back to a raw read when the policy denies it.
-  **Residual risk, stated plainly**: a local non-browser process can forge any header, and dsh plugins
-  have no authentication model — so do not expose `dsh web` to an untrusted network (with
-  `host: 0.0.0.0` the guard only stops clients without a loopback address).
-- **Web profile only**: the overlay and routes need `webServer`. The command and artifacts still work without it.
-- **Preset drift**: the bundled 「专家团模式」 is a copy of the official `standard` preset plus the role
-  tools; upstream preset restructuring needs a matching update here. Upgrades re-materialise it by version
-  stamp, and `/team uninstall` reclaims it (a same-named preset you authored yourself is left alone).
-- Calls `git status --porcelain` (read-only) to judge artifact freshness.
+## Custom presets (when you want to change expert-team's defaults)
+
+- **Create**: `Settings → Agent presets → create a custom preset with "Creator mode"` (the mechanism is
+  "copy an existing preset"; output lands in `$DSH_HOME/.agent-presets/<id>/`).
+- **To customize the expert team, copy from "Expert team mode" and pick your own id** (e.g. `my-team`):
+  the copy comes with all 12 role tools and the skill directory, and your edits stay in `my-team/`.
+  **Never edit files in `expert-team/`** — that copy belongs to the plugin and is re-laid on load/upgrade.
+- A newly created preset may only appear in the picker **after a restart of `dsh web`** (the host reads its
+  roster at startup).
+
+## Honest boundaries
+
+- **The local-origin guard is in place, but it is not authentication.** All 11 overlay routes validate the Host
+  header (against DNS rebinding), the Origin of mutating methods (against cross-site writes) and the client
+  address (against the LAN); mutating methods additionally require `application/json` (blocking form/text-plain
+  "simple requests" that skip preflight). `/file` goes through the host `ctx.fs` policy and reports 403 honestly
+  when a read is denied rather than **falling back to a raw read**.
+  **Residual risk, stated plainly**: any local non-browser process can forge arbitrary request headers, and dsh
+  plugins have no authentication model — so do not expose `dsh web` to an untrusted network (with the host
+  configured as `host: 0.0.0.0`, the guard only blocks clients that are not on loopback).
+- **Web profile only**: the overlay and routes depend on `webServer`; without an overlay the command and the
+  artifacts still work.
+- **Preset drift**: the shipped "Expert team mode" is a copy of the official `standard` preset plus the role tools;
+  if the host changes its built-in preset structure, this needs a sync. Upgrades re-lay the whole directory by
+  version stamp; `/team uninstall` reclaims it (a user-authored preset with the same name is never touched).
+- **It intentionally runs `git status --porcelain` (read-only)** to judge artifact freshness.
+- **Unwired settings are never dressed up as working.** Every setting either really takes effect or is marked
+  "not yet in effect" (driven by the single source `INERT_SETTINGS`) and watched by
+  `settings-consumers.test.mjs` — that table is currently empty.
+
+## Compatibility
+
+- `engines.dsh: >=0.1.5-rc.1`, declared in `package.json` under `dsh.compatibility` (`dshReleases` marks it
+  release by release); the plugin market uses it to decide whether this plugin fits your host.
+- Node.js ≥ 20.
+- Profile: `web` (see "Honest boundaries" above).
 
 ## License
 

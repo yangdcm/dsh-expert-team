@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 430" width="100%" role="img" aria-label="专家团 9 阶段门控流水线：规格评审是硬门，方案确认是默认开启的确认门，实现阶段按依赖 DAG 并行扇出">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f6f8fc"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1200" height="430" rx="16" fill="url(#bg)" stroke="#e5e9f0"/>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif">
+    <text x="68" y="58" font-size="20" font-weight="600" fill="#0f172a">9 阶段门控流水线</text>
+    <text x="68" y="82" font-size="12.5" fill="#64748b">每一次交接都走「结构化返回值 + 工件文件」双通道，状态不靠聊天记录传递</text>
+
+    <rect x="68" y="96" width="10" height="10" rx="2" fill="#b45309"/>
+    <text x="84" y="106" font-size="11" fill="#475569">硬门（不过不进下一步）</text>
+    <rect x="222" y="96" width="10" height="10" rx="2" fill="#f59e0b"/>
+    <text x="238" y="106" font-size="11" fill="#475569">确认门（默认开启，可关）</text>
+    <rect x="404" y="96" width="10" height="10" rx="2" fill="#14b8a6"/>
+    <text x="420" y="106" font-size="11" fill="#475569">同一阶段内并行扇出</text>
+
+    <rect x="446" y="88" width="68" height="22" rx="11" fill="#b45309"/>
+    <text x="480" y="103" font-size="11" font-weight="600" fill="#ffffff" text-anchor="middle">硬门</text>
+    <rect x="568" y="88" width="64" height="22" rx="11" fill="#f59e0b"/>
+    <text x="600" y="103" font-size="11" font-weight="600" fill="#ffffff" text-anchor="middle">确认门</text>
+
+    <rect x="68" y="120" width="104" height="64" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="120" y="150" font-size="15" font-weight="600" fill="#0f172a" text-anchor="middle">澄清</text>
+    <text x="120" y="168" font-size="10" fill="#94a3b8" text-anchor="middle">clarify</text>
+    <rect x="188" y="120" width="104" height="64" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="240" y="150" font-size="15" font-weight="600" fill="#0f172a" text-anchor="middle">调研</text>
+    <text x="240" y="168" font-size="10" fill="#94a3b8" text-anchor="middle">research</text>
+    <rect x="308" y="120" width="104" height="64" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="360" y="150" font-size="15" font-weight="600" fill="#0f172a" text-anchor="middle">设计</text>
+    <text x="360" y="168" font-size="10" fill="#94a3b8" text-anchor="middle">design</text>
+    <rect x="428" y="120" width="104" height="64" rx="10" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="480" y="150" font-size="15" font-weight="600" fill="#0f172a" text-anchor="middle">规格评审</text>
+    <text x="480" y="168" font-size="10" fill="#b45309" text-anchor="middle">spec-review</text>
+    <rect x="548" y="120" width="104" height="64" rx="10" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="600" y="150" font-size="15" font-weight="600" fill="#0f172a" text-anchor="middle">方案确认</text>
+    <text x="600" y="168" font-size="10" fill="#b45309" text-anchor="middle">方案确认</text>
+    <rect x="668" y="120" width="104" height="64" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="720" y="150" font-size="15" font-weight="600" fill="#0f172a" text-anchor="middle">实现</text>
+    <text x="720" y="168" font-size="10" fill="#94a3b8" text-anchor="middle">implement</text>
+    <rect x="788" y="120" width="104" height="64" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="840" y="150" font-size="15" font-weight="600" fill="#0f172a" text-anchor="middle">审查</text>
+    <text x="840" y="168" font-size="10" fill="#94a3b8" text-anchor="middle">review</text>
+    <rect x="908" y="120" width="104" height="64" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="960" y="150" font-size="15" font-weight="600" fill="#0f172a" text-anchor="middle">测试</text>
+    <text x="960" y="168" font-size="10" fill="#94a3b8" text-anchor="middle">test</text>
+    <rect x="1028" y="120" width="104" height="64" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="1080" y="150" font-size="15" font-weight="600" fill="#0f172a" text-anchor="middle">交付</text>
+    <text x="1080" y="168" font-size="10" fill="#94a3b8" text-anchor="middle">deliver</text>
+
+    <path d="M172 152 H185" stroke="#94a3b8" stroke-width="1.5"/>
+    <path d="M188 152 l-6 -4 v8 z" fill="#94a3b8"/>
+    <path d="M292 152 H305" stroke="#94a3b8" stroke-width="1.5"/>
+    <path d="M308 152 l-6 -4 v8 z" fill="#94a3b8"/>
+    <path d="M412 152 H425" stroke="#94a3b8" stroke-width="1.5"/>
+    <path d="M428 152 l-6 -4 v8 z" fill="#94a3b8"/>
+    <path d="M532 152 H545" stroke="#94a3b8" stroke-width="1.5"/>
+    <path d="M548 152 l-6 -4 v8 z" fill="#94a3b8"/>
+    <path d="M652 152 H665" stroke="#94a3b8" stroke-width="1.5"/>
+    <path d="M668 152 l-6 -4 v8 z" fill="#94a3b8"/>
+    <path d="M772 152 H785" stroke="#94a3b8" stroke-width="1.5"/>
+    <path d="M788 152 l-6 -4 v8 z" fill="#94a3b8"/>
+    <path d="M892 152 H905" stroke="#94a3b8" stroke-width="1.5"/>
+    <path d="M908 152 l-6 -4 v8 z" fill="#94a3b8"/>
+    <path d="M1012 152 H1025" stroke="#94a3b8" stroke-width="1.5"/>
+    <path d="M1028 152 l-6 -4 v8 z" fill="#94a3b8"/>
+
+    <path d="M720 186 V222" stroke="#14b8a6" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <rect x="544" y="226" width="352" height="76" rx="12" fill="#f0fdfa" stroke="#99f6e4" stroke-dasharray="6 4"/>
+    <text x="720" y="243" font-size="10.5" fill="#0f766e" text-anchor="middle">按依赖 DAG 并行扇出（互不依赖的模块同时开工）</text>
+    <rect x="556" y="252" width="100" height="24" rx="8" fill="#ffffff" stroke="#99f6e4"/>
+    <text x="606" y="268" font-size="10.5" fill="#0f766e" text-anchor="middle">backend</text>
+    <rect x="668" y="252" width="100" height="24" rx="8" fill="#ffffff" stroke="#99f6e4"/>
+    <text x="718" y="268" font-size="10.5" fill="#0f766e" text-anchor="middle">frontend</text>
+    <rect x="780" y="252" width="100" height="24" rx="8" fill="#ffffff" stroke="#99f6e4"/>
+    <text x="830" y="268" font-size="10.5" fill="#0f766e" text-anchor="middle">dba</text>
+    <text x="720" y="293" font-size="10.5" fill="#94a3b8" text-anchor="middle">汇合后一并进入「审查」；每个实现者只改自己那份文件</text>
+
+    <rect x="98" y="326" width="44" height="26" rx="13" fill="#eef2ff" stroke="#c7d2fe"/>
+    <text x="120" y="343" font-size="10.5" fill="#3730a3" text-anchor="middle">pm</text>
+    <rect x="204" y="326" width="72" height="26" rx="13" fill="#eef2ff" stroke="#c7d2fe"/>
+    <text x="240" y="343" font-size="10.5" fill="#3730a3" text-anchor="middle">researcher</text>
+    <rect x="313" y="326" width="94" height="26" rx="13" fill="#eef2ff" stroke="#c7d2fe"/>
+    <text x="360" y="343" font-size="10.5" fill="#3730a3" text-anchor="middle">architect · ui</text>
+    <rect x="448" y="326" width="64" height="26" rx="13" fill="#eef2ff" stroke="#c7d2fe"/>
+    <text x="480" y="343" font-size="10.5" fill="#3730a3" text-anchor="middle">reviewer</text>
+    <rect x="565" y="326" width="70" height="26" rx="13" fill="#eef2ff" stroke="#c7d2fe"/>
+    <text x="600" y="343" font-size="10.5" fill="#3730a3" text-anchor="middle">你（用户）</text>
+    <rect x="793" y="326" width="94" height="26" rx="13" fill="#eef2ff" stroke="#c7d2fe"/>
+    <text x="840" y="343" font-size="10.5" fill="#3730a3" text-anchor="middle">sec · reviewer</text>
+    <rect x="940" y="326" width="40" height="26" rx="13" fill="#eef2ff" stroke="#c7d2fe"/>
+    <text x="960" y="343" font-size="10.5" fill="#3730a3" text-anchor="middle">qa</text>
+    <rect x="1036" y="326" width="88" height="26" rx="13" fill="#eef2ff" stroke="#c7d2fe"/>
+    <text x="1080" y="343" font-size="10.5" fill="#3730a3" text-anchor="middle">docs · devops</text>
+
+    <text x="68" y="392" font-size="11" fill="#64748b">每个阶段都落工件：</text>
+    <text x="68" y="410" font-size="11" fill="#94a3b8">SPEC.md · PLAN.md · TASKS.json · AUTHORITY.md · ROSTER.json · STATE.json · REVIEW.md · TEST.md · SUMMARY.md · METRICS.md</text>
+  </g>
+</svg>
