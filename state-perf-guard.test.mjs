@@ -94,8 +94,16 @@ console.log('\n② 客户端：**所有** /state 拉取经统一 hub（single-fl
   // 首屏便宜、重块晚一拍：两条订阅都要在，且 summary 必须是最快的那条。
   check(/stateHubSubscribe\(stateUrl\('summary'\), dispCfg\.pollMs, onState\)/.test(clientSrc),
     '首屏订阅 `section=summary`（按 pollMs 快拉）', '');
-  check(/stateHubSubscribe\(stateUrl\('people,feed,artifacts'\), Math\.max\(dispCfg\.pollMs, 6000\), onState\)/.test(clientSrc),
-    '重块 `people,feed,artifacts` 低频拉（≥6 s）', '');
+  // 2026-09-15 性能收尾批次：重块**不再无条件拉三块**，而是按"当前可见子标签"选
+  // （真机实测：无条件拉 people,feed,artifacts 每 ≥6 s 一次、单次 4.8 s ⇒ 事件循环长期被占，
+  // 连 9 ms 的 summary 都被拖到 772 ms）。映射 `heavySectionsForTab` 是单一真源。
+  check(/stateHubSubscribe\(stateUrl\(heavy\), Math\.max\(dispCfg\.pollMs, 6000\), onState\)/.test(clientSrc),
+    '重块按当前可见标签订阅（≥6 s 低频），且只拉那一块', '');
+  check(!/stateUrl\('people,feed,artifacts'\)/.test(clientSrc), '无条件的"三块一起拉"已不存在（防改回去）', '');
+  check(/function heavySectionsForTab\(tb\)/.test(clientSrc) && /}, \[sessionId, selRunV, isOpen, viewMode, dispCfg\.pollMs, tab\]\)/.test(clientSrc),
+    '映射函数在位，且订阅随 tab 变化（切标签即换订阅）', '');
+  check(/LIVE_BASE_MS = 10000/.test(clientSrc),
+    '徽章（订阅 people,feed）放慢到 10 s：重分节不再常驻（子代理出现时另有 liveTick 主动催一次）', '');
   check(/function mergeStatePayload\(prev, d\)/.test(clientSrc) && /return mergeStatePayload\(prev, d\)/.test(clientSrc),
     '分节负载**合并**而非替换（摘要那一拍不得把已知成员抹掉）', '');
   check(/stateHubSubscribe\(liveUrl\(sid\), LIVE_BASE_MS, liveDeliver\)/.test(clientSrc), '徽章/画布经 hub 订阅（不再自带 setInterval）', '');

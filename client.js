@@ -1245,6 +1245,21 @@ window.__ModuleLoader__.load({
         h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } }, options))
     }
 
+    // ── 标签 → 重分节映射（性能收尾批次：把"后台一直在拉三块"变成"只拉当前可见的那一块"）──
+    // 依据是各标签**实际渲染所用的字段**（读代码得出，不是猜）：
+    //   `team`（人）：agents/members/roles/wfRuns（people）+ 每个成员的实时操作流（feed）
+    //   `tasks`（事）：依赖图的人员标签来自 people；任务本身在 summary 里（便宜）；
+    //                  任务详情要 files/logTail（artifacts）⇒ 选中时**一次性**补拉（见下）
+    //   `info`（料）：违规/覆盖率在 summary 里；实时日志（logTail）需要 artifacts
+    //   `board`（盘）：只渲染 runs[]（summary 里已有）⇒ **不需要任何重分节**
+    // 这条映射是单一真源：订阅与"选中任务补拉"都读它，护栏测试也钉它。
+    function heavySectionsForTab(tb) {
+      if (tb === 'info') return 'artifacts'
+      if (tb === 'tasks') return 'people,feed' // feed 是内存切片（近乎免费），与徽章同 URL ⇒ 合并成一条
+      if (tb === 'board') return ''
+      return 'people,feed' // team（默认）与人相关视图
+    }
+
     function Panel(props) {
       var sidProp = (props && props.sessionId) || ''
       var viewMode = (props && props.mode) === 'view'
@@ -1373,6 +1388,7 @@ window.__ModuleLoader__.load({
       function onState(d) {
           if (d && d.ok) {
             setData(function (prev) { return mergeStatePayload(prev, d) }); setErr(''); reschedule(d)
+            try { publishToLive(d) } catch (e) {}
             // N2: keep the composer takeover in sync with pendingDecision
             // 批 0-2：把 /state 已经返回的 runId/workspace 一并传出，供横幅拍板时回传给 /decide
             try { if (exports._syncPending) exports._syncPending(d.pendingDecision, sessionId, d.runId, d.workspace) } catch (e) {}
@@ -1407,19 +1423,35 @@ window.__ModuleLoader__.load({
       }
       useEffect(function () {
         if (!isOpen && !viewMode) return undefined // panel closed & not canvas → no polling
+        setLivePublisher(true)   // 面板/画布开着 ⇒ 接管徽章的数据（见 publishToLive 的注释）
         // **双订阅**（性能修复 #3）：`summary` 便宜（阶段/进度/计数）⇒ 按 `pollMs` 快拉，
         // 首屏立刻有内容；`people,feed,artifacts` 贵（成员解析/事件流/日志尾+git）⇒ 至少 6 秒一次，
         // 到达后由 `mergeStatePayload` 合并进同一份 data（**不会**把摘要拍掉的字段抹掉）。
         // stateHub 按 URL 各自计时（per-URL due），所以"一快一慢"不会互相拖。
         var off = stateHubSubscribe(stateUrl('summary'), dispCfg.pollMs, onState)
-        var offDetail = stateHubSubscribe(stateUrl('people,feed,artifacts'), Math.max(dispCfg.pollMs, 6000), onState)
+        // 重分节**按当前可见子标签**订阅（不再无条件拉 people,feed,artifacts）：切标签时旧的 URL
+        // 随卸载退订、新的立即拉一次 ⇒ 后台只保留"你正在看的那一块"。
+        var heavy = heavySectionsForTab(tab)
+        var offDetail = heavy ? stateHubSubscribe(stateUrl(heavy), Math.max(dispCfg.pollMs, 6000), onState) : function () {}
         // catch up instantly when the user returns to the tab / window（只补便宜那一份）
         var onVis = function () { if (document.visibilityState === 'visible') stateHubFetch(stateUrl('summary'), onState) }
         var onFocus = function () { stateHubFetch(stateUrl('summary'), onState) }
         document.addEventListener('visibilitychange', onVis)
         window.addEventListener('focus', onFocus)
-        return function () { off(); offDetail(); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('focus', onFocus) }
-      }, [sessionId, selRunV, isOpen, viewMode, dispCfg.pollMs])
+        return function () {
+          off(); offDetail()
+          setLivePublisher(false)
+          document.removeEventListener('visibilitychange', onVis); window.removeEventListener('focus', onFocus)
+        }
+      }, [sessionId, selRunV, isOpen, viewMode, dispCfg.pollMs, tab])
+
+      // 任务详情（files / logTail）属于 artifacts 分节：**只在真的点开任务时补拉一次**，
+      // 不在后台常驻（否则等于把 artifacts 又变回常驻重分节）。切换选中任务会重新拉一次。
+      useEffect(function () {
+        if (!selTaskV) return
+        if (tab !== 'tasks') return   // 任务详情（files/logTail）只在「事」标签渲染
+        try { stateHubFetch(stateUrl('artifacts'), onState) } catch (e) {}
+      }, [selTaskV && selTaskV.id])
 
       // Make the docked panel reserve space (shift the shell frame) instead of
       // covering the workspace; clears when closed or floating (md-preview trick).
@@ -2442,7 +2474,11 @@ window.__ModuleLoader__.load({
 
     // ── 共享 state 轮询（HeaderButton / LiveCapsule 复用，单例；无订阅者即停）──
     var liveStore = { data: null, sid: '', off: null, subs: new Set() }
-    var LIVE_BASE_MS = 2500   // 徽章/画布的基础节奏（与面板的 dispCfg.pollMs 取更小者由 hub 统一决定）
+    // 徽章/胶囊的基础节奏：它订阅的是 `people,feed`（重分节）。原先 2.5 s 等于**让重活常驻**
+    // （即使没开面板也在拉），实测那正是"重请求在飞时 summary 被拖到 772 ms"的来源之一。
+    // 徽章是环境状态（有没有人在跑／有没有待决策），10 s 的延迟可以接受；
+    // 需要立刻刷新时另有 `liveTick()`（子代理出现时主动催一次），不靠高频轮询。
+    var LIVE_BASE_MS = 10000
     function liveUrl(sid) { return '/plugins/dsh-expert-team/state?sessionId=' + encodeURIComponent(sid) + '&section=people,feed' }
     // 手动催一次（子代理刚出现时立刻刷新一次徽章，不必等下一个 tick）
     function liveTick() {
@@ -2461,20 +2497,45 @@ window.__ModuleLoader__.load({
       var m = (d && d.members) || {}
       return Object.keys(m).some(function (k) { var v = m[k]; return v && typeof v === 'object' && (v.activity === 'running' || v.shortStatus === 'running') })
     }
+    // ── 面板/画布 → 徽章的**发布**路径（性能收尾批次）────────────────────────────
+    // 为什么需要：徽章订阅的是 `people,feed`（重分节）。若它一直自己轮询，而当前标签是「料」
+    // （重分节 = `artifacts`），同一时刻就有**两条重活并发** —— 真机上那正是单发从 2.4 s 变
+    // 4.8 s 的原因（同一事件循环上串行，各自看着都慢一倍），连带把 9 ms 的 summary 拖到 772 ms。
+    // 现在：面板/画布开着时由它们**发布**同一份 payload（零额外请求）；都没开时徽章才自己轮询。
+    var livePublishers = 0
+    function publishToLive(d) {
+      if (!d || typeof d !== 'object') return
+      // 合并而不是替换：面板按标签只发一部分块（缺块 ≠ 空数据），合并后徽章不会因为
+      // 收到一份只有 summary 的负载就把已知的成员/活动抹掉。
+      liveStore.data = Object.assign({}, liveStore.data || {}, d)
+      try { harvestActivity(liveStore.data) } catch (e) {}
+      try { stateHub.busy = teamBusy(liveStore.data) } catch (e) {}
+      liveStore.subs.forEach(function (f) { try { f(liveStore.data) } catch (e) {} })
+    }
+    function setLivePublisher(on) {
+      livePublishers += on ? 1 : -1
+      if (livePublishers < 0) livePublishers = 0
+      notify()
+    }
+    function useLivePublishers() { return useExternal(function () { return livePublishers }) }
+
     function useLiveState(sid) {
       var st = useState(liveStore.data); var data = st[0], setData = st[1]
+      var pubs = useLivePublishers()
       useEffect(function () {
         if (!sid) return undefined
         liveStore.sid = sid
         var fn = function (d) { setData(d) }
         liveStore.subs.add(fn)
+        // 有人发布（面板/画布开着）⇒ 徽章**不再另开一条重分节**，靠发布的数据保持新鲜。
+        if (pubs > 0) return function () { liveStore.subs.delete(fn) }
         // 经 hub 订阅：与面板/画布共用同一个时钟与在飞守卫（这里**不再**自己 setInterval）
         var off = stateHubSubscribe(liveUrl(sid), LIVE_BASE_MS, liveDeliver)
         return function () {
           liveStore.subs.delete(fn)
           off()
         }
-      }, [sid])
+      }, [sid, pubs])
       return data
     }
     // 头部徽章文案：让「并排面板」入口自带团队实时状态（与画布标签职责区分）

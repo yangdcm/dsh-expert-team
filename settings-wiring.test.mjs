@@ -171,7 +171,9 @@ console.log('\n⑦ display 四项：client.js 真的消费设置（源码级 —
     'pollMs：再叠自适应退避（max(最早到期等待, clamp(最慢一次×2, …, 30000))）——重活端点不该 1.2s 一发', '');
   check(/stateHubFetch\(url, onData\)      \/\/ 立即拉一次/.test(c), 'pollMs：订阅时立即拉一次（首轮不空等一个间隔）', '');
   check(/stateHub\.timer = setInterval\(stateHubTick, next\)/.test(c), 'pollMs：真的按计算出的间隔排下一拍（不是裸基础间隔）', '');
-  check(/\}, \[sessionId, selRunV, isOpen, viewMode, dispCfg\.pollMs\]\)/.test(c), 'pollMs：间隔变化会重排定时器（改设置当场生效）', '');
+  // 性能收尾批次后依赖表多了 `tab`（切标签即换重分节订阅）；`dispCfg.pollMs` 仍在表内 ⇒
+  // "间隔变化会重排定时器（改设置当场生效）"这条意图不变，且顺带钉住 tab 依赖。
+  check(/\}, \[sessionId, selRunV, isOpen, viewMode, dispCfg\.pollMs, tab\]\)/.test(c), 'pollMs：间隔（与标签）变化都会重排定时器（改设置当场生效）', '');
   check(/var ttl = EXPERT_DISPLAY\.capsuleMs[\s\S]{0,200}setTimeout\(function \(\) \{ var i = activityQ\.indexOf\(entry\)/.test(c),
     'capsuleMs：胶囊按设置**自动出队**（该功能此前压根不存在）', '');
   check(/Date\.now\(\) - \(last\.ts \|\| 0\) < 4000/.test(c) && /activityQ\.length > 8/.test(c),
