@@ -152,7 +152,10 @@ test('⑤ 接线（源码级）：门禁挂在 pre-execute；复用 roleOfAgent�
     '门禁的角色解析必须复用 `roleOfAgent`（与并发写留痕同一份）');
   assert.match(cmd, /async function roleOfAgent\(/, '`roleOfAgent` 必须存在（共享解析的落点）');
   assert.match(cmd, /async function pathExistsFor\(/, '`pathExistsFor` 必须存在（三态存在性判据）');
-  assert.match(cmd, /import \{ createOwnershipGate \} from '\.\/artifact-ownership\.js'/,
+  // 2026-09-15：该 import 现在**一并**引入 ARTIFACT_OWNERS（R1 绕过检测要"已知工件名"集合）。
+  // 断言因此从"精确整行"放宽为"仍从 artifact-ownership.js 具名导入 createOwnershipGate" ——
+  // 要求不减：仍是同一真源、仍必须具名导入（不许改从别处来）。
+  assert.match(cmd, /import \{[^}]*\bcreateOwnershipGate\b[^}]*\} from '\.\/artifact-ownership\.js'/,
     '必须从 artifact-ownership.js 导入门禁（单一真源）');
   // whoFor 也必须走共享解析（两处各写一份 ⇒ 口径迟早漂移）
   assert.match(cmd, /const role = await roleOfAgent\(ctx, exec, target\.runId\)/,

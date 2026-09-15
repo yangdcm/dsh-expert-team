@@ -1812,6 +1812,19 @@
           "replace": "  if (!Object.prototype.hasOwnProperty.call(ARTIFACT_OWNERS, key)) return null;\n  return null; // MUTANT: 所有权表事实上被清空"
         }
       ]
+    },
+    {
+      "id": "M139-artifact-redirect-watch-blind",
+      "title": "R1 绕过检测变成睁眼瞎（候选写目标一个都提不出来 ⇒ 永远不报警）",
+      "why": "2026-09-15 新增（本轮\"bash 绕过只报不拦\"的防回归登记）。该观测器的全部价值在于\"看见明显写向 run 工件的命令就留痕\"；一旦 extractWriteTargets 返回空（例如正则被改坏、或被人\"顺手简化\"），命中分支永不触发 —— 而工具照常成功、日志也没有任何异常，属典型静默失效。本变异体让候选提取恒返回空数组 ⇒ artifact-redirect-watch.test.mjs 的 ① 段（命中样例）必红。",
+      "test": "artifact-redirect-watch.test.mjs",
+      "edits": [
+        {
+          "file": "lib/artifact-redirect-watch.js",
+          "find": "  const redir = /(?:\\d?&?>>?|&>>?)\\s*(\"[^\"]+\"|'[^']+'|[^\\s;|&<>()]+)/g;",
+          "replace": "  const redir = /(?:\\d?&?>>?|&>>?)\\s*(\"[^\"]+\"|'[^']+'|[^\\s;|&<>()]+)/g; if (true) return []; // MUTANT: 候选提取恒空"
+        }
+      ]
     }
   ]
 }

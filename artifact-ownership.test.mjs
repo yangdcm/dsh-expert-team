@@ -182,10 +182,13 @@ test('反空转 · 真源/模板目录/唯一看板名都还在扫描面里（�
 //   ② 两个 e2e 的必需清单 ≡ ① ∪ {`RUN.log.md`}（RUN.log.md 由日志器创建，不经模板）。
 // 任何一侧漂移（模板改名/加文件、测试加漏检）都会红在这里，而不是等到线上缺文件。
 test('E · 工件清单一致：常量 ≡ 模板目录；e2e 必须清单 ≡ 常量 ∪ {RUN.log.md}', async () => {
+  // 2026-09-15：模板清单已提升为**模块级单一真源** `ARTIFACT_TEMPLATES`（建 run 与 R1 绕过检测
+  // 共用同一份）。断言因此改为**直接读那份真源**，而不是解析源码里的字面量 —— 后者会在重构后
+  // "失去判据对象"（这次就是），而失去对象比断言失败更危险：它看起来像通过。
+  const { ARTIFACT_TEMPLATES: constList } = await import(join(here, 'lib', 'command.js'));
+  assert.ok(Array.isArray(constList) && constList.length > 0, '导出的 ARTIFACT_TEMPLATES 不是非空数组 —— E 的判据失去对象');
   const cmd = await readText(join(here, 'lib', 'command.js'));
-  const m = cmd.match(/const templates = \[([^\]]+)\]/);
-  assert.ok(m, 'lib/command.js 里找不到 `const templates = [...]` —— E 的判据失去对象');
-  const constList = m[1].split(',').map((s) => s.trim().replace(/^'|'$/g, '')).filter(Boolean);
+  assert.ok(/const templates = ARTIFACT_TEMPLATES;/.test(cmd), '建 run 的复制逻辑必须用那份真源（不得另抄清单）');
   const dirList = (await readdir(TEMPLATES_DIR)).filter((f) => !f.startsWith('.'));
   assert.deepEqual([...constList].sort(), [...dirList].sort(),
     `templates 常量与 ${rel(TEMPLATES_DIR)}/ 不一致（常量=${constList.length} 项，目录=${dirList.length} 项）`);
@@ -208,10 +211,8 @@ test('E · 工件清单一致：常量 ≡ 模板目录；e2e 必须清单 ≡ �
 //   G（真源 → 表）：防**漏项**（SKILL.md 给某角色派了工件，而门禁表里没有它 ⇒ 那份工件谁都能覆写）。
 test('F · 所有权表的键都来自真源（不发明文件/不拼错）', async () => {
   const { ARTIFACT_OWNERS } = await import(join(here, 'lib', 'artifact-ownership.js'));
-  const cmd = await readText(join(here, 'lib', 'command.js'));
-  const m = cmd.match(/const templates = \[([^\]]+)\]/);
-  assert.ok(m, 'command.js 里找不到 templates 常量 —— F 的判据失去对象');
-  const templates = m[1].split(',').map((x) => x.trim().replace(/^'|'$/g, '')).filter(Boolean);
+  const { ARTIFACT_TEMPLATES: templates } = await import(join(here, 'lib', 'command.js'));
+  assert.ok(Array.isArray(templates) && templates.length > 0, 'ARTIFACT_TEMPLATES 不是非空数组 —— F 的判据失去对象');
   const skill = await readText(SKILL_MD);
   const workspace = await readText(join(SKILL_ROOT, 'references', 'WORKSPACE.md'));
   const known = new Set([

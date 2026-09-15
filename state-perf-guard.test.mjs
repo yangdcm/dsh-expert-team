@@ -418,9 +418,77 @@ console.log('\n⑥ 推荐插件自检（缺了说一句、装了不吭声、区�
   check(USAGE.includes('推荐插件'), '/team help 里列出推荐插件一行', '');
 }
 
+
+console.log('\n⑥ 已知子代理 id 的**形态卫生**：角色名混进 id 清单 ⇒ 每请求重枚举（2026-09-15 真机定位）');
+{
+  const { memberAgentIds, isAgentIdLike, membersFromState } = _live;
+  const members = ['4f2c2d92-853e-4afa-a355-ec664992ed30:backend', 'ba8c4824-f0ee-477f-9275-daf05c394e37:reviewer', 'backend', 'frontend-F4'];
+  const ids = memberAgentIds(members);
+  check(ids.length === 2 && ids.every(isAgentIdLike), 'memberAgentIds 只返回真 id（角色名与 `frontend-F4` 被排除）', JSON.stringify(ids));
+  const oldWay = [...membersFromState(members).byRole.values()];
+  check(oldWay.some((v) => !isAgentIdLike(v)), '对照：旧写法 `byRole.values()` 确实混着角色名（bug 的入口）', JSON.stringify(oldWay));
+
+  // 行为级：**即使调用方仍传进角色名**，函数内兜底过滤也必须做到"第二个请求零枚举"
+  _live._resetSubHeaderMemo(); _live._resetListSessionsCache();
+  let c6b = 0;
+  const mk6 = () => ({ get: (n) => (n === 'sessionQuery' ? { listSessions: async () => { c6b += 1; return [{ header: { id: 'ended-x', createdAt: 1, parentSession: 'p', delegationDepth: 1 } }] } } : null) });
+  await _live.listSubagentStatusBySession(mk6(), '', ['ended-x', 'backend', 'reviewer']);
+  const rows6 = await _live.listSubagentStatusBySession(mk6(), '', ['ended-x', 'backend', 'reviewer']);
+  check(c6b === 1, '传入角色名时仍**只枚举一次**（角色名不进 missingIds ⇒ 备忘生效）', 'listSessions calls=' + c6b);
+  check(rows6.length === 1 && rows6[0].id === 'ended-x', '角色名不会凭空造出成员行', JSON.stringify(rows6.map((r) => r.id)));
+
+  // 源码级：调用点必须用 memberAgentIds；全仓不得再有 byRole.values()
+  check(/const knownIds = memberAgentIds\(sel\.stateMembers\)/.test(cmdSrc), '调用点已改用 `memberAgentIds`（不是 byRole.values()）', '');
+  check(!/byRole\.values\(\)/.test(cmdSrc), '仓库里不再有 `byRole.values()` 这种 id/角色混着用的写法', '');
+}
+
+console.log('\n⑦ run 列表的**逐 run 戳缓存**（冷启动：重启后第一次不该从零枚举）');
+{
+  const { listRunsInWorkspace, runsIndexPath, RUNS_INDEX_STATS, _resetRunsIndex } = _live;
+  const fsMod = await import('node:fs');
+  const osMod = await import('node:os');
+  const tmp = fsMod.mkdtempSync(join(osMod.tmpdir(), 'et-runs-'));
+  const idx = join(tmp, 'runs-index.json');
+  process.env.DSH_EXPERT_TEAM_RUNS_INDEX = idx;   // 沙箱里 ~/.dsh 不可写 ⇒ 指到临时目录
+  const ws = join(tmp, 'ws');
+  const mkRun = (name, state) => {
+    fsMod.mkdirSync(join(ws, 'team', name), { recursive: true });
+    fsMod.writeFileSync(join(ws, 'team', name, 'STATE.json'), JSON.stringify(state));
+    fsMod.writeFileSync(join(ws, 'team', name, 'TASKS.json'), '[]');
+  };
+  try {
+    mkRun('r1', { phase: 'implement', status: 'running', updatedAt: 't1' });
+    mkRun('r2', { phase: 'test', status: 'running', updatedAt: 't2' });
+    fsMod.writeFileSync(join(ws, 'team', 'CODEINDEX.json'), '{}');   // team/ 根下的普通文件
+    _resetRunsIndex();
+    const a = await listRunsInWorkspace(ws);
+    check(a.length === 2 && a.every((r) => r.health !== 'broken'), '只列**目录**：team/ 下的普通文件不再冒充 broken run', JSON.stringify(a.map((r) => r.runId)));
+    await new Promise((r) => setTimeout(r, 1700));                  // 等防抖保存
+    check(fsMod.existsSync(idx), '索引**落盘**（这是"重启后第一次也快"的前提）', idx);
+    _resetRunsIndex();                                              // 只丢内存 ⇒ 模拟重启
+    const b = await listRunsInWorkspace(ws);
+    check(RUNS_INDEX_STATS.computes === 0 && RUNS_INDEX_STATS.hits === 2, '模拟重启后第一次：**零重算**、两条全命中', JSON.stringify(RUNS_INDEX_STATS));
+    check(JSON.stringify(a) === JSON.stringify(b), '命中结果与重算结果逐字节一致（缓存不改变语义）', '');
+    const st = fsMod.statSync(join(ws, 'team', 'r1', 'STATE.json'));
+    fsMod.utimesSync(join(ws, 'team', 'r1', 'STATE.json'), st.atime, new Date(st.mtimeMs + 4000));
+    _resetRunsIndex();
+    await listRunsInWorkspace(ws);
+    check(RUNS_INDEX_STATS.computes === 1, '只改一个 run 的 STATE ⇒ **恰好重算那一个**（逐 run 失效，不整体作废）', JSON.stringify(RUNS_INDEX_STATS));
+    mkRun('r3', { phase: 'clarify', status: 'running', updatedAt: 't3' });
+    _resetRunsIndex();
+    const d = await listRunsInWorkspace(ws);
+    check(d.length === 3, '新增 run **立即可见**（缓存不得吃掉新 run —— 这是功能不是可牺牲项）', 'runs=' + d.length);
+    check(runsIndexPath() === idx, '索引路径可被 `DSH_EXPERT_TEAM_RUNS_INDEX` 覆盖（测试与运维都用它）', runsIndexPath());
+  } finally {
+    delete process.env.DSH_EXPERT_TEAM_RUNS_INDEX;
+    _resetRunsIndex();
+    fsMod.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 console.log('');
 if (fail > 0) {
   console.log(`✗ /state 性能护栏失败：${fail} 项`);
   process.exit(1);
 }
-console.log('✔ /state 性能护栏通过（热路径零日志读 / 客户端单飞+退避 / 假 id 不落盘 / 反向参数三态）');
+console.log('✔ /state 性能护栏通过（热路径零日志读 / 客户端单飞+退避 / 假 id 不落盘 / 反向参数三态 / id 形态卫生 / run 列表戳缓存）');

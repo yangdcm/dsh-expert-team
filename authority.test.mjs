@@ -125,7 +125,11 @@ console.log('\n⑤ 接线：模板随 run 下发 + `/team check` 真会报');
 {
   const cmdSrc = await readFile(join(here, 'lib', 'command.js'), 'utf8');
   const tpl = await readFile(join(here, 'skills', 'expert-team', 'assets', 'templates', 'AUTHORITY.md'), 'utf8');
-  check(/const templates = \[[^\]]*'AUTHORITY\.md'\]/.test(cmdSrc), '`AUTHORITY.md` 在 run 模板清单里（每个新 run 都有）');
+  // 2026-09-15：模板清单提升为**模块级单一真源** `ARTIFACT_TEMPLATES`（建 run 与 R1 绕过检测共用），
+  // 因此这里改为**读那份真源**（继续按源码字面量解析会在重构后误报 —— 这次就是）。
+  const { ARTIFACT_TEMPLATES } = await import(join(here, 'lib', 'command.js'));
+  check(Array.isArray(ARTIFACT_TEMPLATES) && ARTIFACT_TEMPLATES.includes('AUTHORITY.md'), '`AUTHORITY.md` 在 run 模板清单里（每个新 run 都有）', JSON.stringify(ARTIFACT_TEMPLATES));
+  check(/const templates = ARTIFACT_TEMPLATES;/.test(cmdSrc), '建 run 的复制逻辑用的是那份真源（不是另抄一份清单）', '');
   check(/authorityViolations\(\{ authorityText: authText/.test(cmdSrc), '`/team check` 调用权威表校验');
   check(/只在 `AUTHORITY\.md` 存在时/.test(cmdSrc), '注释里写明了"只在存在时校验"这个取舍');
   check(/示例/.test(tpl) && /\| 事实类别 \| 唯一权威文件 \| 唯一写者 \|/.test(tpl), '模板带表头与示例行（且示例行会被校验判出来）');

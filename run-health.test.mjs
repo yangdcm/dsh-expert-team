@@ -89,11 +89,17 @@ console.log('\n⑥ 接线检查：两个 listRuns 都不得再静默跳过，/te
     return (a >= 0 && b > a) ? src.slice(a, b) : '';
   };
   const listRunsBody = bodyOf('async function listRuns(cwd) {', 'async function renderStatus(');
-  const wsRunsBody = bodyOf('async function listRunsInWorkspace(ws) {', '// Snapshot one run');
+  // 2026-09-15：run 列表行改由 `cachedRunRow`（逐 run 戳缓存）产出，`listRunsInWorkspace` 只负责
+  // 枚举目录 ⇒ 区间必须**从 cachedRunRow 起**，否则两条断言的定位就过期了（不是语义变了）。
+  const wsRunsBody = bodyOf('async function cachedRunRow(', '// Snapshot one run');
   check(!!listRunsBody && !!wsRunsBody, '定位到两个 listRuns 函数体');
   check(/health: 'broken'/.test(listRunsBody), 'listRuns 的 catch 分支产出 broken 行（不再静默跳过）');
-  check(/health: 'broken'/.test(wsRunsBody), 'listRunsInWorkspace 也产出 broken 行（面板下拉同样可见）');
+  check(/health: 'broken'/.test(wsRunsBody), 'run 列表路径（cachedRunRow / listRunsInWorkspace）也产出 broken 行（面板下拉同样可见）');
   check(/runHealth\(state\)/.test(listRunsBody) && /runHealth\(st0\)/.test(wsRunsBody), '两处都接了 runHealth');
+  // 新增语义（2026-09-15）：`team/` 根下的**普通文件**（CODEINDEX.json / LEARNINGS.md…）不是 run，
+  // 旧实现把它们也读一遍 STATE.json ⇒ 面板下拉里出现一串假的 broken run。
+  check(/readdir\(root0, \{ withFileTypes: true \}\)/.test(wsRunsBody) && /isDirectory\?\.\(\) !== true/.test(wsRunsBody),
+    'run 列表只认**目录**（普通文件不再冒充 broken run）');
   check(/r\.health === 'broken'/.test(src), '/team status 对 broken 有专门分支');
   check(/⚠ 需要处理/.test(src), '/team status 给出"需要处理"汇总（否则用户仍不知道怎么用这个信号）');
 }
