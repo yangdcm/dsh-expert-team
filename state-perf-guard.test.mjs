@@ -463,8 +463,18 @@ console.log('\n⑦ run 列表的**逐 run 戳缓存**（冷启动：重启后第
     _resetRunsIndex();
     const a = await listRunsInWorkspace(ws);
     check(a.length === 2 && a.every((r) => r.health !== 'broken'), '只列**目录**：team/ 下的普通文件不再冒充 broken run', JSON.stringify(a.map((r) => r.runId)));
-    await new Promise((r) => setTimeout(r, 1700));                  // 等防抖保存
-    check(fsMod.existsSync(idx), '索引**落盘**（这是"重启后第一次也快"的前提）', idx);
+    // 等防抖保存（防抖 1500 ms）。**不写死 1700 ms 硬等**：那样只有 200 ms 余量，CI 一忙就假红
+    // （2026-09-15 Node 22 那次就是这么红的），而本项断言的本意是"**最终**落盘"、不是"200 ms 内落盘"。
+    // 改成轮询条件、最多 6 s：写盘路径现在是"临时文件 + fsync + rename"，慢在 fsync 上是正常的，
+    // 不该被判成功能坏了。（rename 是原子的 ⇒ existsSync 为真时内容必然完整。）
+    const saveDeadline = Date.now() + 6000;
+    let waited = 0;
+    while (!fsMod.existsSync(idx) && Date.now() < saveDeadline) {
+      await new Promise((r) => setTimeout(r, 25));
+      waited += 25;
+    }
+    check(fsMod.existsSync(idx), '索引**落盘**（这是"重启后第一次也快"的前提）', `等待 ${waited} ms：${idx}`);
+    check(RUNS_INDEX_STATS.saveErrors === 0, '写索引没有报错（saveErrors=0）', JSON.stringify(RUNS_INDEX_STATS));
     _resetRunsIndex();                                              // 只丢内存 ⇒ 模拟重启
     const b = await listRunsInWorkspace(ws);
     check(RUNS_INDEX_STATS.computes === 0 && RUNS_INDEX_STATS.hits === 2, '模拟重启后第一次：**零重算**、两条全命中', JSON.stringify(RUNS_INDEX_STATS));
