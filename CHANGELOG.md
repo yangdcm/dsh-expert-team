@@ -3,6 +3,42 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.3.14
+
+**性能收尾：同一时刻至多一条重活 + profile 补账**（性能修复 #4）
+
+- **真相换了一次**：上一版（1.3.13）把首屏从 3.4 s 打到 9–16 ms ✓，但真机连续采样发现
+  **重分节单次 4 805 ms、每 ≥6 s 一次**，而且**重活在飞时 summary 被拖到 772 ms**。
+  本轮先补账、再按数据改。
+- **profile 补账（`DSH_EXPERT_TEAM_STATE_PROFILE=1`）**：原先只有 `runs+select / subs / wfLabels / roles / tail`
+  五个点，其中 `tail` 把"从角色解析之后到回响应"的**全部**工作都吞进一段（真机上那段约 2 s 无账）。
+  现按执行顺序补齐：`people-enrich`（过滤/映射/登记/workflow 元数据/enrich）、`agents`（agents 映射 + 实时投影）、
+  `assemble`（违规/schema 校验/告警）、`artifacts`（`RUN.log` 尾 + git）、`tail`（持久化 + 序列化）
+  ⇒ **账目逐段对齐，不再有"无账的 2 秒"**。
+- **`feed` 也依赖 subs**：原先只有 `want('people')` 才算 subs，于是单独请求 `section=feed` 会**静默返回空 feed**
+  —— 典型的"两种零分不清"。现在 `needSubs = want('people') || want('feed')`，该花的一次枚举照花。
+- **新增两道上限（都带如实降级）**：
+  - `DSH_EXPERT_TEAM_ARTIFACTS_DEADLINE_MS`（默认 2 500 ms）：artifacts 段要读 `RUN.log` 尾、还要跑 `git`，
+    是**全链最不可控**的一段。超期限就跳过，并如实记 `artifacts:deadline`（读完日志再超就记 `files:deadline`），
+    跳过时**不写**那些键 —— 缺块 ≠ 空数据。
+  - `DSH_EXPERT_TEAM_MAX_FEED_AGENTS`（默认 60）：feed 按子代理条数封顶，被挡住的条数记 `feed:<n>`。
+- **客户端：重分节改为"只拉当前可见子标签那一块"**（此前无条件每 ≥6 s 拉 `people,feed,artifacts`）：
+  - `team`（人）→ `people,feed`；`tasks`（事）→ `people,feed`；`info`（料）→ `artifacts`；
+    **`board`（盘）→ 不拉任何重分节**（它只渲染 `runs[]`，而 runs 在 `summary` 里就有）；
+  - 「事」点开任务详情（需要 `files`/`logTail`）时才**一次性**补拉 `artifacts`，不常驻；
+  - 映射收敛成**只有两个 canonical 重分节 URL**（`people,feed` / `artifacts`）⇒ `stateHub` 的同 URL 在飞合并
+    能把面板、画布、徽章压成**同一条**。
+- **徽章不再与「料」标签并发两条重活**：徽章原先一直自己订阅 `people,feed`（2.5 s 一拍 ⇒ 重活常驻）。现在
+  面板/画布开着时由它们**发布**同一份 payload（`publishToLive`，发布时**合并**：缺块 ≠ 空数据），
+  徽章只在**无人发布**时才自己轮询，且节奏放宽到 **10 s**（子代理出现时另有 `liveTick()` 主动催一次）。
+- **真机数字的解释（诚实标注口径）**：`4 805 ms ≈ 2 × 2 400 ms` —— 当时画布同时订阅了 `people,feed` 与
+  `people,feed,artifacts` 两条**不同 URL** 的重活，服务端在同一事件循环上串行处理 ⇒ 各自看着慢一倍，
+  并把 `summary` 拖到 772 ms。本轮把重活收敛成"同一时刻至多一条"，这类并发在结构上不再可能。
+- 本机可复现的旁证（真实 run、进程内计时）：`snapshotRun` **1.3 ms**、`runLogTail` **0.3 ms**、
+  `liveFiles`（git）**0.3 ms 冷 / 0.0 ms 命中缓存** ⇒ artifacts 段**不是**那 2 s 的来源，
+  与"并发才是主因"的判断一致。
+- 端到端复测仍归用户（本机装不进运行中的宿主）：预期**同一时刻只有一条重活**、
+  `summary` 在重活在飞时仍为**十毫秒级**（此前 772 ms）、停留在某标签时后台不再出现不相干分节。
 ## 1.3.13
 
 **渐进式状态：`/state` 支持 `?section=`，首屏与会话体量解耦**（性能修复 #3）
