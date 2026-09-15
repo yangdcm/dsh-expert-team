@@ -18,6 +18,8 @@
 |---|---|---|---|---|
 | 各带人设 / `toolFilter` / `maxDepth: 1` | 含 1 道硬门 + 1 道确认门 | 含 136 条变异目录与多组棘轮 | `dependencies: {}` | 无 bundler、无 `prepare` 钩子 |
 
+> 零运行时依赖。推荐同时装 **Hindsight**（跨项目记忆）—— 见[依赖与推荐插件](#依赖与推荐插件)。
+
 ## 为谁而做
 
 **给中小团队与个人接单者的一支「完整技术部」** —— 不用招人、不用攒团队：一句话拉起产品、架构、调研、
@@ -183,6 +185,45 @@ pnpm install && dsh web
 
 **排障**：预设丢了、或被同名预设占住 —— **重启一次 `dsh web` 即自愈**（插件加载会重铺），也可跑一次 `/team <任务>`。
 细节见下面「排障」一节，其中包含那条最容易踩的坑：**不要**用 `expert-team` 这个 id 去「创建 preset」。
+
+## 依赖与推荐插件
+
+**必需**：无。本插件**零运行时依赖**（`package.json` 无 `dependencies` 字段；`lib/` 只 import 同目录文件与 Node 内建，
+`client.js` 只 `require('react')`，由宿主提供），只要求宿主 `DeepSeek Harness ≥ 0.1.5-rc.1`（web profile）。
+下面这些**不装也能跑完整个团队流程**，装上是为了让「跨项目记忆」「费用显示」这类事真正兑现。
+
+### 推荐：Hindsight 长期记忆（跨项目 / 跨会话）
+
+```sh
+dsh plugin --profile web add @vectorize-io/hindsight-coding-agents
+```
+
+- **为什么**：专家团的 skill 会在 clarify 前用 `hindsight_search_knowledge_pages` 召回其它项目落库的知识、
+  在 deliver 时用 `hindsight_ingest_document` 把本次经验落库（标题「专家团经验 · <runId>」/「项目知识 · <cwd 名>」）。
+- **不装会怎样**：**不报错、团队照常交付** —— 只是这些工具不存在、模型调不到，跨项目记忆这一环不生效。
+  团队**自身**的跨 run 学习走本地文件（`$DSH_HOME/expert-team/LEARNINGS.md`、`<工作区>/team/LEARNINGS.md`），**与 Hindsight 无关**。
+- **注意**：Hindsight 的记忆配置在 dsh 之外（服务地址/令牌/库命名），装完还要配它自己。
+
+### 可选：会话费用显示
+
+```sh
+dsh plugin --profile web add dsh-cost-meter
+```
+
+浮层「在用模型」那一行尾部写着「会话费用见 `dsh-cost-meter`」。**不装只是少了费用视图**，不影响任何团队功能。
+
+### 只在你要用「插件市场」安装 / 备份恢复时
+
+```sh
+dsh plugin --profile web add dshmarket
+```
+
+`dshmarket` **不随宿主 dsh 发布**；README 的「方式二：插件市场」需要先装它。
+
+> 另外，活动流里的工具名有**中文兜底**：`browser_*` → `已操作浏览器`、`mcp_connector_*` → `已操作连接器`、
+> `dsh_im_*` → `已发文件`，认不出的显示「已执行操作」（见 `lib/command.js` 的 `TOOL_LABEL` / `TOOL_LABEL_FAMILIES`）。
+> 装了 `dsh-browser` / `dsh-mcp-connector` / `@xmanrui/dsh-im` 之后，活动流里出现的就是它们真实的工具名与参数：
+> **纯显示，装了更清楚，不装不影响团队功能。**
 
 ## 快速上手
 

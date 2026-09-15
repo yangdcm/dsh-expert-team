@@ -33,6 +33,16 @@
 - 在 README 中作为**图 2**（`Figure 2`）放在「看一眼它在干什么」**首位**（比三张窄浮层截图更有冲击力），
   其后四张图号顺延为图 3–6；中英同步。
 
+### README：新增「依赖与推荐插件」
+
+在「安装」之后新增一节，把"依赖"讲清楚：**必需：无** —— `package.json` **无 `dependencies` 字段**，
+`lib/` 只 import 同目录文件与 Node 内建，`client.js` 只 `require('react')`（宿主提供），
+只要求宿主 dsh ≥ 0.1.5-rc.1。Hindsight（跨项目记忆）、`dsh-cost-meter`（费用视图）、
+`dshmarket`（市场安装 / 备份恢复）一律写成**推荐或可选 + 缺了会怎样**：
+**不报错、团队照常交付**；并点明团队自身的跨 run 学习走本地 `LEARNINGS.md`，**与 Hindsight 无关**。
+另说明活动流工具名的**中文兜底**（`TOOL_LABEL` / `TOOL_LABEL_FAMILIES`：`browser_*` → 已操作浏览器 等）。
+顶部关键指标行附近加一行指针指向该节。中英对等。
+
 ## 1.3.7
 
 **修掉 1.3.6 两张手绘矢量图的文字重叠，并让 npm 页面也能显示 README 图片。**

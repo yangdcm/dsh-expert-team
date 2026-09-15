@@ -20,6 +20,8 @@ A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 |---|---|---|---|---|
 | own persona / `toolFilter` / `maxDepth: 1` | 1 hard gate + 1 approval gate | incl. a 136-entry mutation catalog and several ratchets | `dependencies: {}` | no bundler, no `prepare` hook |
 
+> Zero runtime dependencies. Recommended: also install **Hindsight** (cross-project memory) — see [Dependencies and recommended plugins](#dependencies-and-recommended-plugins).
+
 ## Who it is for
 
 **A complete engineering department for small teams and solo builders** — no hiring, no assembling a team:
@@ -216,6 +218,52 @@ pnpm install && dsh web
 `dsh web` heals it** (the plugin re-lays it at load); alternatively run `/team <task>` once. See the
 [Troubleshooting](#troubleshooting) section for the easiest trap to fall into: **do not** use the id
 `expert-team` when creating a preset.
+
+## Dependencies and recommended plugins
+
+**Required**: none. This plugin has **zero runtime dependencies** (`package.json` has no `dependencies` field;
+`lib/` imports only sibling files and Node built-ins, and `client.js` only `require('react')`, which the host
+provides). It only requires the host `DeepSeek Harness >= 0.1.5-rc.1` (web profile). Everything below is optional:
+**the whole team workflow runs without them** — they exist so that things like cross-project memory and a cost view
+actually materialise.
+
+### Recommended: Hindsight long-term memory (cross-project / cross-session)
+
+```sh
+dsh plugin --profile web add @vectorize-io/hindsight-coding-agents
+```
+
+- **Why**: before clarify the skill recalls knowledge recorded by other projects with
+  `hindsight_search_knowledge_pages`, and at deliver time it records this run's experience with
+  `hindsight_ingest_document` (titles "专家团经验 · <runId>" / "项目知识 · <cwd name>").
+- **Without it**: **no error, the team still delivers** — those tools simply do not exist, so the model cannot call
+  them and cross-project memory does not happen. The team's **own** cross-run learning lives in local files
+  (`$DSH_HOME/expert-team/LEARNINGS.md`, `<workspace>/team/LEARNINGS.md`) and is **independent of Hindsight**.
+- **Note**: Hindsight's memory configuration lives outside dsh (service address / token / bank name); installing the
+  plugin is only half the setup.
+
+### Optional: session cost display
+
+```sh
+dsh plugin --profile web add dsh-cost-meter
+```
+
+The floating panel's "current model" line ends with "会话费用见 `dsh-cost-meter`". **Without it you only lose the
+cost view**; no team feature is affected.
+
+### Only when you install / restore through the plugin marketplace
+
+```sh
+dsh plugin --profile web add dshmarket
+```
+
+`dshmarket` **does not ship with the host dsh**; the README's option two (plugin marketplace) needs it first.
+
+> Also, tool names in the activity feed have a **Chinese fallback**: `browser_*` → `已操作浏览器`,
+> `mcp_connector_*` → `已操作连接器`, `dsh_im_*` → `已发文件`, and anything unrecognised shows 「已执行操作」
+> (see `TOOL_LABEL` / `TOOL_LABEL_FAMILIES` in `lib/command.js`). With `dsh-browser` / `dsh-mcp-connector` /
+> `@xmanrui/dsh-im` installed, the feed shows their real tool names and arguments instead:
+> **display only — nicer with them, nothing in the team flow depends on them.**
 
 ## Quick start
 
