@@ -6,7 +6,7 @@
 [![license](https://img.shields.io/npm/l/@yangdcm/dsh-expert-team)](https://github.com/yangdcm/dsh-expert-team/blob/main/LICENSE)
 [![CI](https://github.com/yangdcm/dsh-expert-team/actions/workflows/ci.yml/badge.svg)](https://github.com/yangdcm/dsh-expert-team/actions/workflows/ci.yml)
 
-![专家团：一句话组队交付](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/hero.svg)
+![dsh 专家团插件横幅：12 角色多智能体团队 · 9 阶段门控流水线 · 零运行时依赖](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/hero.svg)
 
 > **一句话组队交付**：`/team 做一个带登录的支付模块` —— 自动组建 12 角色专家团，走
 > 澄清 → 调研 → 设计 → 规格评审 → 方案确认 → 实现 → 审查 → 测试 → 交付 的门控流水线，
@@ -18,7 +18,26 @@
 |---|---|---|---|---|
 | 各带人设 / `toolFilter` / `maxDepth: 1` | 含 1 道硬门 + 1 道确认门 | 含 136 条变异目录与多组棘轮 | `dependencies: {}` | 无 bundler、无 `prepare` 钩子 |
 
-> 零运行时依赖。推荐同时装 **Hindsight**（跨项目记忆）—— 见[依赖与推荐插件](#依赖与推荐插件)。
+> 零运行时依赖。推荐同时装 **Hindsight**（跨项目记忆）—— 见[依赖与推荐插件](#依赖与推荐插件--dependencies-and-recommended-plugins)。
+
+## 速览 / At a glance
+
+| 项目 | 值 |
+|---|---|
+| 包名 | `@yangdcm/dsh-expert-team`（npm 公开包） |
+| 仓库 | <https://github.com/yangdcm/dsh-expert-team> |
+| 宿主 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) ≥ **0.1.5-rc.1**（`web` profile） |
+| 运行时依赖 | **无**（`dependencies: {}`；`lib/` 只 import 同目录文件与 Node 内建） |
+| Node.js | ≥ 20 |
+| License | MIT |
+| 安装（一行） | `dsh plugin --profile web add @yangdcm/dsh-expert-team` |
+| 上手（一行） | 会话切到「专家团模式」→ `/team 做一个带登录的支付模块` |
+| 过程产物 | `<你的工作区>/team/<run-id>/`（`SPEC.md` · `PLAN.md` · `TASKS.json` · `REVIEW.md` · `TEST.md` · `SUMMARY.md` …） |
+| 本机数据 | `$DSH_HOME/expert-team/`（`settings.json` · `LEARNINGS.md` · `session-runs.json`） |
+
+> dsh 插件 · DeepSeek Harness 多智能体（multi-agent）编排器：角色化 subagent 团队 · 依赖 DAG 并行 · 阶段门控 · 质量门禁 · 工件留痕。
+>
+> 给 LLM / 检索用的索引：[`llms.txt`](https://github.com/yangdcm/dsh-expert-team/blob/main/llms.txt)
 
 ## 为谁而做
 
@@ -46,7 +65,7 @@ UI/UX、前后端、数据、安全、评审、测试、运维、文档这 12 �
 
 <sub>一句诚实边界：它**不是**人类团队 —— 产品级与范围级决策仍由你拍板。</sub>
 
-![9 阶段门控流水线](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/pipeline.svg)
+![专家团 9 阶段门控流水线：澄清→调研→设计→规格评审（硬门）→方案确认→实现（依赖 DAG 并行）→审查→测试→交付](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/pipeline.svg)
 
 <sub>图 1：9 阶段门控流水线。「规格评审」是**硬门** —— SPEC.md 的「边界与禁止项」没填就不放行（`lib/interception.js`）；「方案确认」是默认开启的**确认门**（`identity.keepPlanGate`，可在设置里关掉）；「实现」阶段按依赖 DAG **并行扇出**，多个实现者同时开工、各自只改自己那份文件。</sub>
 
@@ -87,27 +106,27 @@ $ /team 做一个带登录的支付模块
 
 ## 看一眼它在干什么
 
-![全屏画布：阶段条与团队编制](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/canvas.png)
+![专家团全屏画布：阶段条与进度、角色化 subagent 团队编制（谁在跑、用哪个模型）](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/canvas.png)
 
 <sub>图 2：**全屏画布**。看阶段条与进度、团队编制（谁在跑、用哪个模型）、以及 `人 / 事 / 料 / 盘` 四个视角 —— 比浮层更完整的一层视图。</sub>
 
-![全屏画布 · 事：任务依赖图](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/canvas-tasks.png)
+![专家团任务依赖图：任务按依赖 DAG 并行，含 repair 与 review 的返工闭环](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/canvas-tasks.png)
 
 <sub>图 3：**任务依赖图** —— 11 个任务按依赖 DAG 并行推进；7 个完成、4 个失败。失败会触发 `repair` 与**独立复验**（`repair-1 → review-2 → repair-2 → review-3`），直到通过或被如实判为需修订 —— 这就是「返工不收敛」的硬门禁在真实运行里的样子。</sub>
 
-![质量门禁违规实时可见](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-gate.png)
+![专家团质量门禁违规实时横幅：规格边界未填即被插件代码拦下](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-gate.png)
 
 <sub>图 4：**门禁违规**。看顶部那条横幅 —— 违规项与拒绝理由（例如"SPEC.md 的边界章节已进入 `implement` 但仍无任何一行填写"）由 `lib/interception.js` 挂在宿主 `tools/post-execute` 上当场判出后推出，不是提示词提醒。</sub>
 
-![成员模型与任务详情](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-live.png)
+![专家团浮层：角色成员列表、各自使用的模型、任务详情与工件预览](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-live.png)
 
 <sub>图 5：**角色编制**。看成员列表 —— 谁在跑、用哪个模型、当前在做什么；展开任一成员可看它的任务与产物。模型可按角色分别配置，异构模型用于交叉验证。</sub>
 
-![阶段推进与工件预览](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-flow.png)
+![专家团阶段推进视图：当前阶段、已过阶段与该阶段的工件正文](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-flow.png)
 
 <sub>图 6：**阶段与工件**。看阶段条与预览区 —— 当前阶段、已过阶段、以及该阶段真正写下的工件正文（工件是唯一真源，浮层只是它的视图）。</sub>
 
-![官方设置页里的专家团分节](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
+![DeepSeek Harness 官方设置页里的「专家团」分节：18 个设置项、中文标签、改动即时生效](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
 
 <sub>图 7：**设置**。看官方 `设置 →「专家团」` 这一页 —— 18 个设置项、中文标签、**改动即保存并即时生效**（上限/轮次/档位门/振荡检测在进程内重算）；值存在宿主命名空间 `expert-team`，随插件市场的备份/恢复一起走。</sub>
 
@@ -131,7 +150,7 @@ $ /team 做一个带登录的支付模块
   还会堵住整个 `dsh web` 的事件循环。1.3.5 改成只查表（实测 0.0026 ms/次、零次 `readSession`），
   **修复后的端到端数字待实机复测**；`state-perf-guard.test.mjs` 守着它不许回退。
 
-## 安装
+## 安装 / Installation
 
 **要求**
 
@@ -190,7 +209,7 @@ pnpm install && dsh web
 **排障**：预设丢了、或被同名预设占住 —— **重启一次 `dsh web` 即自愈**（插件加载会重铺），也可跑一次 `/team <任务>`。
 细节见下面「排障」一节，其中包含那条最容易踩的坑：**不要**用 `expert-team` 这个 id 去「创建 preset」。
 
-## 依赖与推荐插件
+## 依赖与推荐插件 / Dependencies and recommended plugins
 
 **必需**：无。本插件**零运行时依赖**（`package.json` 无 `dependencies` 字段；`lib/` 只 import 同目录文件与 Node 内建，
 `client.js` 只 `require('react')`，由宿主提供），只要求宿主 `DeepSeek Harness ≥ 0.1.5-rc.1`（web profile）。
@@ -229,27 +248,76 @@ dsh plugin --profile web add dshmarket
 > 装了 `dsh-browser` / `dsh-mcp-connector` / `@xmanrui/dsh-im` 之后，活动流里出现的就是它们真实的工具名与参数：
 > **纯显示，装了更清楚，不装不影响团队功能。**
 
-## 快速上手
+## 快速上手 / Quick start
 
-```
-/team 做一个带登录的支付模块          # 一句话组队（一次性，自动组队并交付）
-/team --persist 重构订单模块            # 持久化活团队：成员可反复指挥、跨会话恢复
-/team --one-shot 跑一个小活             # 反向覆盖：即使默认设了持久化，这次也只跑一次
-/team --no-code 评审现有 API 设计       # 只产出计划/评审/测试工件，不改代码
-/team --code 直接改                     # 反向覆盖：即使默认设了"只出工件"，这次也动代码
-/team --confirm 大改版需求              # 先建 run、不自动派工，浮层点「执行」才开工
-/team uninstall                         # 回收本插件铺到 $DSH_HOME 的副本（skill 默认走运行时注册，本就不落地）
-/team status                            # 所有 run 的阶段、成员、模型计划、实时违规
-/team resume <run-id>                   # 跨会话恢复
-```
+| 命令 | 作用 |
+|---|---|
+| `/team <一句话目标>` | 一句话组队（一次性，自动组队并交付） |
+| `/team --persist <任务>` | 持久化活团队：成员可反复指挥、跨会话恢复 |
+| `/team --one-shot <任务>` | 反向覆盖：即使默认设了持久化，这次也只跑一次 |
+| `/team --no-code <任务>` | 只产出计划/评审/测试工件，不改代码 |
+| `/team --code <任务>` | 反向覆盖：即使默认"只出工件"，这次也动代码 |
+| `/team --confirm <任务>` | 先建 run、不自动派工，浮层点「执行」才开工 |
+| `/team --tier <档位> <任务>` | 指定流程档位（快速档 / 标准档 / 严格档） |
+| `/team status` | 所有 run 的阶段、成员、模型计划、实时违规 |
+| `/team models [<run>]` | 每个角色的成本 / 模型计划 |
+| `/team canvas [<run>]` | 生成可视化团队画布（HTML）；`--watch` 实时刷新 |
+| `/team learn` | 聚合日志 → `METRICS.md` + 蒸馏经验到 `LEARNINGS.md` |
+| `/team wait [<run>]` | 查看在飞任务进展（不阻塞） |
+| `/team resume <run-id>` | 跨会话恢复 |
+| `/team uninstall` | 回收本插件铺到 `$DSH_HOME` 的副本（skill 走运行时注册，本就不落地） |
 
-完整命令（`/team canvas` 可视化画布、`/team codeindex` 代码索引、`/team learn` 自学习、
-`/team limit` 配额、`/team settle` 冷启动清算……）见 `/team help`。
+完整命令（`/team codeindex` 代码索引、`/team limit` 配额、`/team settle` 冷启动清算……）见 `/team help`。
 
 **产物落在哪**
 
 - `<你的工作区>/team/<run-id>/` —— `SPEC / PLAN / TASKS / ROSTER / STATE / REVIEW / TEST / SUMMARY / RUN.log.md` 等工件
 - `$DSH_HOME/expert-team/` —— 本机偏好与跨项目经验：`settings.json`、`session-runs.json`、`LEARNINGS.md`
+
+## 常见问题 / FAQ
+
+**它到底是什么？** 一个装在本机 `dsh` 上的插件：`/team <一句话目标>` 会拉起一支 12 角色的 subagent 团队（产品 / 架构 / 调研 / UI / 前后端 / 数据 / 安全 / 评审 / 测试 / 运维 / 文档），按 9 阶段门控流程在你的工作区里交付，并把过程写成可复核的工件。
+
+**和"直接让一个 agent 硬做"有什么区别？** 针对三个固定失败模式：**上下文漂移**（阶段与工件双通道交接）、**自己批自己**（评审/测试是独立角色，`qa`/`reviewer` 裁决才算过）、**返工不收敛**（超轮次与未闭环被硬门禁拦下并如实报错）。详见[为什么不是「一个 agent 硬做」](#为什么不是一个-agent-硬做)。
+
+**必须再装别的插件吗？** **不必**。本插件零运行时依赖；Hindsight（跨项目记忆）是**推荐**、`dsh-cost-meter`（费用视图）是**可选**，不装也能跑完整个流程 —— 见[依赖与推荐插件](#依赖与推荐插件--dependencies-and-recommended-plugins)。
+
+**支持哪些 dsh 版本？** `engines.dsh: >=0.1.5-rc.1`（开发与验证基线 0.1.5-rc.1）；更早版本未经测试。Node.js ≥ 20。
+
+**数据放在哪？** 工件在你的工作区 `<workspace>/team/<run-id>/`；本机偏好与跨项目经验在 `$DSH_HOME/expert-team/`（`settings.json` / `LEARNINGS.md` / `session-runs.json`）。
+
+**怎么卸载？** `/team uninstall` 回收它铺到 `$DSH_HOME` 的副本（skill 走运行时注册、本就不落地），再从命令行或插件市场移除插件。**注意**：`$DSH_HOME/expert-team/` 下的 `LEARNINGS.md` 等是**你的数据**，卸载不会删。
+
+**会自己联网吗？** 不会主动联网：它只调用宿主提供的工具（文件、shell、子代理）；能不能联网取决于你给会话的工具面。
+
+**支持哪些模型？** 由宿主决定；本插件支持**按角色分别配置模型**（浮层里能看到每个成员用哪个模型），异构模型可用于交叉验证。
+
+**不切「专家团模式」preset 也能用吗？** 能。`/team` 是 host 平面命令，任何预设下都能跑；此时退回通用 `subagent`（角色人设写进 prompt），少的是配置层的边界保证（`toolFilter` / `maxDepth: 1`）。
+
+**浮层/画布打开很慢？** 见[排障](#排障) —— 1.3.5 起 `/state` 不再逐条全量读子会话日志；升级到 ≥ 1.3.5 后重启 `dsh web` 即可。
+
+## 术语 / Glossary
+
+**角色（12）**
+
+| 中文 | English | 代码标识 |
+|---|---|---|
+| 产品 | Product | `pm` |
+| 架构 | Architect | `architect` |
+| 调研 | Researcher | `researcher` |
+| 界面设计 | UI/UX | `ui` |
+| 后端 | Backend | `backend` |
+| 前端 | Frontend | `frontend` |
+| 数据 | DBA | `dba` |
+| 安全审计 | Security | `sec` |
+| 评审 | Reviewer | `reviewer` |
+| 测试 | QA | `qa` |
+| 运维 | DevOps | `devops` |
+| 文档 | Docs | `docs` |
+
+**阶段（9）**：`clarify` 澄清 → `research` 调研 → `design` 设计 → `spec-review` 规格评审（**硬门**）→ `方案确认` 方案确认（**确认门**，默认开、可关）→ `implement` 实现 → `review` 审查 → `test` 测试 → `deliver` 交付。（id 与中文名的唯一真源是 `lib/vocab.js`。）
+
+**主要工件**：`SPEC.md`（规格与边界）· `RESEARCH.md`（调研）· `PLAN.md`（方案）· `TASKS.json`（任务台账）· `ROSTER.json`（编制）· `STATE.json`（状态）· `AUTHORITY.md`（写入权限单源）· `REVIEW.md`（评审）· `TEST.md`（测试）· `SUMMARY.md`（交付总结）· `METRICS.md`（成本与耗时）· `RUN.log.md`（运行日志）
 
 ## 插件结构
 
@@ -299,7 +367,7 @@ dsh 安装里插件自带的 Config schema（dsh 路径自动探测，可用 `DS
 **浮层打开很慢 / 整个 `dsh web` 发卡？** 1.3.5 之前 `/state` 会逐条全量读子会话日志（实测热态 7–10 s、
 冷态 283 s），并堵住事件循环。升级到 ≥ 1.3.5 后重启 `dsh web` 即可。
 
-## 自定义预设（想改专家团默认行为时）
+## 自定义预设 / Custom presets（想改专家团默认行为时）
 
 - **创建**：`设置 → Agent 预设 → 用「创造模式」创作自定义预设`（其机制是"复制一份既有预设"，产出落在 `$DSH_HOME/.agent-presets/<id>/`）。
 - **要定制专家团，请以「专家团模式」为源、换一个你自己的 id**（例如 `my-team`）：复制出来的目录天然带上 12 个角色工具与它的 skill 目录，

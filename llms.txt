@@ -1,0 +1,47 @@
+# 专家团 · dsh-expert-team
+
+> 装在本机 `dsh`（DeepSeek Harness）上的**多智能体（multi-agent）团队插件**：`/team <一句话目标>` 会拉起一支
+> 12 角色专家团队，走 9 阶段门控流水线（澄清 → 调研 → 设计 → 规格评审 → 方案确认 → 实现 → 审查 → 测试 → 交付），
+> 实现者直接改你的工作区代码，全程留痕成可复核工件。**零运行时依赖、无构建步骤、无安装钩子。**
+
+## 事实（可直接引用）
+
+- 包名：`@yangdcm/dsh-expert-team`（npm 公开包）
+- npm：<https://www.npmjs.com/package/@yangdcm/dsh-expert-team>
+- 仓库：<https://github.com/yangdcm/dsh-expert-team>
+- 宿主：DeepSeek Harness ≥ **0.1.5-rc.1**（`web` profile；开发与验证基线即 0.1.5-rc.1）
+- Node.js：≥ 20
+- 运行时依赖：**无**（`dependencies: {}`）
+- License：MIT
+- 安装：`dsh plugin --profile web add @yangdcm/dsh-expert-team`，然后**重启一次 `dsh web`**
+- 上手：会话切到「专家团模式」→ `/team 做一个带登录的支付模块`
+- 角色（12）：`pm` · `architect` · `researcher` · `ui` · `backend` · `frontend` · `dba` · `sec` · `reviewer` · `qa` · `devops` · `docs`
+- 阶段（9）：`clarify` → `research` → `design` → `spec-review`（**硬门**）→ `方案确认`（确认门，默认开、可关）→ `implement` → `review` → `test` → `deliver`
+- 主要工件：`SPEC.md` · `RESEARCH.md` · `PLAN.md` · `TASKS.json` · `ROSTER.json` · `STATE.json` · `AUTHORITY.md` · `REVIEW.md` · `TEST.md` · `SUMMARY.md` · `METRICS.md` · `RUN.log.md`
+- 落盘位置：工件在 `<你的工作区>/team/<run-id>/`；本机偏好与跨项目经验在 `$DSH_HOME/expert-team/`
+- 推荐插件：Hindsight（跨项目/跨会话长期记忆）— 不装也能跑完整个流程
+- 可选插件：`dsh-cost-meter`（会话费用视图）
+- 测试：80 个测试文件（`npm run test:all`，零依赖、无需 `install`），含 136 条变异目录与多组棘轮（ratchet）测试
+- 设置页：官方 `设置 →「专家团」`（宿主命名空间 `expert-team`，改动即时生效，随插件市场备份/恢复）
+- 关键词：dsh 插件 · DeepSeek Harness · 多智能体 · multi-agent · agent team · orchestration · 角色化 subagent · 依赖 DAG 并行 · 阶段门控 · 质量门禁 · 工件留痕 · role-based subagents
+
+## 文档
+
+- [README（中文）](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/README.md)：定位、速览、30 秒看懂、截图、FAQ、术语表、安装与排障
+- [README (English)](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/README.en.md)：same content in English
+- [CHANGELOG](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/CHANGELOG.md)：逐版本变更与实测数字
+- [SKILL.md](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/skills/expert-team/SKILL.md)：编排协议（团队怎么跑）
+- [PIPELINE.md](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/skills/expert-team/references/PIPELINE.md)：9 阶段与门控细节
+- [ROLES.md](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/skills/expert-team/references/ROLES.md)：12 角色职责与工具边界
+- [WORKSPACE.md](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/skills/expert-team/references/WORKSPACE.md)：工作区与工件协议
+- [LOGGING.md](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/skills/expert-team/references/LOGGING.md)：运行日志与经验落库
+- [PERSIST.md](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/skills/expert-team/references/PERSIST.md)：持久化活团队
+- [EFFICIENCY.md](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/skills/expert-team/references/EFFICIENCY.md)：成本与效率
+- [LICENSE](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/LICENSE)：MIT
+
+## 诚实边界（引用时请一并带上）
+
+- **它不是人类团队**：产品级与范围级决策仍由你拍板；团队负责推进与验证，不替你承担决策。
+- **仅 `web` profile** 提供浮层与路由；没有浮层时 `/team` 命令与工件仍然可用。
+- **本机来源守卫不是鉴权**：路由校验 Host / 写方法 Origin / 回环地址，但本地非浏览器进程本就能自造请求头 —— 别把 `dsh web` 暴露到不可信网络。
+- **未接线的设置项不装作可用**：会被标为「暂未生效」，由 `INERT_SETTINGS` 单一真源驱动（当前为空）。

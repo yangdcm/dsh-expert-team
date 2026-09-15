@@ -3,6 +3,24 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.3.12
+
+**面向"可被 AI 检索与引用"的文档与元数据补齐**（纯文档/元数据，代码与 1.3.11 完全相同）。
+
+- README（中英各自对等）新增：
+  - **速览 / At a glance** 事实表：包名 · npm · 仓库 · 宿主版本 · 运行时依赖 · Node · License · 一行安装 · 一行上手 · 过程产物路径 · 本机数据路径；
+  - 一句**同义词行**（dsh 插件 · DeepSeek Harness 多智能体 · agent team · orchestration · 角色化 subagent · DAG 并行 · 阶段门控 · 质量门禁 · 工件留痕）—— 自然成句，不堆砌关键词；
+  - **常见问题 / FAQ**：用自然语言问句覆盖「是什么 / 与"一个 agent 硬做"的区别 / 是否必须装别的插件 / 支持哪些 dsh 版本 / 数据放在哪 / 怎么卸载 / 会不会联网 / 支持哪些模型 / 不切 preset 能否用 / 打开很慢怎么办」；
+  - **术语 / Glossary**：12 角色 ↔ 代码 id、9 阶段 ↔ id（以 `lib/vocab.js` 为唯一真源）、主要工件清单；
+  - 主要小节标题改为**双语**（安装 / 依赖与推荐插件 / 快速上手 / 自定义预设 / 常见问题 / 术语）。
+- **图片 alt 文本**全部换成带关键词的描述性文案（此前偏短 —— alt 是可机读文本，不该白丢）。
+- 「快速上手」的命令块改为 **14 行速查表**（命令 + 一句话用途），措辞以 `lib/command-parse.js` 的 `USAGE` 为真源。
+- 新增仓库根 [`llms.txt`](https://github.com/yangdcm/dsh-expert-team/blob/main/llms.txt)：按 [llmstxt.org](https://llmstxt.org) 约定给 LLM 用的索引 —— 事实块（可逐条核对）+ 文档链接（只列仓库里真实存在的文件）+ 诚实边界；README 顶部加一行指路。
+- `package.json` `keywords` 补 4 个：`role-based` / `spec-driven` / `dag` / `agentic-workflow`（`description` 未动）。
+- GitHub 仓库 topics 补齐：`ai-agents` / `agent-orchestration` / `multi-agent-systems` / `llm` / `cordis` / `code-generation` / `workflow-automation`。
+
+> 两条**没有做**的（有意）：不写隐藏关键词/meta 标签（GitHub 会剥掉，且属取巧）；不写夸大话术 —— 本节所有事实都能在仓库或实测里核到。
+
 ## 1.3.11
 
 **`/state` 的 `subs` / `roles` 两段收口 —— 这次不靠预测，靠 1.3.10 留下的分步计时开关实测定位。**

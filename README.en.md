@@ -6,7 +6,7 @@ English | [中文](README.md)
 [![license](https://img.shields.io/npm/l/@yangdcm/dsh-expert-team)](https://github.com/yangdcm/dsh-expert-team/blob/main/LICENSE)
 [![CI](https://github.com/yangdcm/dsh-expert-team/actions/workflows/ci.yml/badge.svg)](https://github.com/yangdcm/dsh-expert-team/actions/workflows/ci.yml)
 
-![expert-team: one sentence in, a gated team delivery out](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/hero.svg)
+![dsh expert-team plugin banner: a 12-role multi-agent team, a 9-phase gated pipeline, zero runtime dependencies](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/hero.svg)
 
 > **One sentence in, a gated team delivery out.** `/team build a payments module with login`
 > assembles a 12-role expert team and runs
@@ -21,6 +21,25 @@ A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 | own persona / `toolFilter` / `maxDepth: 1` | 1 hard gate + 1 approval gate | incl. a 136-entry mutation catalog and several ratchets | `dependencies: {}` | no bundler, no `prepare` hook |
 
 > Zero runtime dependencies. Recommended: also install **Hindsight** (cross-project memory) — see [Dependencies and recommended plugins](#dependencies-and-recommended-plugins).
+
+## At a glance
+
+| Item | Value |
+|---|---|
+| Package | `@yangdcm/dsh-expert-team` (public npm package) |
+| Repository | <https://github.com/yangdcm/dsh-expert-team> |
+| Host | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) ≥ **0.1.5-rc.1** (`web` profile) |
+| Runtime dependencies | **none** (`dependencies: {}`; `lib/` imports only sibling files and Node builtins) |
+| Node.js | ≥ 20 |
+| License | MIT |
+| Install (one line) | `dsh plugin --profile web add @yangdcm/dsh-expert-team` |
+| First run (one line) | switch the session to "Expert team mode" → `/team build a payments module with login` |
+| Process artifacts | `<your workspace>/team/<run-id>/` (`SPEC.md` · `PLAN.md` · `TASKS.json` · `REVIEW.md` · `TEST.md` · `SUMMARY.md` …) |
+| Machine-local data | `$DSH_HOME/expert-team/` (`settings.json` · `LEARNINGS.md` · `session-runs.json`) |
+
+> A dsh plugin · a DeepSeek Harness multi-agent (agent team) orchestrator: role-based subagents · DAG parallelism · staged gates · quality gates · artifact trail.
+>
+> Index for LLMs and retrieval: [`llms.txt`](https://github.com/yangdcm/dsh-expert-team/blob/main/llms.txt)
 
 ## Who it is for
 
@@ -49,7 +68,7 @@ solo developers shipping a complete project · any long task where "someone inde
 
 <sub>One honest boundary: this is **not** a human team — product-level and scope-level decisions remain yours.</sub>
 
-![The 9-phase gated pipeline](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/pipeline.svg)
+![The expert-team 9-phase gated pipeline: clarify → research → design → spec-review (hard gate) → plan approval → implement (DAG parallel) → review → test → deliver](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/pipeline.svg)
 
 <sub>Figure 1: the 9-phase gated pipeline. `spec-review` is a **hard gate** — if the SPEC.md
 "boundaries and prohibitions" section is empty, the run does not advance (`lib/interception.js`).
@@ -96,32 +115,32 @@ answer them:
 
 ## What it looks like in action
 
-![The full-screen canvas: phase bar, progress and roster](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/canvas.png)
+![Expert-team full-screen canvas: phase bar, progress, and the role-based subagent roster (who is running, on which model)](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/canvas.png)
 
 <sub>Figure 2: **the full-screen canvas**. Look at the phase bar and progress, the roster (who is running, on which model), and the four views (people / tasks / artifacts / board) — one layer above the floating panel.</sub>
 
-![The full-screen canvas, tasks view: the dependency graph](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/canvas-tasks.png)
+![Expert-team task dependency graph: tasks running in parallel along the DAG, including the repair/review rework loop](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/canvas-tasks.png)
 
 <sub>Figure 3: **the task dependency graph** — 11 tasks advance in parallel along the dependency DAG; 7 completed, 4 failed. A failure triggers `repair` plus **independent re-verification** (`repair-1 → review-2 → repair-2 → review-3`) until it passes or is honestly marked as needing revision — this is what the "rework does not converge" hard gate looks like in a real run.</sub>
 
-![Quality-gate violations surfaced live](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-gate.png)
+![Expert-team quality-gate violation banner: a missing spec boundary blocked by plugin code, not by a prompt](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-gate.png)
 
 <sub>Figure 4: **gate violations**. Look at the banner at the top — the violation and its refusal reason
 (e.g. "SPEC.md's boundary section has entered `implement` but still has no 'expected rejection' row")
 is decided by `lib/interception.js`, hooked onto the host's `tools/post-execute` waterfall, and surfaced
 immediately. This is code, not a prompt reminder.</sub>
 
-![Members, models and task detail](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-live.png)
+![Expert-team overlay: role members, the model each one uses, task detail and artifact preview](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-live.png)
 
 <sub>Figure 5: **the roster**. Look at the member list — who is running, on which model, and what it is doing;
 expand a member for its tasks and artifacts. Models are configurable per role; heterogeneous models are used for cross-checking.</sub>
 
-![Phase progress and artifact preview](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-flow.png)
+![Expert-team phase progress: current and completed phases, plus the artifact body written at that phase](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/panel-flow.png)
 
 <sub>Figure 6: **phases and artifacts**. Look at the phase bar and the preview pane — the current phase, the phases
 already passed, and the actual body of the artifact written in that phase (artifacts are the single source of truth; the overlay is just a view of them).</sub>
 
-![The expert-team section inside the official settings page](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
+![The expert-team section inside the official DeepSeek Harness settings page: 18 settings, Chinese labels, applied on change](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
 
 <sub>Figure 7: **settings**. Look at the official `Settings → Expert team` page — 18 settings, Chinese labels,
 **saved on change and applied immediately** (caps, rounds, the tier gate and the oscillation detector are recomputed
@@ -271,26 +290,75 @@ dsh plugin --profile web add dshmarket
 
 ## Quick start
 
-```
-/team build a payments module with login   # one sentence in, a one-shot team delivery out
-/team --persist refactor the orders module # persistent live team: members can be re-tasked, survives sessions
-/team --one-shot run a small chore         # inverse override: run once even if persistence is the default
-/team --no-code review the existing API    # produce planning/review/test artifacts only, change no code
-/team --code implement it                  # inverse override: touch code even if "artifacts only" is the default
-/team --confirm a big redesign             # create the run but do not dispatch; click "run" in the overlay
-/team uninstall                            # reclaim what this plugin laid down under $DSH_HOME
-/team status                               # phase, members, model plan and live violations for every run
-/team resume <run-id>                      # resume across sessions
-```
+| Command | What it does |
+|---|---|
+| `/team <one-sentence goal>` | one sentence in, a one-shot team delivery out |
+| `/team --persist <task>` | persistent live team: members can be re-tasked, survives sessions |
+| `/team --one-shot <task>` | inverse override: run once even if persistence is the default |
+| `/team --no-code <task>` | produce planning/review/test artifacts only, change no code |
+| `/team --code <task>` | inverse override: touch code even if "artifacts only" is the default |
+| `/team --confirm <task>` | create the run but do not dispatch; click "run" in the overlay |
+| `/team --tier <tier> <task>` | pick the process tier (fast / standard / strict) |
+| `/team status` | phase, members, model plan and live violations for every run |
+| `/team models [<run>]` | cost / model plan per role |
+| `/team canvas [<run>]` | render the team canvas (HTML); `--watch` refreshes live |
+| `/team learn` | aggregate logs → `METRICS.md` + distilled lessons → `LEARNINGS.md` |
+| `/team wait [<run>]` | in-flight task progress (non-blocking) |
+| `/team resume <run-id>` | resume across sessions |
+| `/team uninstall` | reclaim what this plugin laid down under `$DSH_HOME` |
 
-Full command list (`/team canvas` visual canvas, `/team codeindex` code index, `/team learn` self-learning,
-`/team limit` quotas, `/team settle` cold-start settlement, …) — see `/team help`.
+Full command list (`/team codeindex` code index, `/team limit` quotas, `/team settle` cold-start settlement, …) — see `/team help`.
 
 **Where artifacts land**
 
 - `<your workspace>/team/<run-id>/` — `SPEC / PLAN / TASKS / ROSTER / STATE / REVIEW / TEST / SUMMARY / RUN.log.md` etc.
 - `$DSH_HOME/expert-team/` — machine-local preferences and cross-project experience: `settings.json`,
   `session-runs.json`, `LEARNINGS.md`
+
+## FAQ
+
+**What exactly is it?** A plugin you install into your local `dsh`: `/team <one-sentence goal>` spins up a 12-role subagent team (product / architect / researcher / UI / backend / frontend / data / security / reviewer / QA / DevOps / docs), delivers through a 9-phase gated pipeline inside your workspace, and writes the whole process down as reviewable artifacts.
+
+**How is it different from "one agent doing it all"?** It targets the three classic failure modes: **context drift** (hand-offs carry structured returns *and* artifact files, not chat history), **grading your own homework** (review and test are separate roles; a `qa`/`reviewer` verdict is required), and **rework that never converges** (over-budget rounds and unclosed items are stopped by hard gates and reported, not hidden).
+
+**Do I have to install other plugins?** **No.** This plugin has zero runtime dependencies; Hindsight (cross-project memory) is **recommended** and `dsh-cost-meter` (cost view) is **optional** — the full flow runs without either. See [Dependencies and recommended plugins](#dependencies-and-recommended-plugins).
+
+**Which dsh versions are supported?** `engines.dsh: >=0.1.5-rc.1` (developed and verified on 0.1.5-rc.1); earlier versions are untested. Node.js ≥ 20.
+
+**Where does the data live?** Artifacts in your workspace: `<workspace>/team/<run-id>/`. Machine-local preferences and cross-project lessons: `$DSH_HOME/expert-team/` (`settings.json` / `LEARNINGS.md` / `session-runs.json`).
+
+**How do I uninstall?** `/team uninstall` reclaims the copies this plugin laid down under `$DSH_HOME` (the skill is registered at runtime and never copied), then remove the plugin via the CLI or the marketplace. **Note:** `LEARNINGS.md` and friends under `$DSH_HOME/expert-team/` are **your data** and are kept.
+
+**Does it go online by itself?** No. It only calls the tools the host gives the session (files, shell, subagents); network access depends on the tool face you grant.
+
+**Which models does it use?** Whatever the host provides; this plugin supports **per-role model configuration** (the overlay shows which model each member runs), and heterogeneous models can be used for cross-checking.
+
+**Does it work without the "Expert team mode" preset?** Yes. `/team` is a host-plane command and runs under any preset; it then falls back to the generic `subagent` (role personas go into the prompt), losing only the configuration-level boundaries (`toolFilter` / `maxDepth: 1`).
+
+**Why is the overlay/canvas slow to open?** See [Troubleshooting](#troubleshooting) — since 1.3.5 `/state` no longer reads every sub-session log in full; upgrade to ≥ 1.3.5 and restart `dsh web`.
+
+## Glossary
+
+**Roles (12)**
+
+| Term | Code id |
+|---|---|
+| Product | `pm` |
+| Architect | `architect` |
+| Researcher | `researcher` |
+| UI/UX | `ui` |
+| Backend | `backend` |
+| Frontend | `frontend` |
+| DBA | `dba` |
+| Security | `sec` |
+| Reviewer | `reviewer` |
+| QA | `qa` |
+| DevOps | `devops` |
+| Docs | `docs` |
+
+**Phases (9)**: `clarify` → `research` → `design` → `spec-review` (**hard gate**) → `方案确认` plan approval (**approval gate**, on by default, can be turned off) → `implement` → `review` → `test` → `deliver`. (Ids and Chinese labels come from the single source `lib/vocab.js`.)
+
+**Key artifacts**: `SPEC.md` (spec and boundaries) · `RESEARCH.md` · `PLAN.md` · `TASKS.json` (task ledger) · `ROSTER.json` (staffing) · `STATE.json` · `AUTHORITY.md` (single source for write authority) · `REVIEW.md` · `TEST.md` · `SUMMARY.md` · `METRICS.md` (cost and timing) · `RUN.log.md`
 
 ## Layout
 
