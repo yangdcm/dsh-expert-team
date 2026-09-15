@@ -1456,8 +1456,8 @@ window.__ModuleLoader__.load({
         h('div', { className: 'exp-settings-group' }, esc(t('记忆后端（Hindsight）· 诊断与配置', 'Memory backend (Hindsight) · diagnostics & settings'))),
         rows,
         h('div', { className: 'exp-settings-note' },
-          esc(t('重启语义：改 `serverMode` / `apiUrl` 需重启 dsh web；只改 `apiToken` 免重启（401 时会重读）。保存前会先校验并**保留文件里其它键**，写入是 0600 权限的原子替换；token 的值在任何地方都不会回显（输入框也不预填）。',
-            'Restart semantics: changing `serverMode` / `apiUrl` needs a dsh web restart; `apiToken` alone does not (re-read on 401). Writes are validated first, keep every other key in the file, and replace it atomically with mode 0600. The token value is never echoed anywhere (the field is never pre-filled).'))),
+          esc(t('重启语义：改 serverMode / apiUrl 需重启 dsh web；只改 apiToken 免重启（401 时会重读）。保存前会先校验，并保留文件里其它键；写入是 0600 权限的原子替换；token 的值在任何地方都不会回显（输入框也不预填）。',
+            'Restart semantics: changing serverMode / apiUrl needs a dsh web restart; apiToken alone does not (re-read on 401). Writes are validated first, keep every other key in the file, and replace it atomically with mode 0600. The token value is never echoed anywhere (the field is never pre-filled).'))),
         form,
         h('button', { className: 'exp-settings-retry', onClick: function () { load(true) }, disabled: busy },
           esc(busy ? t('探测中…', 'probing…') : t('检测连通性', 'Check connectivity'))),
@@ -2051,7 +2051,7 @@ window.__ModuleLoader__.load({
         var degradeNote = null
         if (!people.length && roles.length) degradeNote = t('⚠ 尚未派工：以下为计划编制，不代表已上场', '⚠ not dispatched yet: planned roster only')
         else if (!people.length) degradeNote = t('还没有可展示的人员流转（无任务、无子代理）', 'nothing to show yet (no tasks, no subagents)')
-        else if (!W.waves.length && wfWarming) degradeNote = t('⏳ 工作流元数据正在后台读取：本轮拿不到 agent-start 时间戳，批次划分暂时不可用（**不是**"没有记录"）', '⏳ workflow metadata is being read in the background: agent-start timestamps are unavailable this round, so batching is pending (**not** "no records")')
+        else if (!W.waves.length && wfWarming) degradeNote = t('⏳ 工作流元数据正在后台读取：本轮拿不到 agent-start 时间戳，批次划分暂时不可用（不是「没有记录」）', '⏳ workflow metadata is being read in the background: agent-start timestamps are unavailable this round, so batching is pending (not "no records")')
         else if (!W.waves.length) degradeNote = t('⚠ 无创建时间记录，无法分批（已按角色分组展示）', '⚠ no createdAt records — cannot batch (grouped by role)')
         else if (W.waves.length === 1 && wfWarming) degradeNote = t('⏳ 工作流元数据正在后台读取：批次可能不止 1 个（本轮只见到 1 个）', '⏳ workflow metadata is being read: there may be more than one batch (only 1 seen this round)')
         else if (W.waves.length === 1) degradeNote = t('仅检测到 1 个批次（无先后可分）', 'only one batch detected (no ordering)')
@@ -2426,7 +2426,7 @@ window.__ModuleLoader__.load({
         var isOtherSessionRun = !!(data && data.stateOwnerSession && data.stateOwnerSession !== sessionId)
         var ownerBanner = isOtherSessionRun ? h('div', { className: 'exp-viol-list', key: 'owner-banner' },
           h('div', { style: { color: '#6a4a00', background: '#fff8e6', padding: '6px 10px', borderRadius: 6 } },
-            esc('👥 这个 run 由**另一个会话**创建并拥有（' + data.stateOwnerSession.slice(0, 18) + '…）。你可以查看，但直接派工会与它竞争同一份工作区 —— 建议先与它协调，或确认它已结束后用 /team resume 接管。'))) : null
+            esc('👥 这个 run 由「另一个会话」创建并拥有（' + data.stateOwnerSession.slice(0, 18) + '…）。你可以查看，但直接派工会与它竞争同一份工作区 —— 建议先与它协调，或确认它已结束后用 /team resume 接管。'))) : null
 
         // 「任务为什么会中断」——host 从本会话事件流读出每次 workflow 扇出的命运：
         // 没有 run-end 的那次，其编排工具调用从未返回（回合被新消息打断，或进程退出），
@@ -2453,8 +2453,8 @@ window.__ModuleLoader__.load({
           // 有界化（2026-09-15）：实时路径**不读**大日志解析角色 ⇒ 未知角色是"**待解析**"，
           // 与下面那段"确实解析不出角色"是**两件事**（本仓纪律：两种零必须分得开，别混成一句话）。
           (data && Number(data.rolesPending) > 0) ? h('div', { className: 'exp-legend', key: 'roles-pending' },
-            t('另有 ' + data.rolesPending + ' 条子代理的角色**待解析**（实时路径不读大日志，后台低频解析中；"待解析"≠"解析不出来"）',
-              'Roles for ' + data.rolesPending + ' subagent(s) are still **pending** (the live path does not read large logs; pending is not the same as unresolvable)')) : null,
+            t('另有 ' + data.rolesPending + ' 条子代理的角色「待解析」（实时路径不读大日志，后台低频解析中；「待解析」≠「解析不出来」）',
+              'Roles for ' + data.rolesPending + ' subagent(s) are still "pending" (the live path does not read large logs; pending is not the same as unresolvable)')) : null,
           // 真实性提示：活子代理里没被名册认领的分两类，必须分开说 ——
           //   ① 同角色的重复派工/历史 leg（**有角色**，只是每个角色只展示 1 个成员）
           //   ② 真的解析不出角色的（label 为空、子会话日志不可读、事件流里也没有派工 label）
@@ -2574,7 +2574,7 @@ window.__ModuleLoader__.load({
           listOpen ? (taskRows.length ? taskRows : h('div', { className: 'exp-empty' }, t('（暂无任务）', '(no tasks)'))) : null,
           // 诚实标注：这些行不是 TASKS.json，而是从活子代理投影出来的只读视图。
           usingLiveTasks ? h('div', { className: 'exp-legend', key: 'live-note' },
-            t('⚠ TASKS.json 为空（本轮未按协议回写任务）——以下 ' + tasks.length + ' 行为**实时子代理投影**：角色由各子代理的 prompt 推断，状态取活动态，依赖关系无从得知。', '⚠ TASKS.json is empty — the rows below are a LIVE projection of subagents (role inferred from each prompt; no dependency data).')) : null,
+            t('⚠ TASKS.json 为空（本轮未按协议回写任务）——以下 ' + tasks.length + ' 行为「实时子代理投影」：角色由各子代理的 prompt 推断，状态取活动态，依赖关系无从得知。', '⚠ TASKS.json is empty — the rows below are a LIVE projection of subagents (role inferred from each prompt; no dependency data).')) : null,
           h('div', { className: 'exp-sec' }, t('团队视图', 'View'),
             h('span', { className: 'exp-toggle', onClick: function () { setView('dag') }, style: viewV === 'dag' ? { borderColor: '#0969da', color: '#0969da' } : null }, usingLiveTasks ? t('按角色分组', 'By role') : t('任务依赖图', 'Task DAG')),
             h('span', { className: 'exp-toggle', onClick: function () { setView('panorama') }, style: viewV === 'panorama' ? { borderColor: '#0969da', color: '#0969da' } : null }, t('任务人员流转', 'Task-person flow'))),

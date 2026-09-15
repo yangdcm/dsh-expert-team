@@ -11,6 +11,8 @@
 //   ④ 负载字段是 `rolesPending`（单一真源），且客户端**真的渲染它**（字段不是没人读的摆设）。
 //   ⑤（2026-09-16）`warming`：重读挪到后台后，**请求路径立刻返回**；过期先给上一份**完整**快照；
 //      读失败**不覆盖**好快照；后台批单飞且队列空时不踢（否则 warming 会常亮成噪声）。
+//   ⑦（1.3.23）**后台批必须真的干活**：期限从批**开跑**起算（1.3.22 是 kick 时算 ⇒ 1000 ms 延迟
+//      吃掉 600 ms 期限 ⇒ 按构造零读、队列永不前进）；「零进展」必须可见（degraded）且**恢复后自灭**。
 //   ⑥（1.3.22）**上限 ≠ 故障**：`degraded` 从此只承载真故障（软期限截断 / 读失败），
 //      按设计的能力上限（`MAX_ROLE_SUBS` / `MAX_FEED_AGENTS`）改走 `scopeCaps` 且数字一个不少。
 import { readFileSync } from 'node:fs';
@@ -291,14 +293,14 @@ console.log('\n⑤ warming 语义：重读挪到后台 + 过期先给完整旧�
   check(subsR[0].role === '' && roleReadBudgetSnapshot().deferred === 1,
     '请求路径 `maxReads: 0`：零日志读，缺的如实"待解析"', 'deferred=' + roleReadBudgetSnapshot().deferred);
   const readsBefore = reads;
-  const p1 = warmSubRoles(ctx, subsR, {}, { maxReads: 1, deadlineAt: Date.now() + 1000 });
+  const p1 = warmSubRoles(ctx, subsR, {}, { maxReads: 1, deadlineMs: 1000 });
   check(!!p1 && isRoleWarmRunning() === true, '后台批已踢出（单飞标记在位）', '');
-  const p2 = warmSubRoles(ctx, subsR, {}, { maxReads: 1, deadlineAt: Date.now() + 1000 });
+  const p2 = warmSubRoles(ctx, subsR, {}, { maxReads: 1, deadlineMs: 1000 });
   check(p2 === null, '同刻再踢 ⇒ null（**单飞**：绝不并发全量读日志 —— 那是 283.6 s 冷态的老根因）', '');
   await p1;
   check(isRoleWarmRunning() === false && reads > readsBefore,
     '后台批读完后单飞标记复位、确实读了日志', 'readDelta=' + (reads - readsBefore));
-  check(warmSubRoles(ctx, subsR, {}, { maxReads: 1, deadlineAt: Date.now() + 1000 }) === null,
+  check(warmSubRoles(ctx, subsR, {}, { maxReads: 1, deadlineMs: 1000 }) === null,
     '队列空时返回 null（没有可做的活 ⇒ 上层不标 warming，标记才不会是常亮噪声）', '');
   check(roleReadBudgetSnapshot().deferred === 0, '后台批把队列读空（deferred 单调下降至 0）', '');
 }
@@ -365,9 +367,130 @@ console.log('\n⑥ 上限与真故障必须分开承载（1.3.22）：`scopeCaps
     '客户端：重分节重算过的标记在**缺席时被清掉**（否则"更新中"一旦出现就永远消不掉）', '');
 }
 
+
+console.log('\n⑦ 后台角色批必须**真的干活**（1.3.23）：期限从"开跑"起算 + 零进展必须可见且自灭');
+{
+  const cmdSrc3 = readFileSync(join(here, 'lib', 'command.js'), 'utf8');
+  const {
+    warmSubRoles, _resetRoleWarm, isRoleWarmRunning, resolveSubRoles, roleReadBudgetSnapshot,
+    _resetBoundedState, _resetRolePending, resetRoleReadBudget, ROLE_READ_LOG_CACHE,
+    ROLE_WARM_STATS, roleWarmHasWork, classifyStateShortfall,
+  } = _live;
+
+  const mkCtx = (onRead) => ({
+    get: (k) => (k === 'sessionQuery' ? {
+      readSession: async () => {
+        if (onRead) onRead();
+        return { events: [{ type: 'user/message', data: { content: [{ type: 'text', text: '你是「专家团」的后端工程师（backend，动态补位角色）' }] } }] };
+      },
+    } : null),
+  });
+  /** 干净起点：清缓存/队列/节流窗口/额度，返回给定的 subs。 */
+  const fresh = (ids) => {
+    ROLE_READ_LOG_CACHE.clear(); _resetRolePending(); _resetBoundedState(); resetRoleReadBudget();
+    return (ids || ['warm-t1']).map((id) => ({ id, role: '', label: '' }));
+  };
+
+  // ── ① 回归本体（1.3.22 的真回归：按构造**零读**）──────────────────────────────
+  // 旧实现：调用方在 **kick 那一刻**算好绝对期限（Date.now() + ROLES_READ_DEADLINE_MS = 600 ms），
+  // 而这一批要延迟 rolesWarmDelayMs()（默认 1000 ms）才开跑 ⇒ 1000 > 600 恒成立 ⇒
+  // resolveSubRoles 的 while 在**第一次读之前**就 cut='deadline' break ⇒ 一条都不读。
+  // 这里把两个数字都调小、但保持**同一个大小关系**（延迟 150 ms > 期限 60 ms），并**故意保留旧调用
+  // 形状**（多传一个 kick 时算好的绝对 deadlineAt，新实现只认 deadlineMs）—— 这条断言就是那次
+  // 回归的棘轮：只要有人再把期限挪回 kick 时计算，它立刻变红。
+  process.env.DSH_EXPERT_TEAM_ROLES_WARM_DELAY_MS = '150';
+  let readsA = 0;
+  const subsA = fresh(['warm-a1']);
+  await resolveSubRoles(mkCtx(), subsA, {}, { maxReads: 0 });
+  const pA = warmSubRoles(mkCtx(() => { readsA += 1; }), subsA, {}, {
+    maxReads: 1,
+    deadlineMs: 60,                 // 新：**时长**，从批开跑那一刻起算
+    deadlineAt: Date.now() + 60,    // 旧形状残留：kick 时算好的绝对时刻（延迟一过即过期）
+  });
+  check(!!pA, '① 批被踢出（队列里确实有未缓存的活）', '');
+  await pA;
+  check(readsA === 1 && ROLE_WARM_STATS.lastReads === 1,
+    '① 延迟(150 ms) > 期限(60 ms) 时仍**必须读完这一条**（期限从开跑起算）—— 1.3.22 在这里恒为 0 读',
+    'reads=' + readsA + ' lastReads=' + ROLE_WARM_STATS.lastReads);
+  check(roleReadBudgetSnapshot().deferred === 0, '① 队列真的前进了（deferred → 0）', 'deferred=' + roleReadBudgetSnapshot().deferred);
+  check(ROLE_WARM_STATS.noProgress === false, '① 有进展 ⇒ 零进展标记不点亮', 'noProgress=' + ROLE_WARM_STATS.noProgress);
+
+  // ── ② "注定做不了活"的路径不许踢批（否则上层会挂一个永远不动的 warming）────────
+  process.env.DSH_EXPERT_TEAM_ROLES_WARM_DELAY_MS = '10';
+  const subsB = fresh(['warm-b1']);
+  check(warmSubRoles(mkCtx(), subsB, {}, { maxReads: 0, deadlineMs: 1000 }) === null,
+    '② maxReads: 0（没额度）⇒ null，不标 warming', '');
+  check(warmSubRoles(mkCtx(), subsB, {}, { maxReads: 1, deadlineMs: 1000 }) === null,
+    '② 队列空 ⇒ null（没有可做的活；否则"更新中"会常亮成噪声）', '');
+  check(typeof roleWarmHasWork === 'function' && roleWarmHasWork() === false,
+    '② 谓词 roleWarmHasWork() 可单测：无未缓存 id ⇒ false（队列非空 ≠ 有活）', '');
+  const subsB2 = fresh(['warm-b2']);
+  await resolveSubRoles(mkCtx(), subsB2, {}, { maxReads: 1 });
+  check(typeof roleWarmHasWork === 'function' && warmSubRoles(mkCtx(), subsB2, {}, { maxReads: 1, deadlineMs: 1000 }) === null && roleWarmHasWork() === false,
+    '② 队列里全是**已缓存** id ⇒ 同样 null（诚实说明：这条经公开 API 不易端到端构造，'
+      + 'syncRolePending 今天就会让已缓存的掉队；这里测的是谓词与新加的早退分支本身）', '');
+
+  // ── ③ 零进展 = 真故障：必须可见（degraded），且**恢复后自灭**────────────────────
+  const subsC = fresh(['warm-c1']);
+  await resolveSubRoles(mkCtx(), subsC, {}, { maxReads: 0 });
+  let readsC = 0;
+  await warmSubRoles(mkCtx(() => { readsC += 1; }), subsC, {}, { maxReads: 1, deadlineMs: -1 }); // 期限已过期
+  check(readsC === 0 && ROLE_WARM_STATS.lastReads === 0 && ROLE_WARM_STATS.noProgress === true,
+    '③ 有活、有期限，却一条都没读成 ⇒ noProgress 点亮（既不是"按设计上限"，也不是"刷新在飞"）',
+    'reads=' + readsC + ' noProgress=' + ROLE_WARM_STATS.noProgress);
+  const dC = classifyStateShortfall({ cuts: ['roles:no-progress'] });
+  check(dC.degraded.join(',') === 'roles:no-progress' && Object.keys(dC.scopeCaps).length === 0,
+    '③ 零进展走 degraded，且**没有**混进 scopeCaps（两件事不许互相冒充）',
+    JSON.stringify({ degraded: dC.degraded, scopeCaps: dC.scopeCaps }));
+  const pC = warmSubRoles(mkCtx(() => { readsC += 1; }), subsC, {}, { maxReads: 1, deadlineMs: 1000 });
+  check(!!pC, '③ 队列还在 ⇒ 还能再补一批（进度可以追回来）', '');
+  await pC;
+  check(readsC === 1 && ROLE_WARM_STATS.noProgress === false,
+    '③ 恢复后**自己灭掉**（不然又是一盏常亮灯）',
+    'reads=' + readsC + ' noProgress=' + ROLE_WARM_STATS.noProgress);
+
+  // ── ④ 排进队列后、批开跑前被别处读掉 ⇒ 零读但**不是故障**（不许误报）─────────────
+  process.env.DSH_EXPERT_TEAM_ROLES_WARM_DELAY_MS = '120';
+  const subsD = fresh(['warm-d1']);
+  await resolveSubRoles(mkCtx(), subsD, {}, { maxReads: 0 });
+  const pD = warmSubRoles(mkCtx(), subsD, {}, { maxReads: 1, deadlineMs: 1000 });
+  check(!!pD, '④ 批已踢出（此刻确实有活）', '');
+  resetRoleReadBudget();
+  await resolveSubRoles(mkCtx(), subsD, {}, { maxReads: 1 });   // 抢在批开跑前把它读掉
+  await pD;
+  check(ROLE_WARM_STATS.lastReads === 0 && ROLE_WARM_STATS.noProgress === false,
+    '④ 开跑时队列已被读空 ⇒ 这一批自己读 0 条，但**不是故障**（不许误报零进展）',
+    'lastReads=' + ROLE_WARM_STATS.lastReads + ' noProgress=' + ROLE_WARM_STATS.noProgress);
+
+  // ── ⑤ 上限（scopeCaps）与故障（degraded）同时出现也必须各归各位 ────────────────
+  const mixed = classifyStateShortfall({ cuts: ['roles:no-progress'], caps: [{ key: 'roles', total: 95, limit: 60 }] });
+  check(mixed.degraded.join(',') === 'roles:no-progress' && mixed.scopeCaps.roles.over === 35,
+    '⑤ 上限与零进展同时发生 ⇒ 各归各位（degraded 有故障、scopeCaps 有上限）',
+    JSON.stringify({ degraded: mixed.degraded, scopeCaps: mixed.scopeCaps }));
+
+  // ── ⑥ 接线棘轮（源码级）：防止"期限又挪回 kick 时算"或"零进展不再上报"────────────
+  check(/warmSubRoles\(ctx, subs\.slice\(0, MAX_ROLE_SUBS\), wfLabels, \{ maxReads: rolesAllowance, deadlineMs: ROLES_READ_DEADLINE_MS \}\)/.test(cmdSrc3),
+    '⑥ 生产接线传的是**时长** deadlineMs（绝对期限在批开跑时才计算）', '');
+  check(!/deadlineAt: Date\.now\(\) \+ ROLES_READ_DEADLINE_MS/.test(cmdSrc3),
+    '⑥ 旧的"kick 时算好绝对期限"形状已消失 —— 它就是零读回归的来源', '');
+  check(/ROLE_WARM_STATS\.noProgress && roleWarmHasWork\(\)\) cutFacts\.push\('roles:no-progress'\)/.test(cmdSrc3),
+    '⑥ 零进展经 cutFacts 进 degraded，且"队列已无未缓存 id"时不再报（自灭的一半）', '');
+  check(/if \(stats\.reads > 0 \|\| stats\.queued === 0\) \{ ROLE_WARM_STATS\.noProgress = false; \}/.test(cmdSrc3),
+    '⑥ 恢复即清零：读到东西 / 队列读空都算恢复（自灭的另一半）', '');
+  check(/ROLE_READS_LEFT = Math\.max\(ROLE_READS_LEFT, maxReads\);\n\s+resolveSubRoles\(ctx, subs, wfLabels, \{ maxReads, deadlineAt: Date\.now\(\) \+ deadlineMs, stats \}\)/.test(cmdSrc3),
+    '⑥ 额度与期限都在**开跑那一刻**才定（中间插入的请求把它复位成 0 也不会让本批空转）', '');
+  // 只在 `warmSubRoles` 体内判"不认绝对时刻"：`resolveSubRoles` 自己仍收绝对 `deadlineAt`，
+  // 那是**批开跑时**算出来的，正是我们要的形状 —— 一刀切成全局禁词会把正确用法也判红。
+  const warmFn = (cmdSrc3.match(/function warmSubRoles\([\s\S]*?\n}\n/) || [''])[0];
+  check(warmFn.length > 0 && !/opts\.deadlineAt/.test(warmFn) && /Number\.isFinite\(opts\.deadlineMs\)/.test(warmFn),
+    '⑥ warmSubRoles 体内只认**时长** deadlineMs、不再认绝对 deadlineAt（让"延迟"与"期限"再也没法互相打架）',
+    'fnLen=' + warmFn.length);
+  delete process.env.DSH_EXPERT_TEAM_ROLES_WARM_DELAY_MS;
+}
+
 console.log('');
 if (fail > 0) {
   console.log(`✗ 有界化护栏失败：${fail} 项`);
   process.exit(1);
 }
-console.log('✔ 有界化护栏通过（subs 节流/期限 · roles 零读/期限/收敛 · 字段单一真源且被渲染 · 上限与真故障分开承载）');
+console.log('✔ 有界化护栏通过（subs 节流/期限 · roles 零读/期限/收敛 · 字段单一真源且被渲染 · 上限与真故障分开承载 · 后台批真的干活且零进展可见自灭）');

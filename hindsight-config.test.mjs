@@ -382,6 +382,60 @@ process.env.HINDSIGHT_CONFIG = cfgFile;
 }
 process.env.HINDSIGHT_CONFIG = prevCfgEnv;
 if (prevCfgEnv === undefined) delete process.env.HINDSIGHT_CONFIG;
+console.log('\n⑨ 面板文案不许带 markdown 标记（这些字符串是**原样渲染**的，面板没有 markdown 渲染器）');
+{
+  // 真机实测（2026-09-16）：设置页「记忆后端（Hindsight）· 诊断与配置」里
+  //   · 失败提示把 `**HTML 防火墙页**` 的星号**字面显示**出来；
+  //   · 重启语义那段把 `serverMode` / `apiToken` 的**反引号字面显示**出来。
+  // 根因不是"漏改两处"，而是**根本没有门禁**：这些文案以 `esc()` 原样进 DOM，
+  // 写的人按 markdown 习惯加了标记，界面就把标记一起显示 —— 用户看到的是排版残渣。
+  // 所以这里做一条**跨文件**的 lint（client.js + 两个 Hindsight 模块），并且带反空转：
+  // 解析不到足够的字符串就红（否则"正则失配 ⇒ 零命中 ⇒ 假绿"）。
+  const files = ['client.js', join('lib', 'hindsight-config.js'), join('lib', 'hindsight-config-write.js')];
+  // 只认单/双引号字符串字面量；**先剥注释**（注释里用 markdown 是允许的，且本仓注释大量用反引号）。
+  const LIT = /(^|[^\\])'([^'\\]*(?:\\.[^'\\]*)*)'|(^|[^\\])"([^"\\]*(?:\\.[^"\\]*)*)"/g;
+  let scanned = 0;
+  const leaks = [];
+  for (const rel of files) {
+    const lines = readFileSync(join(here, rel), 'utf8').split('\n');
+    let inBlock = false;
+    lines.forEach((line, i) => {
+      const t = line.trim();
+      if (inBlock) { if (t.includes('*/')) inBlock = false; return; }
+      if (t.startsWith('/*')) { if (!t.includes('*/')) inBlock = true; return; }
+      if (t.startsWith('//') || t.startsWith('*')) return;
+      LIT.lastIndex = 0;
+      let m;
+      while ((m = LIT.exec(line)) !== null) {
+        const str = m[2] !== undefined ? m[2] : m[4];
+        if (!str) continue;
+        scanned += 1;
+        const marks = [];
+        if (/\*\*/.test(str)) marks.push('**粗体**');
+        if (/`/.test(str)) marks.push('反引号');
+        if (/\]\(/.test(str)) marks.push('markdown 链接');
+        if (/(^|\s)#{1,6}\s/.test(str)) marks.push('# 标题');
+        if (marks.length) leaks.push(`${rel}:${i + 1} [${marks.join('+')}] ${str.slice(0, 90)}`);
+      }
+    });
+  }
+  check(scanned > 500, 'lint 真的扫到了字符串字面量（反空转：解析失配不许静默通过）', '扫描 ' + scanned + ' 条字面量');
+  check(leaks.length === 0,
+    '三个会**原样渲染**的文件里没有任何 markdown 标记（星号/反引号/链接/标题）',
+    leaks.length ? leaks.length + ' 处：' + leaks.slice(0, 4).join(' ｜ ') : '0 处');
+  // 实证这条 lint 抓得住真事故：把当初那两处喂给它，必须命中（否则它只是"看着很严"的空壳）。
+  const probe = "hint: '返回的是 **HTML 防火墙页**，改 `serverMode` 需重启'";
+  const probeMarks = [];
+  LIT.lastIndex = 0;
+  const pm = LIT.exec(probe);
+  if (pm) {
+    const str = pm[2] !== undefined ? pm[2] : pm[4];
+    if (/\*\*/.test(str)) probeMarks.push('**粗体**');
+    if (/`/.test(str)) probeMarks.push('反引号');
+  }
+  check(probeMarks.length === 2, '把当初的两处泄漏喂给这条 lint ⇒ 两个标记都被认出来（不是空壳断言）', probeMarks.join('+'));
+}
+
 await rmFixture(root);
 
 console.log('');

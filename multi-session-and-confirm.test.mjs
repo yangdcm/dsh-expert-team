@@ -51,7 +51,10 @@ console.log('\n② 归属标记必须在面板可见（client 侧）');
 {
   check(/ownerTag = \(r\.ownerSession && r\.ownerSession !== sessionId\)/.test(cli), 'run 下拉按归属打标（👥）', '');
   check(/ownerBanner/.test(cli), '看别人的 run 时有归属横幅', '');
-  check(/这个 run 由\*\*另一个会话\*\*创建并拥有/.test(cli), '横幅文案说明来源与建议动作', '');
+  // 1.3.23：文案改成**纯文本强调**（「」）—— 原来这里钉的是带 `**` 的版本，而面板没有 markdown 渲染器，
+  // 星号会被字面显示出来（真机实测到过）。测试跟着改成钉纯文本，并**反向**断言星号不再出现。
+  check(/这个 run 由「另一个会话」创建并拥有/.test(cli), '横幅文案说明来源与建议动作（纯文本强调，不带 markdown 标记）', '');
+  check(!/这个 run 由\*\*另一个会话\*\*/.test(cli), '横幅文案不再使用会被字面显示的 `**` 标记', '');
   check(/data\.stateOwnerSession !== sessionId/.test(cli), '判定用 stateOwnerSession（不是 request 的 session）', '');
 }
 
