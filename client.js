@@ -1343,10 +1343,13 @@ window.__ModuleLoader__.load({
       var planMsgS = useState(''); var planMsg = planMsgS[0], setPlanMsg = planMsgS[1]
       var err = useState(''); var errV = err[0], setErr = err[1]
 
-      function stateUrl() {
+      function stateUrl(section) {
         var url = '/plugins/dsh-expert-team/state', q = []
         if (sessionId) q.push('sessionId=' + encodeURIComponent(sessionId))
         if (selRunV && selRunV.workspace && selRunV.runId) { q.push('workspace=' + encodeURIComponent(selRunV.workspace)); q.push('run=' + encodeURIComponent(selRunV.runId)) }
+        // `section`：渐进式状态（2026-09-15 性能修复 #3）。首屏只发 `summary`（便宜），
+        // 人/料/事件流晚一拍、低频拉（见下面的双订阅）。不传 = 完整负载（服务端向后兼容）。
+        if (section) q.push('section=' + encodeURIComponent(section))
         return url + (q.length ? ('?' + q.join('&')) : '')
       }
       // ── 数据到达后的副作用（**本组件不再自带轮询器**；由 stateHub 统一驱动）─────────
@@ -1354,9 +1357,22 @@ window.__ModuleLoader__.load({
       // 画布另走 liveStore 的 setInterval ⇒ 画布一开就有 2–3 个轮询并发压同一个重端点
       // （实测 10 秒 7 发、6 次重叠、单发被拖到 5.9/8.3 s）。现在全部经 stateHub：
       // 同 URL 同刻只跑一次、全局单一时钟、统一退避（见 stateHub 的注释）。
+      // ── 分节负载的合并（2026-09-15 性能修复 #3）────────────────────────────────
+      // 为什么必须合并而不是替换：首屏只发 `?section=summary`（便宜：阶段/进度/计数），
+      // "人/料/事件流"晚一拍才到。若直接 `setData(d)`，摘要那一拍会把上一拍已知的成员/事件流
+      // **抹掉**（UI 闪空、通知误判"成员消失"）。规则：**新负载里有的键覆盖旧值，没有的键保留**
+      // —— 缺块 ≠ 空数据；`sections` 字段如实告诉 UI"这份负载包含哪些块"（两种零可区分）。
+      function mergeStatePayload(prev, d) {
+        if (!d || typeof d !== 'object') return d
+        if (!prev || typeof prev !== 'object' || prev.ok !== true) return d
+        var out = {}, k
+        for (k in prev) { if (Object.prototype.hasOwnProperty.call(prev, k)) out[k] = prev[k] }
+        for (k in d) { if (Object.prototype.hasOwnProperty.call(d, k)) out[k] = d[k] }
+        return out
+      }
       function onState(d) {
           if (d && d.ok) {
-            setData(d); setErr(''); reschedule(d)
+            setData(function (prev) { return mergeStatePayload(prev, d) }); setErr(''); reschedule(d)
             // N2: keep the composer takeover in sync with pendingDecision
             // 批 0-2：把 /state 已经返回的 runId/workspace 一并传出，供横幅拍板时回传给 /decide
             try { if (exports._syncPending) exports._syncPending(d.pendingDecision, sessionId, d.runId, d.workspace) } catch (e) {}
@@ -1391,13 +1407,18 @@ window.__ModuleLoader__.load({
       }
       useEffect(function () {
         if (!isOpen && !viewMode) return undefined // panel closed & not canvas → no polling
-        var off = stateHubSubscribe(stateUrl(), dispCfg.pollMs, onState)
-        // catch up instantly when the user returns to the tab / window
-        var onVis = function () { if (document.visibilityState === 'visible') stateHubFetch(stateUrl(), onState) }
-        var onFocus = function () { stateHubFetch(stateUrl(), onState) }
+        // **双订阅**（性能修复 #3）：`summary` 便宜（阶段/进度/计数）⇒ 按 `pollMs` 快拉，
+        // 首屏立刻有内容；`people,feed,artifacts` 贵（成员解析/事件流/日志尾+git）⇒ 至少 6 秒一次，
+        // 到达后由 `mergeStatePayload` 合并进同一份 data（**不会**把摘要拍掉的字段抹掉）。
+        // stateHub 按 URL 各自计时（per-URL due），所以"一快一慢"不会互相拖。
+        var off = stateHubSubscribe(stateUrl('summary'), dispCfg.pollMs, onState)
+        var offDetail = stateHubSubscribe(stateUrl('people,feed,artifacts'), Math.max(dispCfg.pollMs, 6000), onState)
+        // catch up instantly when the user returns to the tab / window（只补便宜那一份）
+        var onVis = function () { if (document.visibilityState === 'visible') stateHubFetch(stateUrl('summary'), onState) }
+        var onFocus = function () { stateHubFetch(stateUrl('summary'), onState) }
         document.addEventListener('visibilitychange', onVis)
         window.addEventListener('focus', onFocus)
-        return function () { off(); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('focus', onFocus) }
+        return function () { off(); offDetail(); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('focus', onFocus) }
       }, [sessionId, selRunV, isOpen, viewMode, dispCfg.pollMs])
 
       // Make the docked panel reserve space (shift the shell frame) instead of
@@ -2350,23 +2371,32 @@ window.__ModuleLoader__.load({
     //   ③ 间隔 = clamp(max(基础间隔, 上次耗时×2), 基础间隔, 30000)；
     //      团队有人在跑时基础间隔按 40% 加速（面板原有意图，现在对徽章/画布同样生效）。
     // 纪律不变：**未回绝不发下一个**（晚一点看到状态，好过把 web 拖死）。
-    var stateHub = { inflight: {}, lastMs: {}, subs: [], timer: 0, busy: false }
+    var stateHub = { inflight: {}, lastMs: {}, lastAt: {}, subs: [], timer: 0, busy: false }
     function stateHubNow() { return (window.performance && performance.now) ? performance.now() : Date.now() }
     function stateHubUrls() { var out = []; stateHub.subs.forEach(function (x) { if (out.indexOf(x.url) < 0) out.push(x.url) }) ; return out }
-    function stateHubBase() {
+    // 每个 URL 的**自己的**基础间隔（同一 URL 有多个订阅者时取最小 ⇒ 谁最急听谁的）。
+    // 性能修复 #3 的"一快一慢"就靠它：`summary` 3 s 一发、`people,feed,artifacts` ≥ 6 s 一发，
+    // 两者互不拖拽（旧实现是"全局取最小 base、每个 tick 把所有 URL 都拉一遍" ⇒ 慢的那份被快钟拖着跑）。
+    function stateHubBaseOf(u) {
       var base = 0
-      stateHub.subs.forEach(function (x) { if (!base || x.base < base) base = x.base })
+      stateHub.subs.forEach(function (x) { if (x.url === u && (!base || x.base < base)) base = x.base })
       if (!base) base = 3000
       return stateHub.busy ? Math.max(300, Math.round(base * 0.4)) : base
     }
+    function stateHubDueAt(u) { return (stateHub.lastAt[u] || 0) + stateHubBaseOf(u) }
     function stateHubSchedule() {
       clearInterval(stateHub.timer)
       stateHub.timer = 0
       if (!stateHub.subs.length) return
       var slowest = 0
       stateHubUrls().forEach(function (u) { if ((stateHub.lastMs[u] || 0) > slowest) slowest = stateHub.lastMs[u] })
-      var base = stateHubBase()
-      var next = Math.max(base, Math.min(30000, Math.round(slowest * 2)))
+      var now = stateHubNow(), earliest = Infinity
+      stateHubUrls().forEach(function (u) { var at = stateHubDueAt(u); if (at < earliest) earliest = at })
+      if (!isFinite(earliest)) earliest = now + 3000
+      // 基础等待 = 最早到期的那一刻；再按"最慢一次请求 ×2"放大（未回绝不发下一个的纪律仍由
+      // in-flight 守卫保证，这里的放大只是为了别把慢端点压成队列）。
+      var wait = Math.max(200, Math.round(earliest - now))
+      var next = Math.max(wait, Math.min(30000, Math.round(slowest * 2)))
       stateHub.timer = setInterval(stateHubTick, next)
     }
     function stateHubDeliver(url) {
@@ -2380,6 +2410,8 @@ window.__ModuleLoader__.load({
       var p = stateHub.inflight[url]
       if (p) { p.then(function (d) { try { onData(d) } catch (e) {} }); return }  // 同刻同 URL：复用在飞结果
       var t0 = stateHubNow()
+      // 记"上次发出时刻"：即使**失败**也记（否则失败会变成热循环重试）。
+      stateHub.lastAt[url] = t0
       p = fetch(url).then(function (r) { return r.ok ? r.json() : null }).then(function (d) {
         delete stateHub.inflight[url]
         stateHub.lastMs[url] = Math.max(0, stateHubNow() - t0)
@@ -2390,7 +2422,9 @@ window.__ModuleLoader__.load({
     }
     function stateHubTick() {
       if (!stateHub.subs.length) { clearInterval(stateHub.timer); stateHub.timer = 0; return }
-      stateHubUrls().forEach(function (u) { stateHubFetch(u, stateHubDeliver(u)) })
+      var now = stateHubNow()
+      // **只发改到期的那些 URL**（不是每个 tick 把所有 URL 拉一遍）
+      stateHubUrls().forEach(function (u) { if (stateHubDueAt(u) <= now && !stateHub.inflight[u]) stateHubFetch(u, stateHubDeliver(u)) })
       stateHubSchedule()
     }
     function stateHubSubscribe(url, base, onData) {
@@ -2409,7 +2443,7 @@ window.__ModuleLoader__.load({
     // ── 共享 state 轮询（HeaderButton / LiveCapsule 复用，单例；无订阅者即停）──
     var liveStore = { data: null, sid: '', off: null, subs: new Set() }
     var LIVE_BASE_MS = 2500   // 徽章/画布的基础节奏（与面板的 dispCfg.pollMs 取更小者由 hub 统一决定）
-    function liveUrl(sid) { return '/plugins/dsh-expert-team/state?sessionId=' + encodeURIComponent(sid) }
+    function liveUrl(sid) { return '/plugins/dsh-expert-team/state?sessionId=' + encodeURIComponent(sid) + '&section=people,feed' }
     // 手动催一次（子代理刚出现时立刻刷新一次徽章，不必等下一个 tick）
     function liveTick() {
       var sid = liveStore.sid

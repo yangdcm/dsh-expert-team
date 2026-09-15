@@ -158,12 +158,17 @@ console.log('\n⑦ display 四项：client.js 真的消费设置（源码级 —
   check(/return \{ ok: r\.ok, status: r\.status, d: d \}/.test(c), '设置页 GET 复用同一条路（返回值形状不变）', '');
   // 1.3.5：间隔多了一层**退避**（单发越慢、下次越晚），但基础节奏仍必须来自 display.pollMs，
   // 忙碌加速到 40% 的意图也不变 ⇒ 断言改成「基础间隔的来源 + 退避层」两件事，意图不弱化。
-  check(/stateHubSubscribe\(stateUrl\(\), dispCfg\.pollMs, onState\)/.test(c) && /stateHubSubscribe\(liveUrl\(sid\), LIVE_BASE_MS, liveDeliver\)/.test(c),
-    'pollMs：基础轮询间隔取设置（面板传 dispCfg.pollMs；徽章/画布传 LIVE_BASE_MS，由 hub 取更小者）', '');
+  // ⚠️ 1.3.13 起 hub 改成**按 URL 各自计时**（stateHubBaseOf/DueAt）：面板那条是
+  // `section=summary`（按设置 pollMs 快拉），重块另有一条 ≥6 s 的慢订阅 ⇒ "谁最急听谁的"从
+  // "全局取最小 base"升级为"per-URL base"。断言随之改为钉住**两条订阅各自的来源**。
+  check(/stateHubSubscribe\(stateUrl\('summary'\), dispCfg\.pollMs, onState\)/.test(c) && /stateHubSubscribe\(liveUrl\(sid\), LIVE_BASE_MS, liveDeliver\)/.test(c),
+    'pollMs：基础轮询间隔取设置（面板 summary 传 dispCfg.pollMs；徽章/画布传 LIVE_BASE_MS；由 per-URL base 决定）', '');
+  check(/function stateHubBaseOf\(u\)/.test(c) && /stateHub\.subs\.forEach\(function \(x\) \{ if \(x\.url === u && \(!base \|\| x\.base < base\)\) base = x\.base \}\)/.test(c),
+    'pollMs：per-URL base（同一 URL 多订阅者取最小）—— 一快一慢互不拖拽', '');
   check(/return stateHub\.busy \? Math\.max\(300, Math\.round\(base \* 0\.4\)\) : base/.test(c),
     'pollMs：忙碌时按同一意图加速到 40%（下限 300ms）—— 1.3.10 起对徽章/画布同样生效', '');
-  check(/var next = Math\.max\(base, Math\.min\(30000, Math\.round\(slowest \* 2\)\)\)/.test(c),
-    'pollMs：再叠自适应退避（clamp(max(基础, 上次耗时×2), 基础, 30000)）——重活端点不该 1.2s 一发', '');
+  check(/var next = Math\.max\(wait, Math\.min\(30000, Math\.round\(slowest \* 2\)\)\)/.test(c) && /var wait = Math\.max\(200, Math\.round\(earliest - now\)\)/.test(c),
+    'pollMs：再叠自适应退避（max(最早到期等待, clamp(最慢一次×2, …, 30000))）——重活端点不该 1.2s 一发', '');
   check(/stateHubFetch\(url, onData\)      \/\/ 立即拉一次/.test(c), 'pollMs：订阅时立即拉一次（首轮不空等一个间隔）', '');
   check(/stateHub\.timer = setInterval\(stateHubTick, next\)/.test(c), 'pollMs：真的按计算出的间隔排下一拍（不是裸基础间隔）', '');
   check(/\}, \[sessionId, selRunV, isOpen, viewMode, dispCfg\.pollMs\]\)/.test(c), 'pollMs：间隔变化会重排定时器（改设置当场生效）', '');

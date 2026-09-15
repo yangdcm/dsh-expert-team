@@ -80,11 +80,24 @@ console.log('\n② 客户端：**所有** /state 拉取经统一 hub（single-fl
   check((clientSrc.split('delete stateHub.inflight[url]').length - 1) === 2,
     '在飞标记在**成功与失败**两条路径都清理（否则一次失败就永久停摆）', '');
   check(/stateHub\.lastMs\[url\] = Math\.max\(0, stateHubNow\(\) - t0\)/.test(clientSrc), '记录每次 /state 耗时（退避依据）', '');
-  check(/var next = Math\.max\(base, Math\.min\(30000, Math\.round\(slowest \* 2\)\)\)/.test(clientSrc),
-    '退避公式：clamp(max(基础间隔, 最慢一次×2), 基础间隔, 30000)', '');
+  // ⚠️ 2026-09-15 性能修复 #3 之后公式变了（**更强**：按 URL 各自计时 + 一快一慢双订阅）。
+  // 旧断言钉的是"全局取最小 base、每 tick 拉全部 URL"的形状，那正是"慢端点被快钟拖着跑"的根源。
+  check(/var next = Math\.max\(wait, Math\.min\(30000, Math\.round\(slowest \* 2\)\)\)/.test(clientSrc),
+    '退避公式：max(最早到期等待, clamp(最慢一次×2, …, 30000))', '');
+  check(/function stateHubDueAt\(u\) \{ return \(stateHub\.lastAt\[u\] \|\| 0\) \+ stateHubBaseOf\(u\) \}/.test(clientSrc),
+    '按 **URL 各自**计时（stateHubBaseOf/DueAt）—— 一快一慢互不拖拽', '');
+  check(/if \(stateHubDueAt\(u\) <= now && !stateHub\.inflight\[u\]\) stateHubFetch/.test(clientSrc),
+    'tick 只发**已到期**的 URL（不再每 tick 把所有 URL 拉一遍）', '');
+  check(/stateHub\.lastAt\[url\] = t0/.test(clientSrc), '失败也记发出时刻（否则失败会变热循环重试）', '');
   check((clientSrc.split('setInterval(stateHubTick').length - 1) === 1,
     '全局**只有一个** state 时钟（不再每个组件一个 setInterval）', '');
-  check(/stateHubSubscribe\(stateUrl\(\), dispCfg\.pollMs, onState\)/.test(clientSrc), '面板经 hub 订阅（不再自带 load/setInterval）', '');
+  // 首屏便宜、重块晚一拍：两条订阅都要在，且 summary 必须是最快的那条。
+  check(/stateHubSubscribe\(stateUrl\('summary'\), dispCfg\.pollMs, onState\)/.test(clientSrc),
+    '首屏订阅 `section=summary`（按 pollMs 快拉）', '');
+  check(/stateHubSubscribe\(stateUrl\('people,feed,artifacts'\), Math\.max\(dispCfg\.pollMs, 6000\), onState\)/.test(clientSrc),
+    '重块 `people,feed,artifacts` 低频拉（≥6 s）', '');
+  check(/function mergeStatePayload\(prev, d\)/.test(clientSrc) && /return mergeStatePayload\(prev, d\)/.test(clientSrc),
+    '分节负载**合并**而非替换（摘要那一拍不得把已知成员抹掉）', '');
   check(/stateHubSubscribe\(liveUrl\(sid\), LIVE_BASE_MS, liveDeliver\)/.test(clientSrc), '徽章/画布经 hub 订阅（不再自带 setInterval）', '');
   check(!/setInterval\(load, backoff\)/.test(clientSrc), '旧的组件内 setInterval(load, backoff) 已不存在（防改回去）', '');
   check(/function onState\(d\) \{/.test(clientSrc), '面板把"数据到达后的副作用"收敛成一个 onState(d)', '');

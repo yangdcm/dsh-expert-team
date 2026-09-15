@@ -918,8 +918,8 @@
       "edits": [
         {
           "file": "lib/command.js",
-          "find": "                sel.members = enrichMembers(sel.runId, sel.roles, sel.members, subById, sel.agents);",
-          "replace": "                sel.members = enrichMembers(sel.runId, sel.roles, sel.members, mapRoleToSub(subs, wfLabels), sel.agents); // MUTANT: 显示路径退回未过滤的映射（R13 回退 ⇒ 面板又串号）"
+          "find": "                if (want('people')) sel.members = enrichMembers(sel.runId, sel.roles, sel.members, subById, sel.agents);",
+          "replace": "                if (want('people')) sel.members = enrichMembers(sel.runId, sel.roles, sel.members, mapRoleToSub(subs, wfLabels), sel.agents); // MUTANT: 显示路径退回未过滤的映射（R13 回退 ⇒ 面板又串号）"
         }
       ]
     },
