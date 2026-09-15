@@ -84,9 +84,10 @@ $ /team 做一个带登录的支付模块
   ├─ 实现       backend …    按依赖 DAG 并行扇出        → 直接改你工作区的代码
   ├─ 审查       sec·reviewer 独立评审（换模型交叉验证） → REVIEW.md
   ├─ 测试       qa           复现、覆盖、回归           → TEST.md
-  └─ 交付       docs         收尾结论与成本             → SUMMARY.md · METRICS.md
+  └─ 交付       docs         收尾结论               → SUMMARY.md
 
   全程留痕：TASKS.json · ROSTER.json · STATE.json · AUTHORITY.md · RUN.log.md
+  聚合快照：`METRICS.md` 在 **`team/` 根**（`/team learn` 产出；不是 run 目录模板）
   落盘位置：<你的工作区>/team/<run-id>/
 ```
 
@@ -317,7 +318,10 @@ dsh plugin --profile web add dshmarket
 
 **阶段（9）**：`clarify` 澄清 → `research` 调研 → `design` 设计 → `spec-review` 规格评审（**硬门**）→ `方案确认` 方案确认（**确认门**，默认开、可关）→ `implement` 实现 → `review` 审查 → `test` 测试 → `deliver` 交付。（id 与中文名的唯一真源是 `lib/vocab.js`。）
 
-**主要工件**：`SPEC.md`（规格与边界）· `RESEARCH.md`（调研）· `PLAN.md`（方案）· `TASKS.json`（任务台账）· `ROSTER.json`（编制）· `STATE.json`（状态）· `AUTHORITY.md`（写入权限单源）· `REVIEW.md`（评审）· `TEST.md`（测试）· `SUMMARY.md`（交付总结）· `METRICS.md`（成本与耗时）· `RUN.log.md`（运行日志）
+**主要工件**：`SPEC.md`（规格与边界）· `RESEARCH.md`（调研）· `PLAN.md`（方案）· `TASKS.json`（任务台账）· `ROSTER.json`（编制）· `STATE.json`（状态）· `AUTHORITY.md`（写入权限单源）· `REVIEW.md`（评审）· `TEST.md`（测试）· `SUMMARY.md`（交付总结）· `METRICS.md`（成本与耗时：**`team/` 根的聚合快照**，`/team learn` 产出）· `RUN.log.md`（运行日志）
+
+
+**谁写**：每个工件由**产出它的角色**自己 `write` 进 `<run-dir>/`；lead **只读工件做门控与裁决**（它没有 `write` 工具）。`STATE.json` 与 `RUN.log.md` 由**运行时**维护。
 
 ## 插件结构
 

@@ -90,9 +90,10 @@ $ /team build a payments module with login
   ├─ implement     backend …    fan out along the DAG                → edits your workspace directly
   ├─ review        sec·reviewer independent review (cross-model)     → REVIEW.md
   ├─ test          qa           repro, coverage, regressions         → TEST.md
-  └─ deliver       docs         wrap-up and cost                     → SUMMARY.md · METRICS.md
+  └─ deliver       docs         wrap-up                              → SUMMARY.md
 
   Persisted throughout: TASKS.json · ROSTER.json · STATE.json · AUTHORITY.md · RUN.log.md
+  Aggregate snapshot: `METRICS.md` lives at the **`team/` root** (produced by `/team learn`; not a run-dir template)
   On disk at: <your workspace>/team/<run-id>/
 ```
 
@@ -358,7 +359,10 @@ Full command list (`/team codeindex` code index, `/team limit` quotas, `/team se
 
 **Phases (9)**: `clarify` → `research` → `design` → `spec-review` (**hard gate**) → `方案确认` plan approval (**approval gate**, on by default, can be turned off) → `implement` → `review` → `test` → `deliver`. (Ids and Chinese labels come from the single source `lib/vocab.js`.)
 
-**Key artifacts**: `SPEC.md` (spec and boundaries) · `RESEARCH.md` · `PLAN.md` · `TASKS.json` (task ledger) · `ROSTER.json` (staffing) · `STATE.json` · `AUTHORITY.md` (single source for write authority) · `REVIEW.md` · `TEST.md` · `SUMMARY.md` · `METRICS.md` (cost and timing) · `RUN.log.md`
+**Key artifacts**: `SPEC.md` (spec and boundaries) · `RESEARCH.md` · `PLAN.md` · `TASKS.json` (task ledger) · `ROSTER.json` (staffing) · `STATE.json` · `AUTHORITY.md` (single source for write authority) · `REVIEW.md` · `TEST.md` · `SUMMARY.md` · `METRICS.md` (cost and timing — an **aggregate snapshot at the `team/` root**, produced by `/team learn`) · `RUN.log.md`
+
+
+**Who writes**: each artifact is written **by the role that produces it** into `<run-dir>/`; the lead **only reads artifacts to gate and decide** (it has no `write` tool). `STATE.json` and `RUN.log.md` are maintained **by the runtime**.
 
 ## Layout
 

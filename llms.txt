@@ -17,7 +17,8 @@
 - 上手：会话切到「专家团模式」→ `/team 做一个带登录的支付模块`
 - 角色（12）：`pm` · `architect` · `researcher` · `ui` · `backend` · `frontend` · `dba` · `sec` · `reviewer` · `qa` · `devops` · `docs`
 - 阶段（9）：`clarify` → `research` → `design` → `spec-review`（**硬门**）→ `方案确认`（确认门，默认开、可关）→ `implement` → `review` → `test` → `deliver`
-- 主要工件：`SPEC.md` · `RESEARCH.md` · `PLAN.md` · `TASKS.json` · `ROSTER.json` · `STATE.json` · `AUTHORITY.md` · `REVIEW.md` · `TEST.md` · `SUMMARY.md` · `METRICS.md` · `RUN.log.md`
+- 主要工件：`SPEC.md` · `RESEARCH.md` · `PLAN.md` · `TASKS.json` · `ROSTER.json` · `STATE.json` · `AUTHORITY.md` · `REVIEW.md` · `TEST.md` · `SUMMARY.md` · `METRICS.md`（**`team/` 根**的聚合快照，`/team learn` 产出） · `RUN.log.md`
+- 谁写工件：**由产出它的角色自己写**进 `<run-dir>/`；lead 只读工件做门控与裁决（没有 `write` 工具）；`STATE.json` / `RUN.log.md` 由运行时维护
 - 落盘位置：工件在 `<你的工作区>/team/<run-id>/`；本机偏好与跨项目经验在 `$DSH_HOME/expert-team/`
 - 推荐插件：Hindsight（跨项目/跨会话长期记忆）— 不装也能跑完整个流程
 - 可选插件：`dsh-cost-meter`（会话费用视图）

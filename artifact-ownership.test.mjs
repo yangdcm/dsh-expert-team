@@ -172,3 +172,32 @@ test('反空转 · 真源/模板目录/唯一看板名都还在扫描面里（�
     `扫描面（${files.length} 个文件）里一处 ${KANBAN_OK_PREFIX}${KANBAN} 都没有 —— D 的判据失去了对象，不能算通过`);
   t.diagnostic(`扫描面：${files.length} 个文件；模板 ${tplNames.length} 个；${KANBAN_OK_PREFIX}${KANBAN} 出现在 ${kanbanSeen.join(', ')}`);
 });
+
+// ── E 工件清单三处一致（2026-09-15 阶段 C 的口径收口）──────────────────────────
+// 起因：`lib/command.js` 的 `templates` 常量与两个 e2e 的"run 目录必需文件"清单**都是 13 项、
+// 但集合不同**（常量含 `AUTHORITY.md` 不含 `RUN.log.md`；测试反之）—— 看起来像"抄错了一处"，
+// 于是很容易被后来者"对齐"成同一件事，结果要么漏检 `RUN.log.md`、要么把模板清单改坏。
+// 真相是：**两者语义不同、关系确定**，本断言把它钉死：
+//   ① `templates` 常量 ≡ `assets/templates/` 目录文件集合（它就是从这儿复制的清单）；
+//   ② 两个 e2e 的必需清单 ≡ ① ∪ {`RUN.log.md`}（RUN.log.md 由日志器创建，不经模板）。
+// 任何一侧漂移（模板改名/加文件、测试加漏检）都会红在这里，而不是等到线上缺文件。
+test('E · 工件清单一致：常量 ≡ 模板目录；e2e 必须清单 ≡ 常量 ∪ {RUN.log.md}', async () => {
+  const cmd = await readText(join(here, 'lib', 'command.js'));
+  const m = cmd.match(/const templates = \[([^\]]+)\]/);
+  assert.ok(m, 'lib/command.js 里找不到 `const templates = [...]` —— E 的判据失去对象');
+  const constList = m[1].split(',').map((s) => s.trim().replace(/^'|'$/g, '')).filter(Boolean);
+  const dirList = (await readdir(TEMPLATES_DIR)).filter((f) => !f.startsWith('.'));
+  assert.deepEqual([...constList].sort(), [...dirList].sort(),
+    `templates 常量与 ${rel(TEMPLATES_DIR)}/ 不一致（常量=${constList.length} 项，目录=${dirList.length} 项）`);
+
+  const RUNLOG = 'RUN.log.md';
+  const expected = [...constList, RUNLOG].sort();
+  for (const tf of ['smoke.test.mjs', 'regression.test.mjs']) {
+    const src = await readText(join(here, tf));
+    const mm = src.match(/for \(const f of \[([^\]]+)\]\)/);
+    assert.ok(mm, `${tf} 里找不到必需文件清单 —— E 的判据失去对象`);
+    const list = mm[1].split(',').map((s) => s.trim().replace(/^'|'$/g, '')).filter(Boolean);
+    assert.deepEqual([...list].sort(), expected,
+      `${tf} 的必需文件清单与「模板 ${constList.length} 项 + ${RUNLOG}」不一致（该文件 ${list.length} 项）`);
+  }
+});

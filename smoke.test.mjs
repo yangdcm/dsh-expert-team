@@ -48,7 +48,9 @@ const team = join(cwd, 'team');
 const runs = await readdir(team);
 assert.equal(runs.length, 1, 'one run scaffolded');
 const runDir = join(team, runs[0]);
-for (const f of ['TASK.md', 'ROSTER.json', 'STATE.json', '任务看板.md', 'SPEC.md', 'PLAN.md', 'RESEARCH.md', 'TASKS.json', 'REVIEW.md', 'TEST.md', 'SUMMARY.md', 'RETRO.md', 'RUN.log.md']) {
+// run 目录**必需文件**清单 = 运行时 templates 常量（13 项，含 AUTHORITY.md）＋ 由日志器创建的 RUN.log.md。
+// ⚠️ 与 templates 常量**不是同一个集合**（那边不含 RUN.log.md）—— 两者关系由 artifact-ownership.test.mjs 的「工件清单一致」断言钉住。
+for (const f of ['TASK.md', 'ROSTER.json', 'STATE.json', '任务看板.md', 'SPEC.md', 'PLAN.md', 'RESEARCH.md', 'TASKS.json', 'REVIEW.md', 'TEST.md', 'SUMMARY.md', 'RETRO.md', 'AUTHORITY.md', 'RUN.log.md']) {
   await readFile(join(runDir, f), 'utf8').catch(() => assert.fail('missing ' + f));
 }
 // run log seeded with a run:started line
