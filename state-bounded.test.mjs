@@ -24,7 +24,7 @@ const { _live } = await import(join(here, 'lib', 'command.js'));
 
 console.log('① subs 枚举：节流窗口内零枚举 / 期限到点即停（都如实标记）');
 {
-  const { listSubagentStatusBySession, _resetSubHeaderMemo, _resetListSessionsCache, SUB_HEADER_STATS } = _live;
+  const { listSubagentStatusBySession, _resetSubHeaderMemo, _resetListSessionsCache, _resetSubRowsMemo, SUB_HEADER_STATS } = _live;
   const mkCtx = (onEnum) => ({
     get: (n) => (n === 'sessionQuery'
       ? { listSessions: async () => { onEnum(); return [{ header: { id: 'ended-A', createdAt: 5 } }]; } }
@@ -32,27 +32,70 @@ console.log('① subs 枚举：节流窗口内零枚举 / 期限到点即停（�
   });
 
   // (a) 节流：本轮禁止枚举 ⇒ 一次 listSessions 都不发，且 cut='throttled'
-  _resetSubHeaderMemo(); _resetListSessionsCache();
+  _resetSubHeaderMemo(); _resetListSessionsCache(); _resetSubRowsMemo();
   let enumA = 0;
   await listSubagentStatusBySession(mkCtx(() => { enumA += 1; }), 'root', ['ended-A'], { allowEnum: false });
   check(enumA === 0 && SUB_HEADER_STATS.cut === 'throttled',
     '节流窗口内**零枚举**（省掉 475-artifact 全库扫描），并如实标记 throttled',
     'enumCalls=' + enumA + ' cut=' + SUB_HEADER_STATS.cut);
 
-  // (b) 期限：允许枚举但期限已过 ⇒ 枚举发生后**立即停**，cut='deadline'
-  _resetSubHeaderMemo(); _resetListSessionsCache();
+  // (b) 期限：允许枚举但期限已过 ⇒ **连枚举都不启动**（第四轮改），并如实标 deadline。
+  //     ⚠️ 旧实现在这里会先发起那次 2.7 s 的全库枚举、读回全部结果、在第一行上才发现超期
+  //     —— 那正是"装饰性期限"。改后的判据是"一次都不发"。
+  _resetSubHeaderMemo(); _resetListSessionsCache(); _resetSubRowsMemo();
   let enumB = 0;
   await listSubagentStatusBySession(mkCtx(() => { enumB += 1; }), 'root', ['ended-A'], { allowEnum: true, enumDeadlineAt: 0 });
-  check(enumB === 1 && SUB_HEADER_STATS.cut === 'deadline',
-    '期限到点立即停并如实标记 deadline（不静默、也不把残缺当完整）',
+  check(enumB === 0 && SUB_HEADER_STATS.cut === 'deadline',
+    '期限已过 ⇒ **一次枚举都不发**（不再"发起了才发现超期"），并如实标 deadline',
     'enumCalls=' + enumB + ' cut=' + SUB_HEADER_STATS.cut);
 
   // (c) 默认（不传 opts）仍保持原行为：允许枚举、无期限
-  _resetSubHeaderMemo(); _resetListSessionsCache();
+  _resetSubHeaderMemo(); _resetListSessionsCache(); _resetSubRowsMemo();
   let enumC = 0;
   const rowsC = await listSubagentStatusBySession(mkCtx(() => { enumC += 1; }), 'root', ['ended-A']);
   check(enumC === 1 && SUB_HEADER_STATS.cut === '' && rowsC.some((r) => r.id === 'ended-A' && r.createdAt === 5),
     '不传 opts ⇒ 保持原行为（允许枚举、无期限、header 带全）', 'enumCalls=' + enumC);
+
+  // (d) **本轮核心**：`subagents.listChildren()` 慢过期限 ⇒ 响应**不等它**。
+  //     真机证据：`?section=people,feed` 2,686/2,724/2,697 ms、其中 `profile.subs` 占满，
+  //     全部来自这一句内部无条件的全库枚举（475 条 artifact）。
+  _resetSubHeaderMemo(); _resetListSessionsCache(); _resetSubRowsMemo();
+  let warmStarts = 0;
+  const hangCtx = {
+    get: (n) => {
+      if (n === 'sessions') return { list: () => [] };
+      if (n === 'subagents') return {
+        listChildren: () => { warmStarts += 1; return new Promise((r) => { const t = setTimeout(() => r([{ id: 'slow-1', createdAt: 9 }]), 3000); if (t.unref) t.unref(); }); },
+      };
+      if (n === 'sessionQuery') return { listSessions: async () => { throw new Error('不该走到枚举'); } };
+      return null;
+    },
+  };
+  const tD = Date.now();
+  const rowsD = await listSubagentStatusBySession(hangCtx, 'root-hang', ['slow-1'], { allowEnum: true, enumDeadlineAt: Date.now() + 120 });
+  const msD = Date.now() - tD;
+  check(msD < 1000 && SUB_HEADER_STATS.cut === 'deadline' && warmStarts === 1,
+    '预热慢过期限 ⇒ 到点即返回（cut=deadline），**不等**那次全库枚举（旧实现在这里要等满 3 s）',
+    `ms=${msD} cut=${SUB_HEADER_STATS.cut} warms=${warmStarts}`);
+  check(rowsD.length === 0 && SUB_HEADER_STATS.warmTimeouts === 1,
+    '这一轮如实**没有**那行（不臆造时间戳），并记 `warmTimeouts`',
+    `rows=${rowsD.length} warmTimeouts=${SUB_HEADER_STATS.warmTimeouts}`);
+
+  // (e) 预热落进备忘后：第二次请求**一次都不再调 listChildren**（成本从每请求变成每次刷新）
+  _resetSubHeaderMemo(); _resetListSessionsCache(); _resetSubRowsMemo();
+  let calls = 0;
+  const warmFastCtx = {
+    get: (n) => {
+      if (n === 'sessions') return { list: () => [] };
+      if (n === 'subagents') return { listChildren: async () => { calls += 1; return [{ id: 'w-1', createdAt: 11, activity: 'inactive' }]; } };
+      return null;
+    },
+  };
+  const first = await listSubagentStatusBySession(warmFastCtx, 'root-warm', ['w-1'], { allowEnum: true, enumDeadlineAt: Date.now() + 800 });
+  const second = await listSubagentStatusBySession(warmFastCtx, 'root-warm', ['w-1'], { allowEnum: true, enumDeadlineAt: Date.now() + 800 });
+  check(calls === 1 && first.some((r) => r.id === 'w-1' && r.createdAt === 11) && second.some((r) => r.id === 'w-1' && r.createdAt === 11),
+    '预热一次、之后每轮只读备忘（`listChildren` 调用数不随请求数增长）',
+    `calls=${calls} rowsHits=${SUB_HEADER_STATS.rowsHits}`);
 }
 
 console.log('\n② roles：实时路径零读（未知角色如实"待解析"）、期限到点即停');

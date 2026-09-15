@@ -3,6 +3,33 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.3.20
+
+**`subs` 段：把那 800 ms 的期限变成真的**（`?section=people,feed` 真机 2,680–2,724 ms ⇒ 有界）。
+
+- **根因（可复核）**：`listSubagentStatusBySession` 里那句 `await runtime.listChildren(root)`
+  **不受任何节流管辖**；而宿主实现（`@deepseek-ai/dsh-subagent` 的 `list-children.js` →
+  `prepareListing`）**无条件**先做一次 `sessionQuery.listSessions()` —— 全库枚举（本机 475 条
+  artifact，每条 `lstat + stat + 读首行`）。真机 profile 实测：`people,feed` 2,686 / 2,724 / 2,697 ms，
+  其中 `profile.subs` 2,680 / 2,717 / 2,686 ms（≈100%）；而 `SUBS_ENUM_DEADLINE_MS` 只在
+  "**被 await 的那段返回之后**"才被检查 ⇒ 期限是**装饰性**的。
+- **改法**：热路径只读**内存**（活子会话 `sessions.list()` + 上一次预热留下的行 `SUB_ROWS_MEMO`）；
+  `listChildren` 挪到**后台预热**（同一 root 同刻只跑一个，结果落备忘，顺带把 header 灌进永久备忘）。
+  只有"从没有过基线"的那一轮会按期限等一小会儿（机器快/库小时 ⇒ 首个响应就是完整的）；
+  等不到 ⇒ 如实 `cut='deadline'`（真截断 ⇒ 进 `degraded`），后台继续跑，下一轮（≤一个轮询间隔）就有基线。
+  备忘过期只触发**后台刷新**、从不等 ⇒ `cut='warming'`（**不是失败**：成员不丢，细节由 `subsPending` 表达）。
+- **期限现在真的会咬人**：`listChildren` 慢过期限时，响应 **121 ms** 就返回（测试里用一个"挂 3 s 的桩"
+  钉死；旧实现必须等满那 3 s）。rescue 枚举也改成**先看预算再起手**：期限已过 ⇒ **一次都不发**
+  （旧实现会先发起 2.7 s 的全库枚举、读回全部结果，然后在第一行上才发现超期）。
+- **节流间隔 30 s → 120 s**：这个窗口现在同时管"预热刷新"与"rescue 枚举"。活代理状态仍然**实时**读
+  （`sessions` / `agents` 注册表赢），且备忘行**不再被就地改写**（否则"此刻的状态"会被写进快照，
+  某个 id 结束后就顶着陈旧值）。
+- **可观测**：profile 负载新增 `subs` 汇总（`cut` / `rowsHits` / `rowsMisses` / `liveRows` / `warms` /
+  `warmErrors` / `warmTimeouts` / `warmMs` / `memoHits` / `memoWrites` / `enumCalls`）——
+  "热路径到底还去不去做那次全库枚举"从此是**数字**，不是注释里的承诺。
+- **棘轮**：`state-bounded.test.mjs` 新增三条（挂起桩 ⇒ 到点即返回、预热一次后续请求零调用、
+  期限已过零枚举），并把旧断言"期限到点**立即停**"改成更强的"**一次都不发**"。
+
 ## 1.3.19
 
 **文档与 CI 工具的三件收口**（纯文档/工作流，**不改任何产品代码**）。
