@@ -12,10 +12,19 @@
 // `DSH_WRITE_BYPASS_BASELINE` 覆写基线路径（沿用 `DSH_EVIDENCE_FRAGMENT_BASELINE` 的惯例），
 // 从而在**不动仓库里真实基线文件**的前提下验证三种情形。
 //
+// ── 第二轮修（2026-09-15）：这道门禁"一直是红的却没人知道" ─────────────────────
+//   上面那些情形全都在**临时目录**里验脚本逻辑，而**真实仓库**从未被比过一次：
+//   `.github/workflows/ci.yml` 故意不跑 `npm run gate`（那里有它自己的原因），于是
+//   `regression.fixtures/write-bypass-baseline.json` 的 `total: 0` 与真实值（当时 4 处直写：
+//   `lib/command.js` 的 runs-index 2 处 + 新写模块 2 处）已经不一致了很久，**没有任何一处会红**。
+//   所以本轮加两节（都在真实仓库上断言，因此 CI 的 `npm run test:all` 就会强制它）：
+//     ⑥ 真实仓库必须 `total <= 基线`（`baselinePresent` 必须为真；失败时带 perFile 分布）；
+//     ⑦ **同源锁**：`EXEMPT` 成员集合必须恰好等于预期清单 ⇒ 豁免不可能静默扩张。
+//
 // 变异验证：见 `regression.fixtures/mutations.json` 的 **M92**（把 fail-closed 改回 `base = total`）。
 // 运行：node write-bypass-ratchet.test.mjs
 
-import { mkdtemp, mkdir, writeFile, rm, copyFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +47,23 @@ async function runGate(dir, baselinePath, extraArgs = []) {
       cwd: dir,
       env: { ...process.env, DSH_WRITE_BYPASS_BASELINE: baselinePath },
       maxBuffer: 4 * 1024 * 1024,
+    });
+    return { code: 0, out: stdout + stderr };
+  } catch (e) {
+    return { code: e.code ?? 1, out: String(e.stdout || '') + String(e.stderr || '') };
+  }
+}
+
+/**
+ * 在**真实仓库**里跑门禁脚本（`cwd = here`，且**清掉** `DSH_WRITE_BYPASS_BASELINE` 覆写，
+ * 确保用的是 `regression.fixtures/write-bypass-baseline.json`）。返回 `{code, out}`（不抛）。
+ */
+async function runRealRepoGate(extraArgs = []) {
+  const env = { ...process.env };
+  delete env.DSH_WRITE_BYPASS_BASELINE;
+  try {
+    const { stdout, stderr } = await run('node', [join(here, 'scripts', 'check-write-bypass.mjs'), ...extraArgs], {
+      cwd: here, env, maxBuffer: 4 * 1024 * 1024,
     });
     return { code: 0, out: stdout + stderr };
   } catch (e) {
@@ -104,6 +130,52 @@ try {
   }
 } finally {
   await rm(tmp, { recursive: true, force: true });
+}
+
+// ── 6. **真实仓库**必须满足 total <= 基线（这一节就是把门禁接进 CI 的那根线）────────
+// 为什么必须有：上面 1–5 全在临时目录里验脚本逻辑，`.github/workflows/ci.yml` 又**故意不跑**
+// `npm run gate`。两者叠加的后果已经发生过一次：真实值 4、基线 0，**没有任何一处会红**。
+// 这里跑的是仓库自己的基线文件（不带覆写），所以 `npm run test:all` 一跑就是真话。
+console.log('\n⑥ 真实仓库：直写总数必须 <= 基线（基线缺失/损坏同样算失败）');
+{
+  const r = await runRealRepoGate(['--json']);
+  let parsed = null;
+  try { parsed = JSON.parse(r.out.slice(r.out.indexOf('{'))); } catch { /* 见下断言 */ }
+  check(r.code === 0, '真实仓库 gate:bypass exit 0（未超过基线）', `code=${r.code}`);
+  check(parsed !== null, '真实仓库 --json 输出可解析');
+  if (parsed) {
+    const dist = Object.entries(parsed.perFile || {}).map(([f, n]) => `${f}:${n}`).join(' / ') || '（无直写）';
+    const tally = `total=${parsed.total} 基线=${parsed.baseline} delta=${parsed.delta}｜分布：${dist}`;
+    check(parsed.baselinePresent === true,
+      '真实仓库基线文件存在且可解析（baselinePresent=true —— 否则 fail-closed 会把一切都判红）',
+      `baselineFile=${parsed.baselineFile}`);
+    check(parsed.delta <= 0, '真实仓库 delta <= 0（新增直写必须走受控入口，或先迁移再下调基线）', tally);
+    check(Number.isInteger(parsed.total), '真实仓库 total 是整数', tally);
+  }
+}
+
+// ── 7. 同源锁：`EXEMPT` 只能是我们知道的这几个 ───────────────────────────────
+// 门禁的豁免面就是"哪些文件可以直写"。它一旦能被子系统悄悄扩大，整道棘轮就变成摆设
+// （把新写的直写文件往 EXEMPT 里一塞，门禁永远绿）。所以预期清单在这里**再写一遍**：
+// 谁要改豁免面，就必须同时改这条断言 —— 让它成为一次**有人签字**的改动。
+console.log('\n⑦ 同源锁：EXEMPT 成员集合恰好等于预期清单（豁免不许静默扩张）');
+{
+  const src = await readFile(join(here, 'scripts', 'check-write-bypass.mjs'), 'utf8');
+  // 先剥注释再解析：那段注释里就写着为什么只允许这两个（避免正文被当成清单成员）。
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const m = /const EXEMPT = new Set\(\[([\s\S]*?)\]\)/.exec(code);
+  check(m !== null, '能从脚本源码里解析出 EXEMPT（反空转：解析不到就必须红，不许静默通过）');
+  const actual = m ? [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]).sort() : [];
+  const expected = ['lib/artifact-writer.js', 'lib/host-state-file.js'];
+  check(actual.join(' | ') === expected.join(' | '),
+    'EXEMPT == 预期清单（两个受控入口：工作区工件 / 宿主状态文件）',
+    `实际：${actual.join(' | ') || '（空）'}`);
+  // 受控入口必须真的存在（写一个不存在的文件名 = 豁免了一个没人用的名字，门禁却照样绿）。
+  for (const rel of expected) {
+    let exists = true;
+    try { await readFile(join(here, rel), 'utf8'); } catch { exists = false; }
+    check(exists, `受控入口确实存在：${rel}`);
+  }
 }
 
 if (fail) { console.error(`\n✗ write-bypass-ratchet：${fail} 项失败`); process.exit(1); }

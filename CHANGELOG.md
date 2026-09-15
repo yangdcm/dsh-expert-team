@@ -37,11 +37,33 @@
   校验拒绝 / 空串不改值 / 显式清除 / daemon 强制地址"；路由层在**临时目录 + `HINDSIGHT_CONFIG`** 上真落盘，
   实测文件 `0600`、目录 `0700`、被拒绝时盘上逐字节不变、回执与诊断响应全文不含 token 明文、
   跨站写 403 / 415 / 非回环 Host 403。全程不碰真实 `~/.hindsight`。
-- **已知的门禁差异（如实记下）**：`gate:bypass`（写入绕过棘轮）现在报 `+4`，其中 `lib/command.js: 2` 是
-  **本次改动之前就存在**的（`runs-index` 的 `writeFile` + `rename`，而基线文件里 `total = 0`），另外 2 处是
-  本模块的 `writeFile` + `rename`。本模块写的是 **Hindsight 的配置文件、不是工作区工件**，走
-  `lib/artifact-writer.js` 是错的（那会套上工件归属门禁与工作区范围硬排除）⇒ **没有去抬高基线**
-  （脚本本身也拒绝抬高）。"非工件的宿主配置文件"该不该排除在这道统计之外，留给后续决定。
+- **写入绕过棘轮：从"一直是红的却没人知道"修到**真绿且被 CI 强制****（同一轮里的第二件事）。
+  - **两个事实叠在一起才让门禁失效**：`regression.fixtures/write-bypass-baseline.json` 写的是 `total: 0`，
+    而真实值是 **4**（`lib/command.js` 的 runs-index 2 处 + 本模块 2 处）；同时 `.github/workflows/ci.yml`
+    **故意不跑** `npm run gate`，`write-bypass-ratchet.test.mjs` 又只在**临时目录**里验脚本逻辑 ——
+    真实仓库**从来没有任何一处会被比对**。于是从 2026-09-11 起，这道门禁在本仓一直是红的。
+  - **分类先钉死**：runs-index 写的是 `runsIndexPath()` = `$DSH_HOME/expert-team/runs-index.json`
+    —— **工作区之外**的**宿主状态文件**，不是工作区工件 ⇒ 不该走 `lib/artifact-writer.js`
+    （那会套上工件归属门禁与工作区范围硬排除）。
+  - **新增 `lib/host-state-file.js`**：宿主状态文件的**单一受控入口**（同目录临时文件 → `fsync` →
+    `chmod` → `rename` → 目录项 fsync；默认 `0600`／目录 `0700`；失败清临时文件；唯一临时名）。
+    `lib/command.js` 的 runs-index 与 `lib/hindsight-config-write.js` 都改成走它 ⇒ 两者的直写**归零**，
+    `gate:bypass` 报 `0 / 基线 0 / 差值 0`（**没有去抬高基线**，脚本本身也拒绝抬高）。
+  - **为什么这类写入不能用宿主现成的栅栏**（实测证据，不是猜测）：`dsh-base` 的 `cordis.patch.yml`
+    挂的 fs 后端是 `@deepseek-ai/dsh-fs-sandbox`（不是 `fs-local`），`sandbox-policy` 默认
+    `workspace-write` + `workspaceRoot = process.cwd()`，而该后端 README 与源码
+    （`lib/index.js` 的 `FS_SANDBOX_DENIED`）写死"越出工作区即拒" ⇒ `ctx.fs` **够不到** `$DSH_HOME/...`。
+    宿主的 `@deepseek-ai/dsh-atomic-write` 在插件目录下 `import` 解析不到（`ERR_MODULE_NOT_FOUND`），
+    而本包承诺 `dependencies: {}` ⇒ 不能借它，只能把同样的语义在本模块里实现一份。证据写在模块文件头。
+  - **让棘轮真的会被执行**：`write-bypass-ratchet.test.mjs` 增两节（**不新增测试文件**，仍 89）——
+    ⑥ 在**真实仓库**（用仓库自己的基线文件）断言 `delta <= 0` 且 `baselinePresent === true`，失败信息带
+    perFile 分布；⑦ **同源锁**：从脚本源码解析 `EXEMPT`，断言它**恰好**等于
+    `['lib/artifact-writer.js', 'lib/host-state-file.js']`，并断言两个受控入口文件真实存在。
+    这两节跑在 `npm run test:all` 里 ⇒ CI 从此强制它。
+  - **如实记一处行为变化**：runs-index 文件权限由 umask 默认（`0644`）变为**显式 `0600`**（路径、内容、
+    失败语义、并发语义都没动；它会话状态里带工作区路径，收紧属主可读与该文件的性质一致）。
+    红→绿证据（临时造一处直写 ⇒ ⑥ 报 `delta=1｜分布：lib/vocab.js:1` ⇒ 逐字节还原 sha256 一致）
+    与 ⑦ 的反向验证（往 `EXEMPT` 里塞第三个文件 ⇒ 当场红）都已实测。
 
 ## 1.3.20
 

@@ -36,8 +36,20 @@ const BYPASS_PATTERNS = [
   { name: 'appendFile', re: /\bappendFile\s*\(/g },
   { name: 'rename', re: /\brename\s*\(/g },
 ];
-/** 受控入口自身的文件不计入（它就是"合法写者"）。 */
-const EXEMPT = new Set(['lib/artifact-writer.js']);
+/**
+ * **受控入口**自身的文件不计入 —— 规则同一条：这些文件就是"合法写者"，棘轮数的是"绕过受控入口
+ * 的直写"，不是"受控入口内部的直写"（否则受控入口自己也无法存在）。当前恰好两个，对应两类不同的
+ * 被写对象，**不允许扩张成第三个**（`write-bypass-ratchet.test.mjs` 有一条同源锁盯着这份清单：
+ * 谁想往这里加文件，就必须同时改那条断言 ⇒ 豁免不可能静默扩张）：
+ *   · `lib/artifact-writer.js` —— **工作区工件**的单一入口（版本栅栏 / 陈旧重试 / 范围硬排除 / revision）；
+ *   · `lib/host-state-file.js` —— **宿主状态文件**（工作区之外，如 `$DSH_HOME/...`、`~/.hindsight/...`）
+ *     的单一入口。为什么这类写入不能走宿主现成的 `ctx.fs`：默认组合挂的是 `dsh-fs-sandbox` +
+ *     `workspace-write`，越界抛 `FS_SANDBOX_DENIED`（证据写在 `lib/host-state-file.js` 文件头）。
+ */
+const EXEMPT = new Set([
+  'lib/artifact-writer.js',
+  'lib/host-state-file.js',
+]);
 
 async function collectFiles(dir, out = []) {
   const entries = await readdir(dir, { withFileTypes: true });

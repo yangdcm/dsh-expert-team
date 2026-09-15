@@ -154,10 +154,18 @@ console.log('\n⑦ 纪律的源码级守卫（诊断模块只读 / 写模块原�
   check(!/method:\s*'POST'|method:\s*"POST"/.test(modSrc), '诊断模块内没有 POST（只有探测用的 GET）', '');
 
   const wSrc = readFileSync(join(here, 'lib', 'hindsight-config-write.js'), 'utf8');
-  check(/\.sync\(\)/.test(wSrc) && /rename\(/.test(wSrc), '写模块用**临时文件 + fsync + rename**（原子替换）', '');
-  check(/0o600/.test(wSrc) && /0o700/.test(wSrc), '写模块显式设 0600（文件）/ 0700（目录）', '');
+  // 原子写本身现在**只有一份实现**（`lib/host-state-file.js`）—— 写模块委派给它，自己的直写归零。
+  // 这样写绕过棘轮（`scripts/check-write-bypass.mjs`）才不必为"同一段逻辑换个文件再抄一遍"开豁免口子。
+  check(/from '\.\/host-state-file\.js'/.test(wSrc) && /writeHostStateFileAtomic\(/.test(wSrc),
+    '写模块**委派**给宿主状态文件受控入口（原子写的唯一实现处）', '');
+  check(!/\brename\s*\(/.test(wSrc) && !/\bwriteFile\s*\(/.test(wSrc),
+    '写模块里**没有直写调用**（临时文件 + 换名不许散落多处）', '');
   check(!/from '\.\/command\.js'/.test(wSrc), '写模块不从 command.js 反向 import（叶子纪律，不成环）', '');
   check(/from '\.\/hindsight-config\.js'/.test(wSrc), '写模块复用诊断模块的真源（不另抄一份常量/解析）', '');
+
+  const hSrc = readFileSync(join(here, 'lib', 'host-state-file.js'), 'utf8');
+  check(/\.sync\(\)/.test(hSrc) && /rename\(/.test(hSrc), '受控入口用**临时文件 + fsync + rename**（原子替换）', '');
+  check(/0o600/.test(hSrc) && /0o700/.test(hSrc), '受控入口显式设 0600（文件）/ 0700（目录）', '');
 
   const cmdSrc = readFileSync(join(here, 'lib', 'command.js'), 'utf8');
   check(cmdSrc.includes("path: '/plugins/dsh-expert-team/hindsight-config'"), '路由已注册', '');
