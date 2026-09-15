@@ -3,6 +3,59 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.3.10
+
+**四项一次收口：推荐插件自检 · 画布轮询也走 single-flight · 底盘缓存 · 角色解析限次。**
+这一版全部由**真机实测**驱动，改动都带可复现的判据（下面每条都写明"改前 → 目标"）。
+
+### ① 启动时自检推荐插件（缺了说一句，装了不吭声）
+
+- 事实前提（只读调查）：本插件**零硬依赖** —— `package.json` 连 `dependencies` 字段都没有，
+  全库没有一条外部 import；点名到的外部插件只有 `@vectorize-io/hindsight-coding-agents`（工具名
+  `hindsight_*`）与 `dsh-cost-meter`，**缺了都不会报错**，只是少了对应体验。
+- `detectOptionalPlugins(ctx)`（**纯读、无副作用**）三条探测路径：
+  ① `ctx.get('loader').entries()` 的 `options.name` = **装没装**；
+  ② `ctx.get('costMeter')`（服务名是**驼峰**）= 费用插件是否可用；
+  ③ `ctx.get('tools').get('hindsight_ingest_document')` = **此刻能不能用** —— Hindsight 在
+  "装了但未配置/被 opt-out"时**根本不注册工具**，所以这一条天然把「没装」与「装了没配」分开。
+- 状态四态：`ready` / `missing` / `installed-not-ready` / `unknown`（loader 探测不可用 + 服务也
+  拿不到时**不假装知道**，且不进提示）。
+- 加载时**最多一行**（进程内去重），都齐则**完全不打扰**；`/team help` 里加一行说明。
+
+### ② 客户端的**所有** /state 轮询统一走一个 hub（上一版只护住了面板）
+
+- 实测问题：面板一套 `load()`（1.3.5 已加守卫），而 `HeaderButton` 徽章与画布另走 `liveStore` 的
+  `setInterval(liveTick, 2500)` —— **画布一开就有 2–3 个轮询并发压同一个重端点**：10 秒 **7 发**、
+  **6 次重叠**，单发被拖到 **5,891 / 8,347 ms**（并发叠加服务端约 2 s 的同步 CPU）。
+- 现在只有 `stateHub` 一个时钟、一份在飞表：**同 URL 同刻只跑一次**（后来者复用在飞 promise）、
+  全局单一时钟、统一退避 `clamp(max(基础间隔, 最慢一次×2), 基础间隔, 30000)`，
+  团队有人跑时基础间隔按 40% 加速（面板原有意图，现在对徽章/画布同样生效）。
+- 结构性护栏：`client.js` 里**不再存在**任何裸的 `fetch('/plugins/dsh-expert-team/state…')`
+  （唯一调用点在 `stateHubFetch` 内），也**只剩一个** `setInterval(stateHubTick, …)`。
+
+### ③ 底盘：`listSessions` 只在真缺人时查 + 并发合并 + 短 TTL
+
+- 实测残留：`/state` 热态仍是 **2,887 / 2,603 ms**（诊断点名的"固定底盘 1500–2400 ms"）。
+- 两处都遵循"**先证明需要，再花这笔钱**"：① 旧实现只要 `knownIds` 非空就无条件
+  `listSessions()`（宿主侧 = 枚举全部 artifact、逐个读 header，本机 475 个、~1.5–2.4 s），
+  现在先算"活注册表里查不到的人"，一个不缺就整段跳过；② 真的要查时**并发合并 + 2 s TTL**。
+- **缓存纪律（写死在注释里）**：只服务"已结束/已释放子代理"这一支（其 header 不再变化）；
+  **活代理一律走 listChildren/agents 实时读，绝不经过缓存**；失败不毒化缓存。
+- 另加**分步计时**（`DSH_EXPERT_TEAM_STATE_PROFILE=1` 才收集，默认响应体不变）：
+  `profile: {runs+select, subs, wfLabels, roles, tail, rolesBudget}` —— 让"哪一步还贵"下一次**可测**
+  而不是靠猜。
+
+### ④ 角色解析：**限次摊平**（不是流式，且不假装流式）
+
+- 诊断建议"真流式：读到首条 `user/message` 即停"。**做不到**：宿主公开 API
+  （`readSession/listEvents/filterEvents/readEvent`）**没有**投影/限量/流式参数
+  （`projectionMode` 只在内部 corpus.read），要"只读首帧"只能碰持久化层的非契约内部方法。
+- 改为**有界**：每次 `/state` 最多读 **4** 条子会话日志（角色结果**永久缓存** ⇒ 几个 tick 内收敛），
+  其余留到下一 tick，并把"本轮被推迟"的条数作为 `rolesDeferred` **如实**交给调用方 ——
+  「还没解析」与「解析不出来」两件事**分得清**（两种零可区分），**不臆造角色**。
+
+> 本版**未**改文档/图片（`README*.md`、`docs/images/*` 是前几版刚定稿的）；未改 `files` 字段。
+
 ## 1.3.9
 
 **新增第二张真实画布截图：`事` 视图（任务依赖图）**（纯文档/资产：`lib/`、`client.js` 零改动）。
