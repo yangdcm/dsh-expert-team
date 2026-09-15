@@ -188,40 +188,109 @@ console.log('\n④ 底盘：listSessions 只在**真缺人**时查，且并发/�
   // 源码级：缓存注释必须写明"活代理不缓存"这条纪律
   check(/活代理.*实时读.*(绝不经过|不缓存)/.test(readFileSync(join(here, 'lib', 'command.js'), 'utf8')),
     '缓存纪律写死在注释里（活代理不缓存、只缓存已结束的 durable 列表）', '');
+
+  // (f) 按 session id 备忘：**第二个请求起零枚举**（这才是把 subs 段打下去的手段）
+  const { SUB_HEADER_MEMO, SUB_HEADER_STATS, _resetSubHeaderMemo } = _live;
+  _resetListSessionsCache(); _resetSubHeaderMemo();
+  let c6 = 0;
+  const mkCtx6 = () => ({
+    get: (n) => {
+      if (n === 'sessions') return { get: (id) => ({ header: { id, origin: 'user' } }) };
+      if (n === 'subagents') return { listChildren: async () => [{ id: 'live-1' }] };
+      if (n === 'sessionQuery') return { listSessions: async () => { c6 += 1; return [{ header: { id: 'ended-1', createdAt: 7, parentSession: 'p', delegationDepth: 1 } }] } };
+      return null;
+    },
+  });
+  await listSubagentStatusBySession(mkCtx6(), 'root-1', ['live-1', 'ended-1']);
+  const second = await listSubagentStatusBySession(mkCtx6(), 'root-1', ['live-1', 'ended-1']);
+  check(c6 === 1, '已结束子会话的 header **只枚举一次**（第二个请求查备忘，零枚举）', 'listSessions calls=' + c6);
+  check(second.some((r) => r.id === 'ended-1' && r.createdAt === 7 && r.parentId === 'p' && r.depth === 1) && SUB_HEADER_STATS.memoHits >= 1,
+    '备忘命中时 header 字段仍然带全（createdAt/parentId/depth）', 'memoHits=' + SUB_HEADER_STATS.memoHits);
+  check(!SUB_HEADER_MEMO.has('live-1'), '**活代理永不写入备忘**（它走实时路径，缓存里不该出现它）', 'memo size=' + SUB_HEADER_MEMO.size);
+
+  // (g) 目录戳失效：戳变了必须立刻重算（不能靠 TTL 假装新鲜）
+  _resetListSessionsCache();
+  let c7 = 0;
+  const q7 = { listSessions: async () => { c7 += 1; return [] } };
+  await cachedListSessions(q7, 'stamp-A'); await cachedListSessions(q7, 'stamp-A');
+  check(c7 === 1, '同一目录戳 ⇒ 复用（不重复枚举）', 'calls=' + c7);
+  await cachedListSessions(q7, 'stamp-B');
+  check(c7 === 2, '目录戳变了（新增/删除会话）⇒ **立刻重算**，不等 60 s TTL', 'calls=' + c7);
+  check(LIST_SESSIONS_TTL_MS >= 60000, 'TTL 只作兜底（≥60 s）：主失效键是目录戳，不是 TTL', 'TTL=' + LIST_SESSIONS_TTL_MS);
 }
 
-console.log('\n⑤ 每请求的子会话日志读取预算（宿主公开 API 无流式参数 ⇒ 有序摊平，不假装流式）');
+console.log('\n⑤ 子会话日志读取：**跨请求推进**的待解析队列（限次 + 永久缓存 ⇒ 必然收敛）');
 {
-  const { resolveSubRoles, resetRoleReadBudget, roleReadBudgetSnapshot, ROLE_READ_BUDGET_PER_REQUEST } = _live;
+  const { resolveSubRoles, resetRoleReadBudget, roleReadBudgetSnapshot, ROLE_READ_BUDGET_PER_REQUEST, _resetRolePending } = _live;
   const uniq = String(Date.now());
   let reads = 0;
-  const ctx = {
+  const mkCtx = (withRole) => ({
     get: (n) => (n === 'sessionQuery'
-      ? { readSession: async () => { reads += 1; return { events: [{ type: 'user/message', data: { message: { content: [{ text: '【产品经理】你是「专家团」的产品经理（pm，…）' }] } } }] } } }
+      ? {
+        readSession: async () => {
+          reads += 1;
+          return { events: withRole
+            ? [{ type: 'user/message', data: { message: { content: [{ text: '你是「专家团」的产品经理（pm，…）' }] } } }]
+            : [{ type: 'system', data: {} }] };
+        },
+      }
       : null),
-  };
-  const mkSubs = () => {
+  });
+  const mkSubs = (n, tag) => {
     const out = [];
-    for (let i = 0; i < ROLE_READ_BUDGET_PER_REQUEST + 3; i++) out.push({ id: 'budget-' + uniq + '-' + i, label: '' });
+    for (let i = 0; i < n; i++) out.push({ id: 'q-' + (tag || uniq) + '-' + i, label: '' });
     return out;
   };
-  resetRoleReadBudget();
-  const subs1 = mkSubs();
-  await resolveSubRoles(ctx, subs1, new Map());
-  const snap1 = roleReadBudgetSnapshot();
-  check(reads === ROLE_READ_BUDGET_PER_REQUEST, '每次请求最多读 N 条子会话日志（本轮 reads=' + reads + '，预算 ' + ROLE_READ_BUDGET_PER_REQUEST + '）', '');
-  check(snap1.deferred === 3, '超预算的条目**如实**计为"本轮被推迟"（与"解析不出来"分开 —— 两种零可区分）', 'deferred=' + snap1.deferred);
-  const unresolved = subs1.filter((x) => !x.role).length;
-  check(unresolved === 3, '被推迟的 3 条**不臆造角色**（留空，UI 如实显示未解析）', 'unresolved=' + unresolved);
-  check(!_live.ROLE_READ_LOG_CACHE.has('budget-' + uniq + '-' + (ROLE_READ_BUDGET_PER_REQUEST + 1)),
-    '被推迟的条目**不写缓存** ⇒ 下一个 tick 会重试（不是永久放弃）', '');
+  const N = ROLE_READ_BUDGET_PER_REQUEST;
 
-  // 下一个 tick：预算复位后应该把剩下的解析完
+  // (a) 首个请求：只读 N 条，其余如实计入 deferred
+  _resetRolePending();
   resetRoleReadBudget();
-  const subs2 = mkSubs();
-  await resolveSubRoles(ctx, subs2, new Map());
-  const snap2 = roleReadBudgetSnapshot();
-  check(snap2.deferred === 0 && subs2.every((x) => !!x.role), '预算复位后的下一次请求把剩余条目补齐（几个 tick 内自然收敛）', 'deferred=' + snap2.deferred);
+  await resolveSubRoles(mkCtx(true), mkSubs(N + 2), new Map());
+  check(reads === N, '每请求最多读 N 条子会话日志（reads=' + reads + '，预算 ' + N + '）', '');
+  check(roleReadBudgetSnapshot().deferred === 2, '超预算的条目**如实**计为"还没解析"（deferred）', 'deferred=' + roleReadBudgetSnapshot().deferred);
+  check(!_live.ROLE_READ_LOG_CACHE.has('q-' + uniq + '-' + (N + 1)),
+    '被推迟的条目**不写缓存** ⇒ 下一轮会继续（不是永久放弃）', '');
+
+  // (b) 第二个请求：**从上次停下的地方继续**（旧实现在这里会把前 N 条重读一遍 ⇒ 永不收敛）
+  resetRoleReadBudget();
+  const s2 = mkSubs(N + 2);
+  await resolveSubRoles(mkCtx(true), s2, new Map());
+  check(reads === N + 2, '第二个请求**只补读剩下的 2 条**（游标前移，不重读前 N 条）', 'reads=' + reads);
+  check(roleReadBudgetSnapshot().deferred === 0, 'deferred 收敛到 0（不再像 16 → 40 那样上涨）', 'deferred=' + roleReadBudgetSnapshot().deferred);
+  check(s2.every((x) => !!x.role), '收敛后每个子代理都拿到了角色', '');
+
+  // (c) 第三个请求：队列空 + 结果永久缓存 ⇒ **零日志读**
+  resetRoleReadBudget();
+  await resolveSubRoles(mkCtx(true), mkSubs(N + 2), new Map());
+  check(reads === N + 2, '收敛后再请求 ⇒ **零次日志读**（角色对已结束会话不可变 ⇒ 永久缓存）', 'reads=' + reads);
+
+  // (d) 两种零必须分得开：解析不出来（unresolved）≠ 还没解析（deferred）
+  _resetRolePending();
+  resetRoleReadBudget();
+  const tag2 = uniq + 'x';
+  const s3 = [{ id: 'q-' + tag2 + '-0', label: '' }, { id: 'q-' + tag2 + '-1', label: '' }];
+  await resolveSubRoles(mkCtx(false), s3, new Map());
+  const snap3 = roleReadBudgetSnapshot();
+  check(snap3.deferred === 0 && snap3.unresolved >= 2,
+    '读不出角色的计入 **unresolved（解析不出来）**，不混进 deferred（还没解析）——两种零分得开',
+    JSON.stringify({ deferred: snap3.deferred, unresolved: snap3.unresolved }));
+  check(s3.every((x) => !x.role), '读不出就**留空**（不臆造角色）', '');
+
+  // (e) 额度复位**不丢队列进度**（进度跨请求保留，这是收敛的前提）
+  _resetRolePending();
+  resetRoleReadBudget();
+  const tag3 = uniq + 'e';
+  await resolveSubRoles(mkCtx(true), mkSubs(N + 3, tag3), new Map());
+  const before = roleReadBudgetSnapshot().deferred;
+  resetRoleReadBudget();
+  check(before === 3 && roleReadBudgetSnapshot().deferred === 3,
+    'resetRoleReadBudget() 只复位"本请求额度"，**不丢队列进度**', 'deferred=' + roleReadBudgetSnapshot().deferred);
+
+  // 源码级：队列实现存在且 resolveSubRoles 走它（防止有人改回"每请求从零重算"）
+  check(/function syncRolePending\(/.test(cmdSrc) && /syncRolePending\(subs\)/.test(cmdSrc),
+    '待解析队列按当前 subs 重建（保留既有顺序、新人追加队尾）', '');
+  check(/let ROLE_PENDING = \[\]/.test(cmdSrc), '队列是**模块级**（跨请求保留），不是每请求新建', '');
 }
 
 console.log('\n⑥ 推荐插件自检（缺了说一句、装了不吭声、区分"没装"与"装了没配"）');
@@ -271,7 +340,60 @@ console.log('\n⑥ 推荐插件自检（缺了说一句、装了不吭声、区�
   } finally { console.log = orig }
   check(logs.length === 1, '同一次加载**最多一行**（重复调用不再刷屏）', 'logs=' + logs.length);
 
-  check(/hintOptionalPluginsOnce\(ctx\)/.test(cmdSrc), 'apply() 里真的挂了自检（不是写了没接）', '');
+  // 分档文案（2026-09-15 真实假警报）：装了但此刻拿不到 **不许**再给安装命令
+  const onlyNotReady = detectOptionalPlugins(ctxOf(['dsh-cost-meter', '@vectorize-io/hindsight-coding-agents'], { costMeter: true, tools: [] }));
+  check(st(onlyNotReady, 'cost-meter') === 'ready' && st(onlyNotReady, 'hindsight') === 'installed-not-ready',
+    '构造"只有 installed-not-ready"的场景（费用已就绪、Hindsight 装了没配）', JSON.stringify(onlyNotReady.items.map((i) => i.id + '=' + i.status)));
+  check(onlyNotReady.hint !== '' && !/dsh plugin/.test(onlyNotReady.hint) && /已安装但当前未就绪/.test(onlyNotReady.hint),
+    'installed-not-ready 的提示**不含安装命令**（那等于叫用户装一个已经装好的东西）', onlyNotReady.hint.slice(0, 78) + '…');
+  const hseg = (installedNotConfigured.hint.split('；').find((p) => p.indexOf('hindsight') >= 0) || '');
+  check(hseg !== '' && !/dsh plugin/.test(hseg), '混合提示里**逐项**分档：该给命令的给、不该给的不给', hseg.slice(0, 56) + '…');
+  check(/dsh plugin --profile web add/.test(nothing.hint), 'missing 的提示**含**安装命令（该装就告诉他怎么装）', '');
+  check(installedNotConfigured.hint.split('\n').length === 1, '分档之后仍然只有一行', '');
+
+  // 探测时机：加载当刻**不能**下结论（那时别人的服务还没挂上 ⇒ 假警报）
+  {
+    const { scheduleOptionalPluginCheck } = _live;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const lateLoader = { entries: function* () { yield { options: { name: 'dsh-cost-meter' } }; yield { options: { name: '@vectorize-io/hindsight-coding-agents' } } } };
+
+    // (i) 服务晚一步挂上 ⇒ 重探发现都齐 ⇒ 一声不吭（这正是用户那次假警报的场景）
+    let phase = 0;
+    let late = {
+      get: (n) => {
+        if (n === 'loader') return lateLoader;
+        if (n === 'costMeter') return phase >= 1 ? {} : undefined;
+        if (n === 'tools') return { get: (t) => (phase >= 1 && t === 'hindsight_ingest_document' ? { name: t } : undefined) };
+        return undefined;
+      },
+    };
+    const logs1 = [];
+    const orig1 = console.log;
+    console.log = (m) => { logs1.push(String(m)) };
+    try {
+      _resetOptionalHintOnce();
+      setTimeout(() => { phase = 1 }, 3);
+      scheduleOptionalPluginCheck(late, [0, 20]);
+      await sleep(60);
+    } finally { console.log = orig1 }
+    check(logs1.length === 0, '服务晚一步挂上 ⇒ **不再误报**（就绪后重探发现都齐 ⇒ 一声不吭）', 'logs=' + logs1.length);
+
+    // (ii) 真缺 ⇒ 用尽重试后**恰好一行**
+    const logs2 = [];
+    const orig2 = console.log;
+    console.log = (m) => { logs2.push(String(m)) };
+    try {
+      _resetOptionalHintOnce();
+      scheduleOptionalPluginCheck(ctxOf([]), [0, 10]);
+      await sleep(50);
+    } finally { console.log = orig2 }
+    check(logs2.length === 1 && /推荐插件未就绪/.test(logs2[0]), '真缺 ⇒ 重试到最后一轮才打**一行**（不抢跑、不刷屏）', 'logs=' + logs2.length);
+  }
+
+  check(/scheduleOptionalPluginCheck\(ctx\)/.test(cmdSrc), 'apply() 里挂的是**就绪后重探**（不是加载当刻下结论）', '');
+  check(!/^\s*hintOptionalPluginsOnce\(ctx\);/m.test(cmdSrc), 'apply() 里**不再**在加载当刻直接下结论（那会假警报）', '');
+  check(/case 'help': recheckOptionalPlugins\(ctx\)/.test(cmdSrc), '/team help 时懒重探（刚装上/刚修好配置不必再重启）', '');
+  check(/ctx\.inject\(\[svc\]/.test(cmdSrc), '服务一出现就事件驱动重探（cordis 正确姿势：服务不出现则回调不触发）', '');
   check(USAGE.includes('推荐插件'), '/team help 里列出推荐插件一行', '');
 }
 
