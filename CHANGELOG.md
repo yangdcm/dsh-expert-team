@@ -3,6 +3,55 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.3.5
+
+**性能：修掉 `/state` 的 30 秒级阻塞（它会把整个 `dsh web` 一起拖慢）**，另带两件早已排定的小事。
+
+### 症状与根因（都是实测值，不是估算）
+
+- `GET /plugins/dsh-expert-team/state` 实测 **热态 7.1–9.8 s、冷态 283.6 s**，而面板**绘制只要 52 ms**。
+- **根因 D（最大头）**：端点对**每个**子会话 `await childSessionTiming`，而它对"活存储里查不到"的子代理
+  退回 `sessionQuery.readSession(id)` —— 那是**全量读该子会话日志**。本机实测：单条最大日志
+  **23.4 MiB（70,008 个 zstd frame）→ 解压 0.44 s / 45.4 MiB / 94,820 个事件**；21 条 >1MB 的会话日志
+  仅"解压 + 过管道"就要 **1.11 s**（纯磁盘下限；host 还要逐行 `JSON.parse` + `structuredClone` + replay）。
+- **根因 B**：`WF_EVENT_TTL_MS` 原来是 **3000 ms —— 恰好等于默认轮询间隔 3000 ms** ⇒ **每个 tick 必失效**，
+  父会话日志（多 MB）被一遍遍全量重读。
+- **根因 H3**：客户端**没有 single-flight** —— 实测 8 秒内发出 5 个 `/state`、其中 **4 个重叠**（上一个没回就发下一个）。
+- **后果（这才最要紧）**：这些同步 CPU（≈2.3 s/请求）压在事件循环上，把**整个 web** 拖慢 ——
+  轻量端点 `/settings` 实测被拖到 **20.7 s / 42.5 s**（关掉面板后仍在排队，因为积压已经形成）。
+
+### 修复
+
+- **热点 D**：新增 `subHeaderIndex()` —— 子会话时间**只查表、永不读日志**。三个来源都便宜：
+  ① `listSubagentStatusBySession` 的 `listSessions()` 分支本来就顺带带出了 `createdAt/parentId/depth`；
+  ② 活存储 `ctx.sessions.get(id).header`；③ workflow 事件流的 `startedAt`（父会话日志已按 TTL 缓存）。
+  `/state` 的两个计时调用点全部改用它。三源都拿不到仍**如实降级** `0/''/0`（UI 显示「无时间记录」），**不臆造**。
+- **热点 B**：`WF_EVENT_TTL_MS` 3000 → **30000**（TTL 只是兜底；代价是"run 在会话中途结束"最多晚 30 秒反映到面板）。
+- **客户端**：`load()` 加 **single-flight**（未回绝不发下一个）+ **自适应退避**
+  `clamp(max(基础间隔, 上次耗时×2), 基础间隔, 30000)`；`display.pollMs` 仍是基础节奏（设置说了算）。
+- **写侧守卫**：`/state` 只在**该 session 真实存在**时才 `rememberSessionRun` 落盘 —— 诊断时一个**假 id**
+  曾被写进 `$DSH_HOME/expert-team/session-runs.json`（污染用户数据）。
+
+预计效果：热态从 7.1–9.8 s 降到 **0.15–0.4 s** 量级（以实机复测为准）。
+
+### 另两件小事
+
+- 设置页页头那句「标着「暂未生效」的项尚未接线…」改为**条件渲染**：`INERT_SETTINGS` 现在是空的，
+  无条件渲染会让用户去找一个不存在的标注。判据直接取 hint 里的标记（与后端**同一真源**）。
+- 新增反向参数 **`--one-shot`** / **`--code`**：1.3.4 把设置接成"无 flag 时的默认"之后出现不对称 ——
+  设置成 `persist=true` / `artifacts-only` 后，单条命令**没法反悔**。解析改为**三态**
+  （`true` 显式要 / `false` 显式不要 / `null` 未表态听设置），优先级仍是 **flag > 设置 > 常量**。
+  （曾加过一个 `--no-persist` 别名，被本仓「实现了就必须有文档」的双向一致性断言挡下 ⇒ 去掉别名，一概念一名。）
+
+### 护栏（进 `test:all`）
+
+新增 `state-perf-guard.test.mjs`：热路径**零次 `readSession`**（spy 计数）、源码里不再有
+`await childSessionTiming(ctx, s.id)`、客户端 single-flight 与退避公式、假 id 不落盘、三态反向参数与优先级。
+
+### 1.3.6 待办（诊断列出、本版**有意不做**，避免扩大范围）
+
+懒加载分节（`?section=people`）、`roleFromChildLog` 流式首帧、`listPersisted` 475 个文件的 header 缓存、
+`maxSubs` / deadline 截断。
 ## 1.3.4
 
 **把 1.3.2 留下的 7 个"有持久化、无消费者"的设置真的接上**（display 4 + roster 3），并清掉当时的假承诺。
