@@ -425,8 +425,64 @@ console.log('\n⑥ 已知子代理 id 的**形态卫生**：角色名混进 id �
   const members = ['4f2c2d92-853e-4afa-a355-ec664992ed30:backend', 'ba8c4824-f0ee-477f-9275-daf05c394e37:reviewer', 'backend', 'frontend-F4'];
   const ids = memberAgentIds(members);
   check(ids.length === 2 && ids.every(isAgentIdLike), 'memberAgentIds 只返回真 id（角色名与 `frontend-F4` 被排除）', JSON.stringify(ids));
-  const oldWay = [...membersFromState(members).byRole.values()];
-  check(oldWay.some((v) => !isAgentIdLike(v)), '对照：旧写法 `byRole.values()` 确实混着角色名（bug 的入口）', JSON.stringify(oldWay));
+
+  // ── 真机语料（逐字照抄 `~/Documents/php/liangge/team/有一个系统需要重构-141003/STATE.json`）──
+  // 为什么必须用真数据：旧的合成用例（上面那 4 条）**抓不住这个 bug** —— 真机 13 条里有 1 条
+  // **动态角色** `product-analyst`，它既不在 `DEFAULT_ROLES`（12 个固定角色）里，首段 `product`
+  // 也不在集合里 ⇒ 角色名被当成 agent id 放行，`subsPending` 恒 ≥1，`missingIds` 永远非空 ⇒
+  // **每个节流窗口（120 s）打开都触发一次全库 rescue 枚举**（真机两次独立测到 0.68 s / 0.76 s
+  // 尖峰，而稳态只有 ~4 ms）。旧实现实测返回 **14** 个 id。
+  const REAL_MEMBERS = [
+    'b3e5230f-bccf-430d-b275-f948783f3e2c:product-analyst',
+    'dd6dfe07-1c12-41b9-a3f7-1514969d1829:researcher',
+    'f81da58e-51ba-4437-aac5-3dd6f655511c:pm',
+    '5215ae3e-9ddd-40ee-a1c8-4e5db0156ae0:architect',
+    '07ccb829-6091-4ded-a808-375ee6dc6f81:devops',
+    '24c9d321-dfca-4dd9-846f-bc6848da21f0:reviewer',
+    'f3d287b4-239c-4924-8174-40088dc1d9cf:pm',
+    'fa278c81-0a5e-47e0-a5ce-3a1ece2c2363:pm',
+    '73b32edf-3053-4939-92b8-e120b28f0c3a:pm',
+    'c6a591a9-6852-4be8-9f38-71031623add1:devops',
+    '8629379e-ccea-455d-8583-f8da447c4fea:architect',
+    'b18a6859-9758-4ce3-be41-e48768838925:pm',
+    '9ddc9807-fbec-48f4-a1ec-03b55aff9740:researcher',
+  ];
+  const REAL_IDS = REAL_MEMBERS.map((s) => s.split(':')[0]);
+  const realIds = memberAgentIds(REAL_MEMBERS);
+  const extra = realIds.filter((id) => REAL_IDS.indexOf(id) === -1);
+  const missing = REAL_IDS.filter((id) => realIds.indexOf(id) === -1);
+  check(realIds.length === 13 && extra.length === 0 && missing.length === 0,
+    '真机 13 条 members ⇒ 恰好 13 个 id，与 STATE.json 逐个相同（旧实现返回 14，多一个幽灵 `product-analyst`）',
+    `实际 ${realIds.length}｜多：${JSON.stringify(extra)}｜缺：${JSON.stringify(missing)}`);
+  check(realIds.every(isAgentIdLike), '13 个 id 全部通过 isAgentIdLike（第二道兜底也认）', '');
+  // 形态证据：宿主 session id 就是 UUID（本机 ~/.dsh/sessions 的目录名与 STATE.members 同形）
+  check(realIds.every((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)),
+    '真机 agent id 形态 = UUID（据此确认"收紧到 id 形态"不会误伤真实 id）', realIds[0]);
+
+  // ── 根因：键空间必须分离（旧实现把 role→id 与 id→role 塞进同一个 Map 的**键空间**）──
+  const parsed = membersFromState(REAL_MEMBERS);
+  const roleKeys = [...parsed.byRole.keys()];
+  check(roleKeys.every((k) => /^[a-z][a-z-]*$/.test(k)) && roleKeys.indexOf('product-analyst') >= 0,
+    'byRole 的键**只可能是角色**（含动态角色 `product-analyst`），不可能混进 id',
+    JSON.stringify(roleKeys));
+  check(parsed.byRole.size === 6 && parsed.byRole.get('product-analyst') === REAL_IDS[0],
+    'byRole 恰好 6 个角色（product-analyst/architect/devops/pm/researcher/reviewer），动态角色被当成**角色**登记',
+    `size=${parsed.byRole.size} product-analyst=${parsed.byRole.get('product-analyst')}`);
+  check(!!parsed.byId && parsed.byId.size === 13 && [...parsed.byId.keys()].every(isAgentIdLike),
+    'byId 恰好 13 个 id 键（"用 id 反查角色"走它，不再挤在 byRole 里）', 'size=' + (parsed.byId ? parsed.byId.size : 'undefined'));
+  const vals = [...parsed.byRole.values()];
+  check(vals.every(isAgentIdLike), 'byRole.values() 现在全是真 id（旧实现这里混着 `product-analyst` —— 那就是 bug 的入口）',
+    JSON.stringify(vals.filter((v) => !isAgentIdLike(v))));
+
+  // ── 角色词表只有一个家：`lib/vocab.js` 的 `KNOWN_ROLES`（不再抄 `DEFAULT_ROLES` 这个子集）──
+  check(isAgentIdLike('product-analyst') === false && isAgentIdLike('competitive-analyst') === false
+    && isAgentIdLike('ui-verifier') === false && isAgentIdLike('debugger') === false,
+    '全部**动态**角色 id 都被排除（词表真源 = KNOWN_ROLES；旧代码只取 DEFAULT_ROLES 的 12 个固定角色）', '');
+  check(memberAgentIds(['product-analyst:pm', 'backend:pm', 'debugger:dba']).length === 0,
+    '角色名写进 id 槽（`product-analyst:pm`）也**不产生成员**：宁可少认一个可疑 id，也不许造一个查不到的幽灵 id',
+    JSON.stringify(memberAgentIds(['product-analyst:pm', 'backend:pm', 'debugger:dba'])));
+  check(isAgentIdLike('ended-x') === true && isAgentIdLike('live-1') === true,
+    '可读性好的真 id（`ended-x` / `live-1`）**不被误伤**（判据是词表而不是长度）', '');
 
   // 行为级：**即使调用方仍传进角色名**，函数内兜底过滤也必须做到"第二个请求零枚举"
   _live._resetSubHeaderMemo(); _live._resetListSessionsCache();
@@ -437,9 +493,104 @@ console.log('\n⑥ 已知子代理 id 的**形态卫生**：角色名混进 id �
   check(c6b === 1, '传入角色名时仍**只枚举一次**（角色名不进 missingIds ⇒ 备忘生效）', 'listSessions calls=' + c6b);
   check(rows6.length === 1 && rows6[0].id === 'ended-x', '角色名不会凭空造出成员行', JSON.stringify(rows6.map((r) => r.id)));
 
-  // 源码级：调用点必须用 memberAgentIds；全仓不得再有 byRole.values()
+  // 源码级：调用点必须用 memberAgentIds；双键 Map 的写法必须绝迹
   check(/const knownIds = memberAgentIds\(sel\.stateMembers\)/.test(cmdSrc), '调用点已改用 `memberAgentIds`（不是 byRole.values()）', '');
   check(!/byRole\.values\(\)/.test(cmdSrc), '仓库里不再有 `byRole.values()` 这种 id/角色混着用的写法', '');
+  check(!/byRole\.set\(a, role\)/.test(cmdSrc), '`membersFromState` 不再把 id 当 byRole 的键（双键 Map 的写法已绝迹）', '');
+}
+
+console.log('\n⑥b 空结果**不成基线**：1.3.20 引入的"面板最多空 2 分钟"（真机 22:34 空 → 22:40 才自愈）');
+{
+  const {
+    listSubagentStatusBySession, warmSubRows, _resetSubHeaderMemo, _resetListSessionsCache,
+    _resetSubRowsMemo, _resetBoundedState, SUB_ROWS_MEMO, SUB_HEADER_STATS, SUBS_ENUM_MIN_INTERVAL_MS,
+  } = _live;
+  const BASE = 60;                                  // 把重试基准调到 60 ms，免得为一次重试等 2 s
+  process.env.DSH_EXPERT_TEAM_SUBS_RETRY_MS = String(BASE);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  try {
+    // (a) 期望有人 + 预热返回空 ⇒ provisional，按退避间隔重试 ⇒ **下一轮就自愈**
+    {
+      _resetSubHeaderMemo(); _resetListSessionsCache(); _resetSubRowsMemo(); _resetBoundedState();
+      let cold = true, warms = 0;
+      const ctx = {
+        get: (n) => {
+          if (n === 'subagents') return { listChildren: async () => { warms += 1; return cold ? [] : [{ id: 'm-1', createdAt: 11 }]; } };
+          if (n === 'sessionQuery') return { listSessions: async () => [] };
+          return null;
+        },
+      };
+      const first = await listSubagentStatusBySession(ctx, 'root-empty', ['m-1']);
+      const memoA = SUB_ROWS_MEMO.get('root-empty');
+      check(first.length === 0 && !!memoA && memoA.provisional === true && memoA.rows.length === 0,
+        '预热返回空 + 期望有人 ⇒ 记 provisional（**不是**有效基线；旧实现把它当基线缓存 120 s）',
+        JSON.stringify({ rows: first.length, provisional: memoA && memoA.provisional }));
+      check(!!memoA && memoA.retryMs === BASE,
+        `第一次空结果的重试间隔 = 基准 ${BASE} ms（`+'`DSH_EXPERT_TEAM_SUBS_RETRY_MS`'+` 可覆盖，测试用它）`, 'retryMs=' + (memoA && memoA.retryMs));
+      check(SUB_HEADER_STATS.cut === 'warming',
+        '如实标 `cut=warming`：这是"还没有有效基线"，**不是失败**（且不进 degraded，与 rolesPending 同口径）',
+        'cut=' + SUB_HEADER_STATS.cut);
+
+      cold = false;
+      await listSubagentStatusBySession(ctx, 'root-empty', ['m-1']);
+      check(warms === 1, '退避窗口内**不再**重复预热（代价有界，不退化成"每请求一次全库枚举"）', 'warms=' + warms);
+
+      await sleep(BASE + 40);
+      const healed = await listSubagentStatusBySession(ctx, 'root-empty', ['m-1']);
+      const memoB = SUB_ROWS_MEMO.get('root-empty');
+      check(healed.length === 1 && healed[0].id === 'm-1' && warms === 2,
+        `退避间隔（${BASE} ms）一到就重试 ⇒ **下一轮自愈**（旧实现要等满 SUBS_ENUM_MIN_INTERVAL_MS=${SUBS_ENUM_MIN_INTERVAL_MS} ms ≈ 2 分钟）`,
+        `warms=${warms} rows=${healed.length}`);
+      check(memoB.provisional !== true && memoB.rows.length === 1,
+        '拿到行之后回到正常基线（provisional 清零 ⇒ 后续按 120 s 刷新，不再重试）',
+        JSON.stringify({ provisional: memoB.provisional, rows: memoB.rows.length }));
+    }
+
+    // (b) **真的没有成员**（knownIds 为空）⇒ 空集是合法基线，不许重试风暴
+    {
+      _resetSubHeaderMemo(); _resetListSessionsCache(); _resetSubRowsMemo(); _resetBoundedState();
+      let warms = 0;
+      const ctx = { get: (n) => (n === 'subagents' ? { listChildren: async () => { warms += 1; return []; } } : null) };
+      await listSubagentStatusBySession(ctx, 'root-nobody', []);
+      const memo = SUB_ROWS_MEMO.get('root-nobody');
+      check(!!memo && memo.provisional !== true,
+        '没有登记成员时，空集是**合法基线**（不当作"缺基线"，两种零分得开）', JSON.stringify({ provisional: memo && memo.provisional }));
+      check(SUB_HEADER_STATS.cut === '', 'cut 保持空（既没有 pending，也没有在 warming）', 'cut=' + SUB_HEADER_STATS.cut);
+      await listSubagentStatusBySession(ctx, 'root-nobody', []);
+      check(warms === 1, '合法基线按正常间隔刷新 ⇒ 不重复预热（无重试风暴）', 'warms=' + warms);
+    }
+
+    // (c) 瞬时空枚举**不冲掉**已有非空基线（旧实现直接覆盖成空 ⇒ 95 行变 0 行）
+    {
+      _resetSubHeaderMemo(); _resetListSessionsCache(); _resetSubRowsMemo(); _resetBoundedState();
+      let empty = false;
+      const ctx = { get: (n) => (n === 'subagents' ? { listChildren: async () => (empty ? [] : [{ id: 'keep-1', createdAt: 3 }]) } : null) };
+      await warmSubRows(ctx, 'root-keep', { expectRows: true });
+      const before = SUB_ROWS_MEMO.get('root-keep').rows.length;
+      empty = true;
+      await warmSubRows(ctx, 'root-keep', { expectRows: true });
+      const after = SUB_ROWS_MEMO.get('root-keep');
+      check(before === 1 && after.rows.length === 1 && after.provisional === true,
+        '一次空枚举**不会**把已知的行抹掉（保住上一次的非空基线，同时标记 provisional 继续重试）',
+        JSON.stringify({ before, after: after.rows.length, provisional: after.provisional }));
+    }
+
+    // (d) 退避有上限：涨到正常刷新间隔就不再涨（否则重试会退化成永久高频枚举）
+    {
+      _resetSubHeaderMemo(); _resetListSessionsCache(); _resetSubRowsMemo(); _resetBoundedState();
+      const ctx = { get: (n) => (n === 'subagents' ? { listChildren: async () => [] } : null) };
+      for (let i = 0; i < 14; i++) await warmSubRows(ctx, 'root-backoff', { expectRows: true });
+      const last = SUB_ROWS_MEMO.get('root-backoff').retryMs;
+      check(last === SUBS_ENUM_MIN_INTERVAL_MS,
+        `退避上限 = 正常刷新间隔 ${SUBS_ENUM_MIN_INTERVAL_MS} ms（不会无限增长，也不会超过它）`, 'retryMs=' + last);
+      check(SUB_ROWS_MEMO.get('root-backoff').emptyStreak === 14, '空结果次数如实记账（emptyStreak）',
+        'emptyStreak=' + SUB_ROWS_MEMO.get('root-backoff').emptyStreak);
+    }
+  } finally {
+    delete process.env.DSH_EXPERT_TEAM_SUBS_RETRY_MS;
+    _resetSubRowsMemo();
+  }
 }
 
 console.log('\n⑦ run 列表的**逐 run 戳缓存**（冷启动：重启后第一次不该从零枚举）');
@@ -501,4 +652,4 @@ if (fail > 0) {
   console.log(`✗ /state 性能护栏失败：${fail} 项`);
   process.exit(1);
 }
-console.log('✔ /state 性能护栏通过（热路径零日志读 / 客户端单飞+退避 / 假 id 不落盘 / 反向参数三态 / id 形态卫生 / run 列表戳缓存）');
+console.log('✔ /state 性能护栏通过（热路径零日志读 / 客户端单飞+退避 / 假 id 不落盘 / 反向参数三态 / id 形态卫生 / 空结果不成基线 / run 列表戳缓存）');

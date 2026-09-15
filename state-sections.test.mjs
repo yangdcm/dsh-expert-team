@@ -4,7 +4,8 @@
 // 只有阶段/进度/计数**（便宜）。真机实测：小会话 311 ms；我这条 20+ 子代理的重会话 2.1–6.2 s
 // （诊断 `profile` 分步：`subs` 1.33–1.39 s + `roles` 0.64–0.87 s）。
 // 本文件钉住四件事，缺一条都会让"渐进式"悄悄退回"每次全量"：
-//   ① `parseStateSections` 的语义（缺省/ all 向后兼容；summary 永远在内；未知名字忽略而不报错）；
+//   ① `parseStateSections` 的语义（缺省/ all 向后兼容；summary 永远在内；**非法段名如实报告**
+//      而不是静默回落 —— 路由据此 400）；
 //   ② 服务端**真的**把贵块关在分节后面（people/feed/artifacts 各自的守卫点在位）；
 //   ③ 硬上限与软期限**存在**，且截断走 `degraded` **如实上报**（不许静默丢）；
 //   ④ summary 路径**不写盘**（登记块被 people 分节挡住 —— 否则一次摘要请求就会覆写 STATE.json）。
@@ -43,16 +44,42 @@ console.log('① `parseStateSections`：语义正确，且**默认向后兼容**
   const all = parseStateSections('all');
   check(all.want('people') === true && all.want('artifacts') === true, 'section=all ⇒ 等价于不传', '');
 
-  let threw = false;
-  let weird = null;
-  try { weird = parseStateSections(' summary , , 未知块 '); } catch (e) { threw = true; }
-  check(!threw && weird.want('people') === false, '未知名字/空白/空项**不抛错**（多传参数不该把面板打死）', '');
-  check(weird.included.join(',') === 'summary', '未知块被忽略，included 不含它', weird.included.join(','));
+  // ── 非法段名：**如实报告**，不再静默回落 ─────────────────────────────────────
+  // 为什么改（2026-09-15，一次真实的验收误判）：`?section=roles` 里的 `roles` 不是合法段名，
+  // 旧实现把它**静默忽略并回落成 summary** ⇒ 返回一份看起来完全正常的 summary 载荷。
+  // 我据此把 summary 的耗时当成了"roles 段的耗时"，写进了验收结论 —— 这正是本仓最忌讳的
+  // "两种零分不开"：**你要的块不存在**被伪装成**一切正常**。
+  {
+    let threw = false;
+    let weird = null;
+    try { weird = parseStateSections(' summary , , 未知块 '); } catch (e) { threw = true; }
+    check(!threw, '未知名字/空白/空项**不抛错**（纯函数只如实报告，拒绝由路由做）', '');
+    check(weird.want('people') === false && weird.included.join(',') === 'summary', '未知块不进 included（summary 仍在内）', weird.included.join(','));
+    check(JSON.stringify(weird.invalid) === '["未知块"]', '非法段名**如实列进 invalid**（不再静默吞掉）', JSON.stringify(weird.invalid));
+    check(JSON.stringify(weird.valid) === '["summary","people","feed","artifacts"]', '同时给出合法段名清单（供 400 回执直接用）', JSON.stringify(weird.valid));
+
+    // 真机上骗过我的那一次探测：`section=roles`
+    const rolesSec = parseStateSections('roles');
+    check(JSON.stringify(rolesSec.invalid) === '["roles"]', '`?section=roles` 被认成**非法**（这就是当初骗过验收的那个探测名）', JSON.stringify(rolesSec.invalid));
+    check(rolesSec.included.join(',') === 'summary', '它在**纯函数层**仍只解析出 summary（400 由路由做，不在这里抛）', rolesSec.included.join(','));
+
+    // 合法组合一个都不许误判
+    const okSec = parseStateSections('summary,people,feed,artifacts');
+    check(okSec.invalid?.length === 0 && okSec.included.length === 4, '四个合法段名（含显式 summary）⇒ invalid 为空', JSON.stringify(okSec.included));
+    check(parseStateSections('').invalid?.length === 0 && parseStateSections('all').invalid?.length === 0,
+      '缺省 / `all` 恒为空 invalid（向后兼容不受影响）', '');
+  }
 }
 
 console.log('\n② 服务端：贵块真的关在分节后面（守卫点在位）');
 {
   check(/const secParsed = parseStateSections\(secRaw\)/.test(src), 'handler 用同一个纯函数解析（单一真源）', '');
+  // 非法段名 ⇒ 400（不是静默回落）。位置必须在**任何 await 之前**：拒绝路径零成本。
+  check(/if \(secParsed\.invalid\.length\) \{[\s\S]{0,400}?json\(400, \{[\s\S]{0,400}?valid: secParsed\.valid/.test(src),
+    '非法段名 ⇒ 路由 400 并回执合法清单（不再静默回落到 summary —— 那曾让一次验收把 summary 的耗时当成 roles 的）', '');
+  const invAt = src.indexOf('if (secParsed.invalid.length)');
+  check(invAt >= 0 && invAt < src.indexOf('const degraded = [];'),
+    '400 判定在任何 await 之前（拒绝路径不解析 workspace/run，也不进任何重活）', '');
   // 判据只表达**意图**（缺省时被分节挡住 + 走归属会话），不再绑死参数表 —— 旧写法要求字面
   // `knownIds) : []`，加一个 opts 参数就假红（2026-09-15 有界化时实测踩到）。
   check(/const needSubs = want\('people'\) \|\| want\('feed'\)/.test(src) && /needSubs \? await listSubagentStatusBySession\(ctx, peopleSid, knownIds/.test(src),
@@ -144,4 +171,4 @@ if (fail > 0) {
   console.log(`✗ /state 分节测试失败：${fail} 项`);
   process.exit(1);
 }
-console.log('✔ /state 分节通过（解析语义 / 贵块分节 / 上限与 degraded / 摘要不写盘 / 客户端双订阅+合并）');
+console.log('✔ /state 分节通过（解析语义+非法段名 400 / 贵块分节 / 上限与 degraded / 摘要不写盘 / 客户端双订阅+合并）');

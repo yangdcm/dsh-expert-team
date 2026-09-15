@@ -65,6 +65,44 @@
     红→绿证据（临时造一处直写 ⇒ ⑥ 报 `delta=1｜分布：lib/vocab.js:1` ⇒ 逐字节还原 sha256 一致）
     与 ⑦ 的反向验证（往 `EXEMPT` 里塞第三个文件 ⇒ 当场红）都已实测。
 
+**`/state` 的三处"看起来正常其实在骗人"**（真机 1.3.20 验收挖出来的 A/B/C 三项，同一轮里的第三件事）。
+
+- **A · 幽灵 agent id（`subsPending` 恒 ≥1 的第二个根因，1.3.19 就有）**：真机 13 条 `STATE.members`
+  被 `memberAgentIds` 解析成 **14** 个 id，多出来的是**角色名 `product-analyst`** —— `membersFromState`
+  把 `role→id` 与 `id→role` 塞进了**同一个 Map 的键空间**，而 `isAgentIdLike` 当时只排除 `DEFAULT_ROLES`
+  的 12 个**固定**角色（`product-analyst` 不在里面，它的首段 `product` 也不在）⇒ 角色名当 id 放行 ⇒
+  `missingIds` **永久非空** ⇒ 每个节流窗口（120 s）打开都触发一次**全库 rescue 枚举**。两条一起上：
+  ① **键空间按构造分离**（`membersFromState` 现在返回 `byRole` 只装角色、`byId` 只装 id，"用 id 反查角色"
+  归 `byId`）；② 判据的角色词表改成 `KNOWN_ROLES ∪ ROLE_LABELS_ZH.values()`（同一真源 `lib/vocab.js`，
+  不再抄 `DEFAULT_ROLES` 这个子集 —— `debugger` 就是这么漏过去的）。
+- **B · 空结果被当成基线（1.3.20 引入的行为差）**：重启后宿主第一轮 `listChildren` 返回**空集**
+  （它自己的索引还没热），旧实现无条件把它当基线缓存 `SUBS_ENUM_MIN_INTERVAL_MS`(120 s) ⇒ 真机面板
+  **22:34 空、22:40 才自愈**。现在：`knownIds` 非空却拿到 0 行 ⇒ 记 `provisional`，按 `retryMs`
+  （2 s 起、每次翻倍、上限 120 s；`DSH_EXPERT_TEAM_SUBS_RETRY_MS` 可覆盖，测试用它）退避重试，
+  且这一轮**像"首次基线"一样在请求内等一小会儿**（仍受 800 ms 期限约束）⇒ 下一轮就自愈；
+  `knownIds` 本来为空 ⇒ 空集是**合法基线**，不重试风暴；空结果**不冲掉**已有的非空行（旧实现会把
+  95 行直接覆盖成 0 行）。如实上报：`cut='warming'`（**不进 degraded**，"细节不可得"由 `subsPending`
+  表达），真被期限截断时仍优先 `deadline`。
+- **C · 非法段名静默回落成 summary**：`?section=roles` 这类打错的探测以前返回一份**看起来完全正常**的
+  summary 载荷 —— 我本人据此把 summary 的耗时当成了"roles 段的耗时"写进验收结论（"两种零分不开"的
+  又一例）。现在纯函数如实列 `invalid` + `valid`，**路由在任何 await 之前 400** 并回执合法清单；
+  缺省 / `all` 的兼容性不变。
+- **同机 A/B 实测**（临时 DSH_HOME + 真 `sessions` 软链 + 同一个 run：`php/liangge` 的
+  `有一个系统需要重构-141003`，`DSH_EXPERT_TEAM_STATE_PROFILE=1`）：
+
+  | 指标 | 旧（1999c66） | 新 |
+  |---|---|---|
+  | `subsPending`（稳态） | **1**（幽灵 id） | **0** |
+  | `profile.subs.enumCalls`（冷启动 / 窗口重开） | **1 / 2** | **0 / 0** |
+  | 冷启动 `agents` | 0 → 95 | 0 → 95 |
+  | `subs` 步耗时（由 profile 各步与总耗时之差反推） | ~193 ms（窗口重开那发） | ~4 ms |
+
+  同一轮也确认**没有把 1.3.20 的提速弄回去**：`?section=summary` 5.4–7.3 ms（中位 ~5.8 ms）、
+  `?section=people,feed` 稳态 8.1–12.6 ms，`agents=95` / `stateMembers=13` 不变。
+  **诚实边界**：窗口重开那一发的**总耗时**新旧都是 ~3 s 量级，因为它在**冷实例**上由 `wfLabels`
+  （~0.8–2.7 s）与 `roles` 突发读主导 —— 那不是这两处修复的目标；修复消掉的是 `enumCalls` 那一项
+  （旧代码最多为此付满 800 ms 期限）。
+
 ## 1.3.20
 
 **`subs` 段：把那 800 ms 的期限变成真的**（`?section=people,feed` 真机 2,680–2,724 ms ⇒ 有界）。
