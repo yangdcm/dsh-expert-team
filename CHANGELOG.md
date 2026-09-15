@@ -3,6 +3,34 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.3.13
+
+**渐进式状态：`/state` 支持 `?section=`，首屏与会话体量解耦**（性能修复 #3）
+
+- 背景（真机实测，`DSH_EXPERT_TEAM_STATE_PROFILE=1` 分步）：完整负载里 `subs` **1 327–1 388 ms**、
+  `roles` **638–869 ms**、`runs+select` 15–21 ms、`tail` 3 ms；重会话（20+ 子代理、仍在活跃写日志）
+  总耗时 **2.1–6.2 s**，成本随「子代理数 × 日志体量」线性增长。
+- 新增 `?section=summary|people|feed|artifacts`（逗号可多选；**缺省或 **ALL** = 完整负载、字段语义不变**
+  ⇒ 老客户端/脚本/既有测试不受影响）：
+  - `summary`（首屏用）：阶段/进度/计数/违规/告警 —— 真机 `snapshotRun` 中位 **0.3 ms**；
+  - `people`：子会话清单/角色/成员时间线（最贵的那两块就在这里）；
+  - `feed`：每 agent 最近事件；`artifacts`：`RUN.log` 尾 + 工作区改动文件。
+- **上限 + 如实降级**：角色解析硬上限 `DSH_EXPERT_TEAM_MAX_ROLE_SUBS`（默认 60；超出部分如实进
+  `degraded: "roles:<n>"`）；people 软期限 `DSH_EXPERT_TEAM_PEOPLE_DEADLINE_MS`（默认 2500 ms；超时跳过
+  workflow 元数据并记 `wf:deadline`）。响应新增 `sections`/`degraded`/`degradedReason`（缺块 ≠ 空数据）。
+- **副作用修正**：`summary` 路径不再触发「派工即登记」写 `STATE.json`（原先每轮询都可能因空 `subById`
+  算出"清空成员"而覆写工件）⇒ **摘要轮询是纯读**。
+- 客户端：**一快一慢双订阅**（`summary` 按 `pollMs`；`people,feed,artifacts` ≥ 6 s）＋
+  `mergeStatePayload` **合并**（摘要那一拍不再抹掉已知成员）；`stateHub` 改为**按 URL 各自计时**
+  （`stateHubBaseOf/DueAt`，tick 只发已到期的 URL）—— 旧实现"全局取最小 base、每 tick 拉全部 URL"
+  正是"慢端点被快钟拖着跑"的根源。
+- 口径对齐（同批）：`templates` 常量与两个 e2e 的"run 必需文件"清单**语义不同、关系确定**，
+  由 `artifact-ownership.test.mjs` 的 **E 断言**钉死（常量 ≡ 模板目录；e2e 清单 ≡ 常量 ∪ `RUN.log.md`）；
+  README/README.en/llms 写实 `METRICS.md` 的来源与位置（**`team/` 根的聚合快照**，`/team learn` 产出），
+  并补一句 **R1 工件归属**（工件由产出它的角色自己写；lead 只读门控）。
+- 验证：`npm run test:all` EXIT=0（**82 个测试文件**；新增 `state-sections.test.mjs`）；
+  变异目录随源码文本**同提交**更新（`M70` 的 `find` 串）。
+
 ## 1.3.12
 
 **面向"可被 AI 检索与引用"的文档与元数据补齐**（纯文档/元数据，代码与 1.3.11 完全相同）。
