@@ -3,9 +3,10 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
-## Unreleased
+## 1.3.22
 
-**主题：`/state`「窗口重开那一发」从秒级压回稳态，并纠正我上一轮读错的两个事实。**
+**主题：`/state`「窗口重开那一发」从秒级压回稳态，纠正我上一轮读错的两个事实，
+以及把「按设计的能力上限」从 `degraded` 里拆出来（常亮的告警等于没有告警）。**
 
 ### 诊断（先把矛盾钉死再动手）
 
@@ -71,16 +72,40 @@
 （`dsh-session-persistence-jsonl` 的 `readStoredLog` 真解码多帧 zstd + `dsh-session` 的 `Session.create`
 真重放校验 + `snapshotSessionEvent` 真逐事件克隆），不是"假装慢一点"。
 
+### 上限与真故障分开承载（本轮第二件事，1.3.22 的另一半）
+
+- **问题**：真机 95 个 agent、`MAX_ROLE_SUBS=60` ⇒ `degradedReason="roles:35,feed:35"` **每一轮都出现**。
+  可那 35 是**按设计的能力上限**（我们主动规定"只对前 60 条做最贵的日志解析"），**不是故障**。
+  后果是那盏降级标记**长期常亮** ⇒ 真正的"期限截断"与"读失败"被它一起降权 ——
+  **常亮的告警等于没有告警**（本仓在 `subs:throttled` / `warming` 上已经吃过两次同样的亏）。
+- **改法**：新增纯函数 `classifyStateShortfall({cuts, readErrors, caps})` 作为**唯一判据**，把"缺了什么"分成
+  两个承载位：`degraded`（真故障：软期限截断、读失败）与 `scopeCaps`（按设计的上限）。
+  上限以**事实**收集（`capFacts.push({key:'roles', total: subs.length, limit: MAX_ROLE_SUBS})`），
+  数字来自实际条数与真实上限常量，不是手写的字符串；**恰好等于/低于上限时什么都不报**（不无中生有）。
+- **"不报警" ≠ "隐藏"**：`scopeCaps` 的数字**一个不少**地照发（`{over, limit, total}` 三样都在，
+  而不是只报一个 `35`），客户端表头新增 `.exp-scope` 徽章「另有 N 条按上限只列名」（实线中性样式，
+  与 `.exp-warming` 的虚线金黄、degraded 的告警色三者区分）—— 上限既不伪装成告警，也不被静默吞掉。
+- **读失败不再被伪装成"刷新中"**：`wf` 索引读失败（IO 错）与"还没有快照"原本都落到 `warming`
+  ⇒ 一次**真实读失败**会被显示成"后台刷新中"。现在按**本次请求的增量** `WF_EVENT_STATS.readErrors`
+  判定，读失败进 `degraded`（`wf:read-error`），`warming` 只留给"确实在后台刷新/这一段暂时没有数据"。
+- **顺手修掉一处"标记粘住"**：`warming` / `scopeCaps` 只在非空时下发，而客户端 `mergeStatePayload`
+  的规则是"缺键 = 保留旧值" ⇒ 一旦出现过就**永久粘住**（"更新中"徽章再也消不掉）。现在当这一发
+  **重算过**这两个标记（`sections` 含 `people` 的连续重负载）时，缺席即"现在真的没有"，显式清掉。
+- **测试**（`state-bounded.test.mjs` 新增第 ⑥ 节、`state-sections.test.mjs` 的 ③ 节改判据，
+  **不新增测试文件**，仍是 89 个）：① 只有上限 ⇒ `degraded` 不设置且 `scopeCaps` 三样数字正确；
+  ② 软期限截断 ⇒ `degraded` 仍设置且**没有**混进 `scopeCaps`；③ 读失败 ⇒ `degraded` 仍设置；
+  ④ 上限与真截断同时发生 ⇒ 两者都如实出现；⑤ 未越限 ⇒ `scopeCaps` 为空；外加服务端接线与
+  客户端渲染（`.exp-scope`、样式区分、条数文案、标记不粘住）的棘轮。
+
 ### 诚实边界
 
 - **真机（浏览器里的那条链路）没验**：用户机器上装的是**已发布的 1.3.21**（不含本提交），我不会为了验收去重启
   用户的 `dsh web`。上表全部来自同机**进程内** A/B。
 - 上表的绝对值是**下界**：真机 1.3.20 窗口重开实测 **1.196 s**，而 harness 里旧代码那一发只有 381 ms
   （活的 host `sessionQuery.readSession` 还额外做语料/活源解析与 `structuredClone`）。**真机"改前"以 1.196 s 为准。**
-- **`roles:N` / `feed:N` 这类结构性上限每轮都进 `degraded`** ⇒ 大团队面板会长期挂降级标记、把真告警一起降权
-  （本机 95 个 agent 实测 `degradedReason="roles:35,feed:35"`）。本轮**没有**改这个语义 —— 它是用户可见的行为
-  变更，且用户正在就该点拍板；这里只如实记录。
-- **不传 `section` 的全量路径仍未界定**（冷实例上可 >30 s）：它在客户端不可达，但仍是任何外部调用者的雷。本轮未动。
+- **`degraded` 的条目跨分段产生**（people 的 `subs:`/`wf:` 与 artifacts 的 `artifacts:`/`files:`），
+  而一次重分节只覆盖一个分段 ⇒ 客户端**没有**把 `degraded` 也做"缺席即清空"：一刀清掉会把另一分段的
+  **真**告警抹成"一切正常"（那比粘住更糟）。这条**未修**，如实记录。
 - 变异目录未新增条目（加一条要同步 `EXPECTED_CATALOG_SIZE` 140→141 并牵动 README/llms.txt 的数字棘轮）。
 
 ## 1.3.21

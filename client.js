@@ -100,6 +100,11 @@ window.__ModuleLoader__.load({
       // 与 `degraded`（真截断）的告警色区分开 —— 不是失败，是"这一块正在后台刷新"。
       '.exp-warming{margin-left:8px;font-size:10.5px;line-height:16px;padding:0 6px;border-radius:8px;border:1px dashed #d9a441;color:#8a5a00;background:rgba(217,164,65,.10);white-space:nowrap;flex:none}' +
       '@media (prefers-color-scheme:dark){.exp-warming{color:#f7ad31;border-color:#7a5a22;background:rgba(247,173,49,.12)}}' +
+      // 「按上限」：服务端 `scopeCaps`（**按设计的能力上限**，不是故障）如实提示。
+      // 三者样式刻意互不相同：`.exp-warming` 虚线金黄（后台刷新中）、degraded 走告警色（真故障）、
+      // 这里中性实线（"我们主动只处理前 N 条"）—— 既**不报警**，也**不被静默吞掉**。
+      '.exp-scope{margin-left:8px;font-size:10.5px;line-height:16px;padding:0 6px;border-radius:8px;border:1px solid #c3c8d1;color:#4a5261;background:rgba(120,130,150,.10);white-space:nowrap;flex:none}' +
+      '@media (prefers-color-scheme:dark){.exp-scope{color:#aab3c2;border-color:#4a5261;background:rgba(170,179,194,.12)}}' +
       '.exp-mem-run{position:relative;overflow:hidden}' +
       '.exp-mem-run::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(59,110,245,.14),transparent);animation:exp-shimmer 1.8s infinite}' +
       '.exp-row.task{cursor:pointer;border-radius:8px;padding:7px 6px}' +
@@ -1610,6 +1615,20 @@ window.__ModuleLoader__.load({
         var out = {}, k
         for (k in prev) { if (Object.prototype.hasOwnProperty.call(prev, k)) out[k] = prev[k] }
         for (k in d) { if (Object.prototype.hasOwnProperty.call(d, k)) out[k] = d[k] }
+        // 标记类字段（`warming` / `scopeCaps`）**只在非空时下发**，而上面的合并"缺键 = 保留旧值"
+        // ⇒ 一旦出现过就**永久粘住**（"更新中"徽章再也消不掉 = 常亮的噪声，正是本轮要治的病）。
+        // `sections` 含 people 时（连续的 `people,feed` 重负载）这一发**重算过**这两个标记
+        // ⇒ 缺席即"现在真的没有"，必须清掉。
+        // 只认 people：summary 那一发**根本没算**它们，那时"缺键"只能表示"没算"，
+        // **不能**表示"没有"（否则等于拿"没算"覆盖"有" —— 缺块被当成空数据）。
+        // ⚠️ `degraded` **不**在这里清：它的条目跨分段产生（people 的 `subs:`/`wf:` 与 artifacts 的
+        // `artifacts:`/`files:`），而一次重分节只覆盖一个分段 ⇒ 一刀清掉会把另一分段的**真**告警
+        // 抹成"一切正常"。这条已如实记进 CHANGELOG 的未修边界。
+        var secs = Array.isArray(d.sections) ? d.sections : []
+        if (secs.indexOf('people') >= 0) {
+          if (!d.warming) delete out.warming
+          if (!d.scopeCaps) delete out.scopeCaps
+        }
         return out
       }
       function onState(d) {
@@ -2373,6 +2392,15 @@ window.__ModuleLoader__.load({
       var warmingList = (data && Array.isArray(data.warming)) ? data.warming : []
       var warmingSeg = { wf: t('工作流元数据', 'workflow metadata'), roles: t('角色解析', 'role resolution'), 'members:write-skipped': t('成员登记（等元数据就绪）', 'member registration (waiting for metadata)') }
       var warmingTitle = warmingList.map(function (k) { return warmingSeg[k] || k }).join('、')
+      // 服务端 `scopeCaps`（1.3.22）：**按设计的能力上限**（不是故障）—— 必须**显式渲染**。
+      // 把 `roles:N`/`feed:N` 从 degraded 里拆出来只是"不把它当告警"，**不是**"藏起来"：
+      // 任何声称完整的地方都不许因为拆了标记而变得看似完整。
+      var scopeCaps = (data && data.scopeCaps && typeof data.scopeCaps === 'object') ? data.scopeCaps : {}
+      var capKeys = Object.keys(scopeCaps).filter(function (k) { return scopeCaps[k] && scopeCaps[k].over > 0 })
+      var capOver = capKeys.reduce(function (n, k) { return n + (scopeCaps[k].over || 0) }, 0)
+      var capName = { roles: t('角色', 'roles'), feed: t('事件流', 'feed') }
+      var capWhy = { roles: t('仅列名、未解析日志', 'name only, logs not parsed'), feed: t('未纳入事件流', 'not in the event feed') }
+      var capTitle = capKeys.map(function (k) { var c = scopeCaps[k]; return (capName[k] || k) + ' ' + c.over + '/' + c.total + t('（上限 ' + c.limit + '）', ' (limit ' + c.limit + ')') + '：' + (capWhy[k] || '') }).join('；')
 
       try {
         // 「设」页签已移除：设置页搬进**官方「设置」菜单**（`settings.section` 槽，见 apply()）。
@@ -2610,6 +2638,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'exp-title' }, h('span', { className: 'exp-live', title: t('实时刷新中', 'live') }), '🧑‍🔬 ' + t('专家团', 'Team')),
           h('span', { className: 'exp-run' }, runId ? esc(runId) : ''),
           warmingList.length ? h('span', { className: 'exp-warming', title: t('后台刷新中（', 'refreshing in background: ') + warmingTitle + t('）—— 本轮显示的是上一份完整快照', ') — showing the previous complete snapshot this round') }, t('更新中', 'warming')) : null,
+          capKeys.length ? h('span', { className: 'exp-scope', title: t('按设计上限（不是故障）：', 'by design, not a failure: ') + capTitle }, t('另有 ' + capOver + ' 条按上限只列名', capOver + ' capped (name only)')) : null,
           h('span', { style: { display: 'flex', gap: 6 } },
             !viewMode ? h('button', { className: 'exp-close', title: docked ? t('转为可拖动浮窗', 'Make floating') : t('停靠回右侧', 'Dock right'), onClick: function () { setDock(!docked) } }, docked ? t('浮动', 'Float') : t('停靠', 'Dock')) : null,
             viewMode ? h('button', { className: 'exp-close', onClick: function () { try { if (props && props.openView) props.openView('chat', '') } catch (e) {} } }, t('回到对话', 'Chat')) : null,

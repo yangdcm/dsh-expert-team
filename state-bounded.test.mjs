@@ -11,6 +11,8 @@
 //   ④ 负载字段是 `rolesPending`（单一真源），且客户端**真的渲染它**（字段不是没人读的摆设）。
 //   ⑤（2026-09-16）`warming`：重读挪到后台后，**请求路径立刻返回**；过期先给上一份**完整**快照；
 //      读失败**不覆盖**好快照；后台批单飞且队列空时不踢（否则 warming 会常亮成噪声）。
+//   ⑥（1.3.22）**上限 ≠ 故障**：`degraded` 从此只承载真故障（软期限截断 / 读失败），
+//      按设计的能力上限（`MAX_ROLE_SUBS` / `MAX_FEED_AGENTS`）改走 `scopeCaps` 且数字一个不少。
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -301,9 +303,71 @@ console.log('\n⑤ warming 语义：重读挪到后台 + 过期先给完整旧�
   check(roleReadBudgetSnapshot().deferred === 0, '后台批把队列读空（deferred 单调下降至 0）', '');
 }
 
+console.log('\n⑥ 上限与真故障必须分开承载（1.3.22）：`scopeCaps` ≠ `degraded`');
+{
+  const cmdSrc2 = readFileSync(join(here, 'lib', 'command.js'), 'utf8');
+  const clientSrc2 = readFileSync(join(here, 'client.js'), 'utf8');
+  const { classifyStateShortfall } = _live;
+  check(typeof classifyStateShortfall === 'function', '纯函数 `classifyStateShortfall` 可单测（判据单一真源）', '');
+
+  // ① 只发生"按设计的上限" ⇒ scopeCaps 数字正确、**degraded 不许被设置**
+  const capOnly = classifyStateShortfall({ caps: [{ key: 'roles', total: 95, limit: 60 }, { key: 'feed', total: 95, limit: 60 }] });
+  check(capOnly.degraded.length === 0,
+    '① 只有上限 ⇒ `degraded` **不**被设置（真机 95 agent/上限 60 时不再常亮）', JSON.stringify(capOnly.degraded));
+  check(capOnly.scopeCaps.roles && capOnly.scopeCaps.roles.over === 35 && capOnly.scopeCaps.roles.limit === 60 && capOnly.scopeCaps.roles.total === 95,
+    '① 上限数字一个不少（over/limit/total 三样都在，不是只报一个 35）', JSON.stringify(capOnly.scopeCaps));
+  check(capOnly.scopeCaps.feed && capOnly.scopeCaps.feed.over === 35, '① feed 的上限同样如实上报', JSON.stringify(capOnly.scopeCaps.feed));
+
+  // ② 软期限截断（真故障）⇒ degraded 仍被设置，且**不许**被塞进 scopeCaps
+  const cutOnly = classifyStateShortfall({ cuts: ['subs:deadline'] });
+  check(cutOnly.degraded.join(',') === 'subs:deadline' && Object.keys(cutOnly.scopeCaps).length === 0,
+    '② 软期限截断 ⇒ `degraded` 仍被设置，且**没有**混进 scopeCaps（不许把真故障当上限灭灯）',
+    JSON.stringify({ degraded: cutOnly.degraded, scopeCaps: cutOnly.scopeCaps }));
+
+  // ③ 读失败（真故障）⇒ degraded 仍被设置
+  const errOnly = classifyStateShortfall({ readErrors: ['wf:read-error'] });
+  check(errOnly.degraded.join(',') === 'wf:read-error' && Object.keys(errOnly.scopeCaps).length === 0,
+    '③ 读失败 ⇒ `degraded` 仍被设置（旧实现把它混进 warming = 把故障伪装成"刷新中"）',
+    JSON.stringify({ degraded: errOnly.degraded, scopeCaps: errOnly.scopeCaps }));
+
+  // ④ 上限与真截断同时发生 ⇒ 两个承载位都如实出现（不许二选一）
+  const both = classifyStateShortfall({ cuts: ['wf:deadline'], readErrors: ['wf:read-error'], caps: [{ key: 'roles', total: 95, limit: 60 }] });
+  check(both.degraded.join(',') === 'wf:deadline,wf:read-error' && both.scopeCaps.roles.over === 35,
+    '④ 上限与真截断同时发生 ⇒ 两者都如实出现（degraded 有故障、scopeCaps 有上限）',
+    JSON.stringify({ degraded: both.degraded, scopeCaps: both.scopeCaps }));
+
+  // ⑤ 没越限就不许无中生有（否则"上限"会变成一个假的常亮标记）
+  const noCap = classifyStateShortfall({ caps: [{ key: 'roles', total: 60, limit: 60 }, { key: 'feed', total: 59, limit: 60 }] });
+  check(Object.keys(noCap.scopeCaps).length === 0, '⑤ 恰好等于/低于上限 ⇒ `scopeCaps` 为空（不无中生有）', JSON.stringify(noCap.scopeCaps));
+
+  // 服务端接线：上限**不再**进 degraded，且事实全部经纯函数收敛
+  check(!/degraded\.push\('roles:'/.test(cmdSrc2) && !/degraded\.push\('feed:'/.test(cmdSrc2),
+    '服务端：`roles:N` / `feed:N` 已**移出** degraded（不再每轮常亮）', '');
+  check(/capFacts\.push\(\{ key: 'roles', total: subs\.length, limit: MAX_ROLE_SUBS \}\)/.test(cmdSrc2)
+    && /capFacts\.push\(\{ key: 'feed', total: subs\.length, limit: MAX_FEED_AGENTS \}\)/.test(cmdSrc2),
+    '服务端：上限以**事实**形式收集（数字来自实际条数与真实上限常量，不是手写的字符串）', '');
+  check(/const marks = classifyStateShortfall\(\{ cuts: cutFacts, caps: capFacts \}\)/.test(cmdSrc2),
+    '服务端：两个承载位由同一个纯函数下判据（单一真源，可单测）', '');
+  check(/Object\.keys\(scopeCaps\)\.length \? \{ scopeCaps \} : null/.test(cmdSrc2),
+    '服务端：`scopeCaps` 真的随负载下发（不是只算不发）', '');
+  check(/WF_EVENT_STATS\.readErrors > wfErrBefore\) cutFacts\.push\('wf:read-error'\)/.test(cmdSrc2),
+    '服务端：读失败按**本次请求的增量**判定并进 degraded（IO 错 ≠ "还没有快照"）', '');
+
+  // 客户端：上限必须**显式渲染**（不报警 ≠ 隐藏），且三个标记样式互不相同
+  check(/exp-scope/.test(clientSrc2) && /capKeys\.length \? h\('span', \{ className: 'exp-scope'/.test(clientSrc2),
+    '客户端：`scopeCaps` 落到 `.exp-scope` 徽章（字段不是没人读的摆设）', '');
+  check(/exp-warming\{[^}]*dashed/.test(clientSrc2) && /exp-scope\{[^}]*solid/.test(clientSrc2),
+    '客户端：warming（虚线）与 scope（实线）样式区分开 —— 上限不伪装成告警，也不被静默吞掉', '');
+  check(/capOver \+ ' 条按上限只列名'/.test(clientSrc2),
+    '客户端：徽章文案带**条数**（"另有 N 条按上限只列名"），不是一句含糊的"部分数据"', '');
+  // 防"标记粘住"：标记只在非空时下发，合并若"缺键即保留"就会永久粘住（常亮噪声）
+  check(/if \(secs\.indexOf\('people'\) >= 0\) \{[\s\S]{0,160}?if \(!d\.warming\) delete out\.warming[\s\S]{0,160}?if \(!d\.scopeCaps\) delete out\.scopeCaps/.test(clientSrc2),
+    '客户端：重分节重算过的标记在**缺席时被清掉**（否则"更新中"一旦出现就永远消不掉）', '');
+}
+
 console.log('');
 if (fail > 0) {
   console.log(`✗ 有界化护栏失败：${fail} 项`);
   process.exit(1);
 }
-console.log('✔ 有界化护栏通过（subs 节流/期限 · roles 零读/期限/收敛 · 字段单一真源且被渲染）');
+console.log('✔ 有界化护栏通过（subs 节流/期限 · roles 零读/期限/收敛 · 字段单一真源且被渲染 · 上限与真故障分开承载）');

@@ -7,7 +7,8 @@
 //   ① `parseStateSections` 的语义（缺省/ all 向后兼容；summary 永远在内；**非法段名如实报告**
 //      而不是静默回落 —— 路由据此 400）；
 //   ② 服务端**真的**把贵块关在分节后面（people/feed/artifacts 各自的守卫点在位）；
-//   ③ 硬上限与软期限**存在**，且截断走 `degraded` **如实上报**（不许静默丢）；
+//   ③ 硬上限与软期限**存在**，且"缺了什么"分两个承载位**如实上报**（不许静默丢）：
+//      `degraded` = 真故障（软期限截断 / 读失败）；`scopeCaps` = 按设计的能力上限（1.3.22）；
 //   ④ summary 路径**不写盘**（登记块被 people 分节挡住 —— 否则一次摘要请求就会覆写 STATE.json）。
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -78,7 +79,9 @@ console.log('\n② 服务端：贵块真的关在分节后面（守卫点在位�
   check(/if \(secParsed\.invalid\.length\) \{[\s\S]{0,400}?json\(400, \{[\s\S]{0,400}?valid: secParsed\.valid/.test(src),
     '非法段名 ⇒ 路由 400 并回执合法清单（不再静默回落到 summary —— 那曾让一次验收把 summary 的耗时当成 roles 的）', '');
   const invAt = src.indexOf('if (secParsed.invalid.length)');
-  check(invAt >= 0 && invAt < src.indexOf('const degraded = [];'),
+  // 锚点改成"事实收集器的声明处"（1.3.22 把 `const degraded = []` 换成了 `cutFacts`/`capFacts`）：
+  // 判据仍是"400 发生在任何重活之前"，不绑死某一个变量名。
+  check(invAt >= 0 && invAt < src.indexOf('const cutFacts = [];'),
     '400 判定在任何 await 之前（拒绝路径不解析 workspace/run，也不进任何重活）', '');
   // 判据只表达**意图**（缺省时被分节挡住 + 走归属会话），不再绑死参数表 —— 旧写法要求字面
   // `knownIds) : []`，加一个 opts 参数就假红（2026-09-15 有界化时实测踩到）。
@@ -89,11 +92,13 @@ console.log('\n② 服务端：贵块真的关在分节后面（守卫点在位�
   // 与"取的是**归属会话** peopleSid"这两条事实不变（这里钉的就是这两条）。
   check(/const wfIdx = want\('people'\)\n\s*\? await workflowEventIndexForRequest\(ctx, peopleSid\)/.test(src),
     'people：workflow 索引只在分节内取，且走归属会话（改经有界后台预热入口）', '');
-  // 硬上限仍在，且它的语义被钉死：`roles:N` 里的 N = **超出上限、不做日志解析**的条数。
+  // 硬上限仍在，且它的语义被钉死：超出上限的条数 = **不做日志解析**的条数。
   // 所以交给后台批的列表必须与请求路径**同口径地**按上限切过 —— 否则超出上限的人迟早也会被解析，
-  // `roles:N` 就成了一句假话（这里同时钉住"上限真的收口"这件事）。
-  check(/if \(subs\.length > MAX_ROLE_SUBS\) degraded\.push\('roles:' \+ \(subs\.length - MAX_ROLE_SUBS\)\)/.test(src),
-    'people：硬上限仍如实上报（roles:N = 超出上限的条数）', '');
+  // 上报的数字就成了一句假话（这里同时钉住"上限真的收口"这件事）。
+  // ⚠️ 1.3.22：上限**不再进 `degraded`**（真机 95 agent 时那会让降级标记每轮常亮 ⇒ 真告警被
+  // 一起降权），改为进 `scopeCaps`（数字一个不少，但不是故障）。判据见 `classifyStateShortfall`。
+  check(/if \(subs\.length > MAX_ROLE_SUBS\) capFacts\.push\(\{ key: 'roles', total: subs\.length, limit: MAX_ROLE_SUBS \}\)/.test(src),
+    'people：硬上限如实上报进 `scopeCaps`（**不是** degraded —— 设计上限不是故障）', '');
   check(/warmSubRoles\(ctx, subs\.slice\(0, MAX_ROLE_SUBS\), wfLabels/.test(src),
     'people：后台批吃的是**按上限切过**的列表（超出上限的人不会被排进解析队列）', '');
   check(/await resolveSubRoles\(ctx, subs, wfLabels, \{ maxReads: 0 \}\)/.test(src),
@@ -109,23 +114,27 @@ console.log('\n② 服务端：贵块真的关在分节后面（守卫点在位�
   check(/if \(want\('people'\) && !taskList\(sel\.tasks\)\.length && subs\.length\)/.test(src), 'people：tasksLive 兜底投影同样受分节约束', '');
 }
 
-console.log('\n③ 硬上限 / 软期限：截断必须**如实上报**（不许静默丢）');
+console.log('\n③ 硬上限 / 软期限：截断必须**如实上报**（不许静默丢），且**上限 ≠ 故障**');
 {
   check(/const MAX_ROLE_SUBS = /.test(src) && /DSH_EXPERT_TEAM_MAX_ROLE_SUBS/.test(src), '角色解析有硬上限（可用环境变量覆盖）', '');
-  check(/degraded\.push\('roles:' \+ \(subs\.length - MAX_ROLE_SUBS\)\)/.test(src), '被上限挡住的条数进 degraded（带数量）', '');
+  check(/capFacts\.push\(\{ key: 'roles', total: subs\.length, limit: MAX_ROLE_SUBS \}\)/.test(src),
+    '被上限挡住的条数进 `scopeCaps`（带数量与上限，不是故障）', '');
+  check(!/degraded\.push\('roles:'/.test(src), '上限**不**进 degraded（常亮的告警等于没有告警）', '');
   check(/const PEOPLE_DEADLINE_MS = /.test(src) && /DSH_EXPERT_TEAM_PEOPLE_DEADLINE_MS/.test(src), 'people 有软期限（可覆盖）', '');
-  check(/degraded\.push\('wf:deadline'\)/.test(src), '超期限跳过 workflow 元数据时如实标注', '');
+  check(/cutFacts\.push\('wf:deadline'\)/.test(src), '超期限跳过 workflow 元数据时如实进 degraded（真故障）', '');
   check(/const ARTIFACTS_DEADLINE_MS = /.test(src) && /DSH_EXPERT_TEAM_ARTIFACTS_DEADLINE_MS/.test(src),
     'artifacts 有软期限（可覆盖）—— 它要跑 git，是全链最不可控的一段', '');
-  check(/if \(!withinArtifacts\(\)\) degraded\.push\('artifacts:deadline'\)/.test(src), '超期限连 logTail 都不读时如实标注', '');
-  check(/degraded\.push\('files:deadline'\)/.test(src), '读完 logTail 仍超期限 ⇒ 跳过 git 并单独如实标注', '');
+  check(/if \(!withinArtifacts\(\)\) cutFacts\.push\('artifacts:deadline'\)/.test(src), '超期限连 logTail 都不读时如实标注', '');
+  check(/cutFacts\.push\('files:deadline'\)/.test(src), '读完 logTail 仍超期限 ⇒ 跳过 git 并单独如实标注', '');
   check(/const MAX_FEED_AGENTS = /.test(src) && /DSH_EXPERT_TEAM_MAX_FEED_AGENTS/.test(src), 'feed 有 agent 数硬上限（可覆盖）', '');
-  check(/degraded\.push\('feed:' \+ \(subs\.length - MAX_FEED_AGENTS\)\)/.test(src), '被 feed 上限挡住的条数进 degraded（带数量）', '');
+  check(/capFacts\.push\(\{ key: 'feed', total: subs\.length, limit: MAX_FEED_AGENTS \}\)/.test(src), '被 feed 上限挡住的条数同样进 `scopeCaps`', '');
   check(/mark\('people-enrich'\)/.test(src), 'profile 补账：people 增强段有独立计时（原先并进 roles→tail 的大块）', '');
   check(/mark\('agents'\);[\s\S]{0,6000}?mark\('assemble'\);[\s\S]{0,6000}?mark\('artifacts'\);[\s\S]{0,6000}?mark\('tail'\);/.test(src),
     'profile 补账点按执行顺序覆盖「agents → 装配 → 工件 → 收尾」（真机上这 ~2 s 原先无账）', '');
   check(/degraded\.length \? \{ degraded: true, degradedReason: degraded\.join\(','\), sections: included \} : null/.test(src),
     '响应里带 degraded + degradedReason（调用方看得见"少算了什么"）', '');
+  check(/Object\.keys\(scopeCaps\)\.length \? \{ scopeCaps \} : null/.test(src),
+    '响应里带 `scopeCaps`（按设计的上限：数字照发，与 degraded 分开承载）', '');
   check(/secRequested \? \{ sections: included \} : null/.test(src),
     '响应里带 sections（缺的块 ≠ 空数据，两种零可区分）', '');
 }
