@@ -450,7 +450,7 @@ Then **restart `dsh web`** (the preset roster is read at startup; refreshing the
 
 ## Honest boundaries
 
-- **The local-origin guard is in place, but it is not authentication.** All 11 overlay routes validate the Host
+- **The local-origin guard is in place, but it is not authentication.** All overlay routes validate the Host
   header (against DNS rebinding), the Origin of mutating methods (against cross-site writes) and the client
   address (against the LAN); mutating methods additionally require `application/json` (blocking form/text-plain
   "simple requests" that skip preflight). `/file` goes through the host `ctx.fs` policy and reports 403 honestly
@@ -464,6 +464,14 @@ Then **restart `dsh web`** (the preset roster is read at startup; refreshing the
   if the host changes its built-in preset structure, this needs a sync. Upgrades re-lay the whole directory by
   version stamp; `/team uninstall` reclaims it (a user-authored preset with the same name is never touched).
 - **It intentionally runs `git status --porcelain` (read-only)** to judge artifact freshness.
+- **This plugin changes one display order in the host GUI (on by default, can be turned off).** After installing,
+  the **subagent list** (the lineage tree under the session header) shows **newest first**. It changes the
+  **display order only**: the plugin shadows the single remote method that ships the catalog to the browser
+  (`subagents/list` → `remoteExportList`) and reverses the array; the server-side `listChildren`
+  **written contract** (`ordered by createdAt, then id`) is **untouched**, and the model-facing `list_agents`,
+  this plugin's own `/state` and `listDescendants`' pre-order are **all unaffected**. The setting
+  `display.subagentListNewestFirst` turns it off; when the host shape does not match, the plugin **falls back to
+  the host default** and the settings page **says "not active"** — it never pretends to be in effect.
 - **Unwired settings are never dressed up as working.** Every setting either really takes effect or is marked
   "not yet in effect" (driven by the single source `INERT_SETTINGS`) and watched by
   `settings-consumers.test.mjs` — that table is currently empty.

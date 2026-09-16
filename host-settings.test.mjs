@@ -148,6 +148,148 @@ console.log('\n⑤ 接线：插件真的把设置注册出去，并且读设置�
   check(exposed.every((k) => _live[k] !== undefined), '_live 暴露了测试所需的接线口', exposed.filter((k) => _live[k] === undefined).join(',') || '');
 }
 
+console.log('\n⑥ 子代理列表「最新在上」：设置项 + 自有属性遮蔽 + **未生效必须如实上报**');
+{
+  const ao = await import(join(here, 'lib', 'subagent-order.js'));
+
+  // ── 设置项：单一真源里必须有它，且 hint 必须**披露**（只改展示顺序 / 契约不变 / 未生效会说）──
+  const item = (((settingsMod.SETTINGS_SPEC || {}).display || {}).items || {}).subagentListNewestFirst;
+  check(!!item, 'SETTINGS_SPEC.display.items 里有 subagentListNewestFirst（单一真源，不另抄默认值）', item ? '' : '缺');
+  check(!!item && item.type === 'bool' && item.default === true, '类型 bool、默认开（"装了就见效"）', item ? `type=${item.type} default=${item.default}` : '');
+  check(!!item && /展示顺序/.test(item.hint) && /listChildren/.test(item.hint) && /未生效|退回/.test(item.hint),
+    'hint 披露了"只改展示顺序 + 服务端契约不变 + 结构不匹配会退回并如实显示"', item ? '' : '缺');
+
+  // ── 纯函数：反转但不改入参；形状不符 ⇒ 原样返回 ──
+  const cat = { entries: [{ id: 'a' }, { id: 'b' }, { id: 'c' }], parentAvailable: true };
+  const rev = ao.reverseCatalogEntries(cat);
+  check(rev.changed && rev.catalog.entries.map((e) => e.id).join('') === 'cba', '反转 entries', rev.catalog.entries.map((e) => e.id).join(''));
+  check(cat.entries.map((e) => e.id).join('') === 'abc', '**不修改入参**（宿主可能复用同一份目录）', cat.entries.map((e) => e.id).join(''));
+  check(rev.catalog.parentAvailable === true, '其余字段原样保留', '');
+  const bad = ao.reverseCatalogEntries({ nope: 1 });
+  check(bad.changed === false && bad.catalog.nope === 1, '形状不符 ⇒ changed:false 且原样返回（不猜结构）', '');
+
+  // ── 包装：**不依赖 `this`**、反转、非 catalog 原样返回 ──
+  const seenThis = [];
+  const original = async function (x) { seenThis.push(this); return { entries: [1, 2], x }; };
+  const target = { tag: 'svc' };
+  // 关键：用**外来的 this** 调我们的包装（网关正是 `Reflect.apply(method, receiver, args)`，
+  // 而 receiver 不是裸实例、apply trap 会换 thisArg）⇒ 原方法仍必须以**捕获的 target** 被调用。
+  const foreignThis = { tag: 'receiver-proxy' };
+  const wrapped = ao.createSubagentOrderWrapper(original, target);
+  const out = await Reflect.apply(wrapped, foreignThis, ['arg']);
+  check(out.entries.join('') === '21' && out.x === 'arg', '包装后反转、且保留其它字段', JSON.stringify(out));
+  check(seenThis[0] === target, '**不依赖 `this`**：原方法始终以捕获到的 target 被调用（外面的 this 被忽略）', String(seenThis[0] && seenThis[0].tag));
+  check(seenThis[0] !== foreignThis, '外来的 this **没有**被转发给原方法（否则宿主方法可能在错误的 this 上执行）', '');
+  check(await Reflect.apply(ao.createSubagentOrderWrapper(async () => 42, target), foreignThis, []) === 42, '原方法返回非 catalog ⇒ 原样返回（不硬凑）', '');
+
+  // ── 遮蔽：装 / 幂等 / 只卸自己装的 / 卸净后原型恢复 ──
+  const proto = { remoteExportList: async () => ({ entries: ['old1', 'old2'] }) };
+  const svc = Object.create(proto);   // 方法在**原型**上，与实际服务同形态
+  const first = ao.installSubagentOrderOn(svc);
+  check(first.ok && first.reason === 'installed', '装入自有属性', first.reason);
+  const own = Object.getOwnPropertyDescriptor(svc, 'remoteExportList');
+  check(!!own && own.value === first.wrapper, '判活只能读**自有描述符**（`fn === wrapper` 会被代理的 shadow method 骗过）', '');
+  const got = await Reflect.apply(Reflect.get(svc, 'remoteExportList'), svc, []);
+  check(got.entries.join(',') === 'old2,old1', '读取方拿到的是**反转后**的结果', JSON.stringify(got.entries));
+  const second = ao.installSubagentOrderOn(svc);
+  check(second.ok && second.reason === 'already-installed' && second.wrapper === first.wrapper, '幂等：重复装不会双层包装', second.reason);
+
+  const foreign = Object.create(proto);
+  Object.defineProperty(foreign, 'remoteExportList', { value: async () => 'foreign', configurable: true, writable: true });
+  const refused = ao.uninstallSubagentOrderFrom(foreign);
+  check(refused.ok === false && refused.reason === 'not-ours', '不是我们装的 ⇒ 拒绝卸载（不动别人的遮蔽）', refused.reason);
+  check(typeof foreign.remoteExportList === 'function' && (await foreign.remoteExportList()) === 'foreign', '拒绝后对方的实现原样保留', '');
+  const removed = ao.uninstallSubagentOrderFrom(svc, first.wrapper);
+  check(removed.ok && removed.reason === 'removed', '卸载成功', removed.reason);
+  check(Object.getOwnPropertyDescriptor(svc, 'remoteExportList') === undefined, '自有属性被**真正删掉**（不留痕迹）', '');
+  check((await Reflect.apply(Reflect.get(svc, 'remoteExportList'), svc, [])).entries.join(',') === 'old1,old2', '删掉后原型方法自动恢复（宿主默认顺序）', '');
+
+  // ── 状态机：开/关/服务缺失/宿主方法缺失 —— 每一种都要**如实** ──
+  ao._resetSubagentOrder();
+  const fakeCtx = (service) => ({ get: (n) => (n === ao.SUBAGENT_ORDER_SERVICE ? service : undefined) });
+  const okSvc = Object.create(proto);
+  const st1 = ao.applySubagentOrder(fakeCtx(okSvc), true);
+  check(st1.enabled && st1.installed && st1.effective, '开且装成功 ⇒ effective:true', JSON.stringify(st1));
+  const st2 = ao.applySubagentOrder(fakeCtx(okSvc), false);
+  check(st2.enabled === false && st2.effective === false && st2.reason === 'disabled', '关掉 ⇒ 卸载 + 如实标 disabled', JSON.stringify(st2));
+  check(Object.getOwnPropertyDescriptor(okSvc, 'remoteExportList') === undefined, '关掉后自有属性被删掉', '');
+  const st3 = ao.applySubagentOrder(fakeCtx(undefined), true);
+  check(st3.effective === false && st3.reason === 'service-missing', '拿不到服务 ⇒ 不装 + 如实标 service-missing', JSON.stringify(st3));
+  const st4 = ao.applySubagentOrder(fakeCtx({}), true);
+  check(st4.effective === false && st4.reason === 'host-method-missing', '宿主方法不存在 ⇒ 不装 + 如实标 host-method-missing', JSON.stringify(st4));
+  const st5 = ao.applySubagentOrder(fakeCtx(okSvc), true);
+  check(st5.effective === true, '恢复开启后能重新装上', JSON.stringify(st5));
+  const d = ao.disposeSubagentOrder();
+  check(d.ok === true && Object.getOwnPropertyDescriptor(okSvc, 'remoteExportList') === undefined, 'dispose 删掉自有属性（不留痕）', JSON.stringify(d));
+  check(ao.subagentOrderStatus().effective === false, 'dispose 后状态如实变回"未生效"', JSON.stringify(ao.subagentOrderStatus()));
+  ao._resetSubagentOrder();
+
+  // ── traceable 代理（cordis 的真实形态）：把机制依赖的两条假设钉住 ──
+  // 依据真实源码（cordis 4.0.2 `createTraceable`）：get 对**自有 value 属性**直接给值、
+  // 对**原型函数**包成 shadow method；**没有 defineProperty 陷阱** ⇒ 定义落到裸实例。
+  const mkTraceable = (t) => new Proxy(t, {
+    get(tg, prop) {
+      if (prop === Symbol.for('cordis.original')) return tg;
+      const desc = Object.getOwnPropertyDescriptor(tg, prop);
+      // 真实语义（cordis 4.0.2）：自有 value 属性直接取值，否则按原型读；
+      // 之后**任何函数**（无论自有还是原型）都会被包成 shadow method。
+      const v = (desc && 'value' in desc) ? desc.value : Reflect.get(tg, prop);
+      if (typeof v === 'function') return (...a) => Reflect.apply(v, tg, a);
+      return v;
+    },
+  });
+  const psvc = Object.create(proto);
+  const r = ao.installSubagentOrderOn(mkTraceable(psvc));
+  check(r.ok === true, '隔着 traceable 代理也能装入', r.reason);
+  check(Object.getOwnPropertyDescriptor(psvc, 'remoteExportList') !== undefined, '自有属性落在**裸实例**上（代理无 defineProperty 陷阱）', '');
+  const fetched = Reflect.get(mkTraceable(psvc), 'remoteExportList');
+  check(fetched !== r.wrapper, '代理读到的**不是**我们的函数本体（被包成 shadow method）——所以判活必须读自有描述符', '');
+  const pout = await Reflect.apply(fetched, mkTraceable(psvc), []);
+  check(pout.entries.join(',') === 'old2,old1', '即便隔着代理，调用结果仍是我们包装后的（反转）', JSON.stringify(pout.entries));
+  ao.uninstallSubagentOrderFrom(psvc, r.wrapper);
+  check(Object.getOwnPropertyDescriptor(psvc, 'remoteExportList') === undefined, '代理场景下也能干净卸掉', '');
+
+  // 代理场景下**再验一次"不依赖 this"**：用外来 receiver 调，原方法仍必须以裸实例为 this。
+  const seenP = [];
+  const proto2 = { remoteExportList: async function () { seenP.push(this); return { entries: ['a', 'b'] }; } };
+  const psvc2 = Object.create(proto2);
+  const r2 = ao.installSubagentOrderOn(mkTraceable(psvc2));
+  const fetched2 = Reflect.get(mkTraceable(psvc2), 'remoteExportList');
+  const out2 = await Reflect.apply(fetched2, { tag: 'other-receiver' }, []);
+  check(seenP[0] === psvc2, '代理场景下原方法仍以**裸实例**为 this（不转发外来的 this）', String(seenP[0] && seenP[0].tag));
+  check(out2.entries.join('') === 'ba', '代理场景下仍然反转', JSON.stringify(out2.entries));
+  ao.uninstallSubagentOrderFrom(psvc2, r2.wrapper);
+
+  // ── ⑧ 防漂移（**源码级接线断言，不是行为断言**）：宿主的排序契约仍是 createdAt 升序 ──
+  // 我们**只做 reverse**、不按时间排（线上条目里根本没有 createdAt）⇒ 宿主若把契约改成降序，
+  // 我们的"最新在上"会**静默变成"最旧在上"**。本断言在装了宿主的机器上才跑；
+  // CI 上没有宿主 ⇒ **明确跳过并打印原因**（不假装通过，也不制造假红）。
+  {
+    const roots = [process.env.DSH_INSTALL, '/Applications/ServBay/package/node/24/24.14.0/lib/node_modules/@deepseek-ai/dsh'].filter(Boolean);
+    let found = null;
+    for (const root of roots) {
+      const p = join(root, 'node_modules', '@deepseek-ai', 'dsh-subagent', 'lib', 'types', 'list-children.js');
+      try { await (await import('node:fs/promises')).access(p); found = p; break; } catch { /* 换下一个候选路径 */ }
+    }
+    if (!found) {
+      console.log('  · 跳过「宿主排序契约」断言：本机找不到宿主安装（CI 上必然如此）—— **明确跳过，不当作通过**');
+    } else {
+      const src = await (await import('node:fs/promises')).readFile(found, 'utf8');
+      check(/a\.header\.createdAt\s*-\s*b\.header\.createdAt/.test(src),
+        '【接线断言】宿主仍按 createdAt **升序**比较 —— 我们只做 reverse，它若反向就会失效', found);
+    }
+  }
+
+  // ── 接线：command.js 真的装了、且设置一变就重算；状态有只读路由 ──
+  const cmdSrc = await (await import('node:fs/promises')).readFile(join(here, 'lib', 'command.js'), 'utf8');
+  check(/ctx\.inject\(\[SUBAGENT_ORDER_SERVICE\]/.test(cmdSrc), 'command.js 用 inject 等服务就绪后再装（不赌加载顺序）', '');
+  check(/syncSubagentOrder\(sctx\)/.test(cmdSrc), 'inject 回调里同步装载状态', '');
+  check(/syncSubagentOrder\(\);\n    return true;/.test(cmdSrc), 'reapplySettingsDerived 里也同步 ⇒ 改设置立刻生效/立刻退回', '');
+  check(/disposeSubagentOrder\(\)/.test(cmdSrc), 'dispose 时卸载（删自有属性）', '');
+  check(/\/plugins\/dsh-expert-team\/subagent-order/.test(cmdSrc), '有只读状态路由（客户端据此显示"已生效/未生效"）', '');
+  check(/未生效：宿主结构不匹配，已退回宿主默认顺序/.test(cmdSrc), '路由话术如实写出"未生效"的成因', '');
+}
+
 console.log('');
 if (fail > 0) {
   console.log(`✗ 宿主设置接线测试失败：${fail} 项`);

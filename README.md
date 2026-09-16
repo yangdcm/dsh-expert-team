@@ -397,7 +397,7 @@ dsh 安装里插件自带的 Config schema（dsh 路径自动探测，可用 `DS
 
 ## 诚实边界
 
-- **本机来源守卫已就位，但不是鉴权**：11 条浮层路由统一校验 Host（挡 DNS rebinding）、
+- **本机来源守卫已就位，但不是鉴权**：全部浮层路由统一校验 Host（挡 DNS rebinding）、
   写方法的 Origin（挡跨站写入）、客户端地址（挡局域网），写方法还要求 `application/json`
   （挡 form / text-plain 这类不触发预检的"简单请求"）；`/file` 改走宿主 `ctx.fs` 策略，
   读被策略拒绝时如实报 403 而**不退回裸读**。
@@ -408,6 +408,12 @@ dsh 安装里插件自带的 Config schema（dsh 路径自动探测，可用 `DS
   宿主若调整内置 preset 结构，需要同步更新。升级插件时会按版本戳整目录重铺；
   `/team uninstall` 可回收它（用户自己写的同名 preset 不会被碰）。
 - **会有意调用 `git status --porcelain`（只读）** 用于工件新鲜度判断。
+- **本插件会改宿主 GUI 的一处展示顺序（默认开，可关）**：装上之后，**子代理列表**（会话头部那棵
+  lineage 树）按「**最新在上**」显示。它**只改展示顺序**：插件遮蔽宿主把目录送到浏览器的那一个 remote 方法
+  （`subagents/list` → `remoteExportList`）并反转数组；服务端 `listChildren` 的**写明契约**
+  （`ordered by createdAt, then id`）**原样不动**，模型侧 `list_agents`、本插件自己的 `/state`、
+  `listDescendants` 的 pre-order **都不受影响**。设置项 `display.subagentListNewestFirst` 可关掉；
+  宿主结构不匹配时**自动退回宿主默认顺序**，并在设置页**如实显示「未生效」**（装了没生效绝不会假装生效）。
 - **未接线项不装作可用**：设置页的项要么真的生效，要么被标为「暂未生效」（由 `INERT_SETTINGS` 单一真源驱动），
   并由 `settings-consumers.test.mjs` 盯着 —— 目前该表为空。
 

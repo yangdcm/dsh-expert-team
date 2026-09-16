@@ -1280,6 +1280,7 @@ window.__ModuleLoader__.load({
           ? t('改动即保存并即时生效（上限 / 轮次 / 档位门 / 振荡检测开关在进程内重算）。标着「暂未生效」的项尚未接线，改了不会有作用。', 'Saved on change and applied immediately (caps, rounds, the tier gate and the oscillation switch are recomputed in-process). Items marked as not yet in effect are not wired up — changing them does nothing.')
           : t('改动即保存并即时生效（上限 / 轮次 / 档位门 / 振荡检测开关在进程内重算）。', 'Saved on change and applied immediately (caps, rounds, the tier gate and the oscillation switch are recomputed in-process).'))),
         rows,
+        h(SubagentOrderBlock),
         h(HindsightBlock),
         h('div', { className: 'exp-settings-msg' + (err ? ' bad' : '') }, esc(err ? '✗ ' + err : (msg || ''))))
     }
@@ -1297,6 +1298,34 @@ window.__ModuleLoader__.load({
      *   ④ 没有改动 ⇒ 如实说"没有改动、未写盘"，**不假报已保存**；
      *   ⑤ 失败原样显示服务端给的 `errors`（不吞、不美化）。
      */
+    /**
+     * 子代理列表顺序的**生效状态**（只读）。
+     *
+     * 为什么单独一块：设置项的值只回答"想不想开"，这一块回答"**到底有没有生效**"——
+     * 宿主结构不匹配时插件会静默退回宿主默认顺序，界面上必须能如实说出来。
+     * 本仓纪律：不许在没生效时让人以为生效。
+     */
+    function SubagentOrderBlock() {
+      var sS = useState(null); var st = sS[0], setSt = sS[1]
+      useEffect(function () {
+        fetch('/plugins/dsh-expert-team/subagent-order')
+          .then(function (r) { return r.json().catch(function () { return null }) })
+          .then(function (d) { setSt(d && d.ok ? d : null) })
+          .catch(function () { setSt(null) })
+      }, [])
+      if (!st) return null   // 读不到状态就不占位、也不假报
+      var label = st.effective
+        ? t('已生效', 'Active')
+        : (st.enabled
+          ? t('未生效（已退回宿主默认顺序）', 'Not active (fell back to the host default)')
+          : t('已关闭（用宿主默认：最旧在上）', 'Off (host default: oldest first)'))
+      return h('div', { className: 'exp-settings-row' },
+        h('div', { className: 'exp-settings-label' }, esc(t('子代理列表顺序', 'Subagent list order'))),
+        h('div', { className: 'exp-settings-ctl' },
+          h('span', { className: st.effective ? 'exp-hs-ok' : (st.enabled ? 'exp-hs-bad' : '') }, esc(label))),
+        h('div', { className: 'exp-settings-note' }, esc(st.note || '')))
+    }
+
     function HindsightBlock() {
       var dS = useState(null); var d = dS[0], setD = dS[1]
       var pS = useState(null); var probed = pS[0], setProbed = pS[1]
