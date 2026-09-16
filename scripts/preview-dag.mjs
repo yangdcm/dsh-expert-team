@@ -29,14 +29,33 @@ function sliceFn(name, text = src) {
   throw new Error(`${name} 花括号不平衡`);
 }
 
-// ── CSS：从 `var CSS =` 到赋值链结尾 ──────────────────────────────────────
+// ── CSS：从 `var CSS =` 到**下一条顶层语句**（与 preview-canvas.mjs / client-css-integrity 同一锚点）──
+// ⚠️ 旧写法是 `src.indexOf("'\n", cssAt)`（"行尾引号、后面没有 +"），它只覆盖**第一条** `var CSS = '…'` 语句。
+// 实测（2026-09-16）：那条语句在偏移 42052 就结束了，后面还有若干 `CSS += '…'` 追加段，合计丢 **8437 字符**
+// （`.etc-*` 新画布全部样式，以及 `.etv-graph/.etv-curve/.etv-dep-edge/.etv-link/.etv-list` 等）。
+// 为什么以前没露馅：本预览器只用到前段就有的 `.exp-*`（`.exp-panel` / `.exp-node-bar` …），
+// 丢掉的全是"它当时不用的规则"——静默、不报错、截图看着正常（本仓最怕的那种假绿）。
+// 现在求值**整条语句链**（含所有 `CSS +=`），并加反空转：
+// 抽到的 CSS 必须同时含 ①一条 DAG 关键 `.exp-*` ②一条**只在后段出现**的规则；缺任何一条直接 bail，
+// 绝不产出"无样式的假象"。
 const cssAt = src.indexOf('var CSS =');
 if (cssAt < 0) throw new Error('找不到 var CSS');
-// 链的中间行都以 `' +` 结尾，最后一行是「行尾引号、后面没有 +」（末尾分号由 ASI 省略）
-const cssEnd = src.indexOf("'\n", cssAt);
-if (cssEnd < 0) throw new Error('找不到 CSS 赋值链结尾');
-const cssExpr = src.slice(cssAt + 'var CSS ='.length, cssEnd + 1);
-const CSS = new Function(`return (${cssExpr})`)();
+const cssAnchor = src.indexOf('// ── session store', cssAt);
+if (cssAnchor < 0) throw new Error('找不到 CSS 语句的结束锚点 `// ── session store`');
+const CSS = new Function(`${src.slice(cssAt, cssAnchor).trimEnd()}\nreturn CSS;`)();
+if (typeof CSS !== 'string') throw new Error(`CSS 求值结果不是字符串（${typeof CSS}）`);
+// 反空转探针：① 前段的 DAG 核心规则 ② 只在 `CSS +=` 追加段里出现的规则
+const CSS_PROBES = [
+  ['.exp-node-bar{', 'DAG 状态带（本预览器的核心规则，前段应有）'],
+  ['.etc-root{', '只在后段（CSS += 追加段）出现 —— 它缺席就说明语句链没取全'],
+];
+const cssMissing = CSS_PROBES.filter(([probe]) => !CSS.includes(probe));
+if (cssMissing.length) {
+  throw new Error(
+    `CSS 抽取不完整（len=${CSS.length}），缺：${cssMissing.map(([p, why]) => `${p}（${why}）`).join('；')}`
+    + ' —— 多半是"只取第一条 var CSS 语句、漏掉 CSS += 追加段"的老问题复发。',
+  );
+}
 
 // ── 依赖的小函数 + 常量 ────────────────────────────────────────────────────
 const constLine = src.match(/var NODE_W = \d+, NODE_H = \d+, HGAP = \d+, VGAP = \d+/)[0];

@@ -310,6 +310,80 @@ window.__ModuleLoader__.load({
 
       // lead 微调（UI.md 基线之上）：360px 两列时 8px 间距偏挤 → 10px；卡更高一点；分组区更松
       + '.etv-cards{gap:10px}.etv-card{min-height:58px}.etv-group{padding:8px 10px 4px}'
+      // ── 补漏：`--etv-*` 的**浅色**取值 ──
+      // 为什么必须有这一段（真缺陷，非推测）：`--etv-lead/idle/run/ok/rework/fail/line/text-*/indent/gap/card-min/wave-gap`
+      // 在本插件里**只在** `@media (prefers-color-scheme:dark)`（见上一段 `.etv-*` 尾部）里被赋值，
+      // 浅色路径**从未定义**，却被 `.etv-card{border:1.4px solid var(--etv-idle)}`、`.etv-rail-i{background:var(--etv-line)}`、
+      // `.etv-cards{gap:var(--etv-gap)}` 等**无 fallback** 地使用 ⇒ 浅色下这些声明整条失效（边框/导轨/间距消失）。
+      // 作用域取 `.exp-panel,.exp-canvas`：与深色覆写同一选择器，深色靠"后出现"同权重胜出。
+      + '.exp-panel,.exp-canvas{--etv-lead:#3b6ef5;--etv-idle:#c2c8d0;--etv-run:#3b6ef5;--etv-ok:#22b07d;--etv-rework:#d97706;--etv-fail:#c0392b;--etv-line:#d8dee7;--etv-text-run:#1f6feb;--etv-text-ok:#1a7f5a;--etv-text-rework:#b45309;--etv-indent:16px;--etv-gap:8px;--etv-card-min:132px;--etv-wave-gap:10px}'
+      // ── 专家团画布（`.etc-*` = expert-team canvas）：编队 + 共享任务列表 ──
+      // 变量一律"浅色在此、深色在紧随其后的同条件块里"成对给出，绝不留只在单侧生效的变量。
+      + '.etc-root{--etc-line:#d0d7de;--etc-edge-ok:#22b07d;--etc-edge-warn:#d29922;--etc-lead:#3b6ef5;--etc-ok:#22b07d;--etc-run:#3b6ef5;--etc-warn:#b45309;--etc-rework:#d97706;--etc-fail:#c0392b;--etc-idle:#c2c8d0;--etc-soft:rgba(59,110,245,.06);display:block;min-width:0}'
+      + '.etc-sec-h{font-size:11px;font-weight:700;color:var(--dsw-alias-label-secondary,#57606a);margin:8px 0 5px}'
+      + '.etc-formation{display:flex;flex-direction:column;align-items:center;gap:0;min-width:0}'
+      + '.etc-leader{display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center}'
+      + '.etc-leader-name{display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:center}'
+      + '.etc-badges{display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:center}'
+      + '.etc-badge{font-size:10px;line-height:15px;padding:0 6px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));background:var(--dsw-alias-bg-layer-2,#f6f8fa);color:var(--dsw-alias-label-secondary,#57606a);white-space:nowrap}'
+      + '.etc-lead-note{font-size:10px;color:var(--dsw-alias-label-tertiary,#8b949e)}'
+      + '.etc-bus{position:relative;width:100%;min-height:20px;margin:4px 0 0}'
+      + '.etc-bus-line{position:absolute;left:4%;right:4%;top:9px;border-top:1.4px dashed var(--etc-line)}'
+      + '.etc-assign{position:absolute;left:50%;top:1px;transform:translateX(-50%);font-size:10px;line-height:16px;padding:0 7px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-secondary,#57606a);white-space:nowrap}'
+      + '.etc-members{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;width:100%;min-width:0}'
+      + '.etc-member{position:relative;flex:1 1 168px;min-width:0;max-width:260px;box-sizing:border-box;border:1.4px solid var(--etc-idle);border-radius:10px;padding:6px 8px 5px;background:var(--dsw-alias-bg-layer-1,#fff)}'
+      + '.etc-member-h{display:flex;align-items:center;gap:6px;min-width:0}'
+      + '.etc-avatar{width:36px;height:36px;border-radius:50%;flex:none;overflow:hidden;display:block;background:var(--dsw-alias-bg-layer-2,#f6f8fa)}'
+      + '.etc-avatar-svg{width:100%;height:100%;display:block}'
+      + '.etc-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 6px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#f6f8fa);border:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));min-width:0}'
+      + '.etc-state{display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--dsw-alias-label-secondary,#57606a);margin-top:4px}'
+      + '.etc-dot{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block;background:var(--etc-idle)}'
+      + '.etc-dot.run{animation:exp-pulse 1.4s ease-in-out infinite}'
+      + '.etc-bar{height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2,#eef1f4);overflow:hidden;margin-top:5px}'
+      + '.etc-bar>i{display:block;height:6px;width:0;background:var(--etc-idle)}'
+      + '.etc-bar.run>i{background:var(--etc-run);animation:exp-pulse 1.6s ease-in-out infinite}'
+      + '.etc-bar.ok>i{background:var(--etc-ok)}'
+      + '.etc-bar.bad>i{background:var(--etc-rework)}'
+      + '.etc-cols{position:relative;display:flex;gap:12px;overflow-x:auto;align-items:flex-start;max-width:100%;padding:2px 2px 6px}'
+      + '.etc-col{flex:0 0 auto;width:min(280px,78vw);min-width:0;box-sizing:border-box}'
+      + '.etc-col-h{display:flex;align-items:baseline;gap:6px;font-size:11.5px;font-weight:700;margin:0 0 2px}'
+      + '.etc-col-n{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary,#57606a);flex:none}'
+      + '.etc-col-note{font-size:10px;line-height:1.35;color:var(--dsw-alias-label-tertiary,#8b949e);margin:0 0 5px}'
+      + '.etc-cards{display:flex;flex-direction:column;gap:8px;min-height:4px}'
+      + '.etc-card{box-sizing:border-box;border:1.4px solid var(--etc-idle);border-radius:10px;background:var(--dsw-alias-bg-layer-1,#fff);padding:6px 8px;cursor:pointer;min-width:0}'
+      + '.etc-card:hover{border-color:var(--dsw-alias-state-business-primary,#0969da)}'
+      + '.etc-card.sel{border-color:var(--dsw-alias-state-business-primary,#0969da);box-shadow:0 0 0 2px var(--etc-soft)}'
+      + '.etc-card.run{border-color:var(--etc-run)}'
+      + '.etc-card.ok{border-color:var(--etc-ok)}'
+      // 失败/返工卡：`canvasCardNode` 会挂 `.bad`（rework|failed）。缺这条规则时它们与"未开始"看起来一样，
+      // 只有胶囊和状态条能区分 —— 边框是画布上最先被看到的信号，不能缺。
+      + '.etc-card.bad{border-color:var(--etc-fail)}'
+      + '.etc-card-h{display:flex;align-items:center;gap:5px;min-width:0}'
+      + '.etc-id{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--dsw-alias-label-secondary,#57606a);font-variant-numeric:tabular-nums}'
+      + '.etc-card-t{font-size:11.5px;line-height:1.4;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}'
+      + '.etc-owner{display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--dsw-alias-label-secondary,#57606a);margin-top:5px}'
+      + '.etc-owner .etc-avatar{width:14px;height:14px}'
+      + '.etc-owner-none{color:var(--dsw-alias-label-tertiary,#8b949e)}'
+      + '.etc-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}'
+      + '.etc-chip{font-family:ui-monospace,Menlo,monospace;font-size:10px;line-height:15px;padding:0 5px;border-radius:7px;border:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));background:var(--dsw-alias-bg-layer-2,#f6f8fa);color:var(--dsw-alias-label-secondary,#57606a);white-space:nowrap}'
+      + '.etc-chip.ok{border-color:var(--etc-ok);color:var(--etc-ok)}'
+      + '.etc-chip.warn{border-color:var(--etc-edge-warn);color:var(--etc-warn)}'
+      + '.etc-chip.more{border-style:dashed}'
+      + '.etc-blocked{font-size:10.5px;line-height:1.35;color:var(--etc-warn);margin-top:4px}'
+      + '.etc-edges{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:0}'
+      + '.etc-edge{fill:none;stroke:var(--etc-edge-warn);stroke-width:1.4;stroke-dasharray:5 4}'
+      + '.etc-edge.ok{stroke:var(--etc-edge-ok);stroke-dasharray:none;opacity:.95}'
+      + '.etc-edge.warn{stroke:var(--etc-edge-warn)}'
+      + '.etc-edge-arrow{fill:var(--etc-edge-warn)}'
+      + '.etc-edge-arrow.ok{fill:var(--etc-edge-ok)}'
+      + '.etc-empty{font-size:11px;color:var(--dsw-alias-label-tertiary,#8b949e);padding:6px 2px}'
+      + '.etc-warn{font-size:10.5px;line-height:1.4;color:var(--etc-warn);border:1px dashed var(--etc-edge-warn);background:rgba(210,153,34,.10);border-radius:8px;padding:4px 7px;margin:4px 0}'
+      + '.etc-degrade{font-size:10.5px;line-height:1.4;border:1px solid #e3c56b;background:linear-gradient(180deg,rgba(217,164,65,.14),var(--dsw-alias-bg-layer-1,#fff));color:#7a5a00;border-radius:8px;padding:5px 8px;margin:4px 0}'
+      + '.etc-legend .etc-edge-sample{width:16px;border-top:1.4px dashed var(--etc-edge-warn);display:inline-block;margin-right:4px}'
+      + '.etc-legend .etc-edge-sample.ok{border-top-style:solid;border-top-color:var(--etc-edge-ok)}'
+      // 深色：与浅色**同条件、同变量名**成对覆写；只列两边值不同的项，避免"漏一侧"。
+      + '@media (prefers-color-scheme:dark){.etc-root{--etc-line:#4a5261;--etc-edge-ok:#4ed17e;--etc-edge-warn:#f7ad31;--etc-ok:#4ed17e;--etc-run:#679efe;--etc-warn:#f7ad31;--etc-rework:#f7ad31;--etc-fail:#ff7b7b;--etc-idle:#adb2b8;--etc-soft:rgba(103,158,254,.12)}.etc-degrade{border-color:#7a5a22;color:#f7ad31}}'
+      + '@media (prefers-reduced-motion:reduce){.etc-bar.run>i,.etc-dot.run{animation:none!important}}'
       // SVG 树（照抄目标形态）：曲线 + 节点卡，全部用主题变量，深色自动适配
       + '.etv-graph{overflow-x:auto;margin:2px 0 6px;padding-bottom:2px}'
       + '.etv-curve{fill:none;stroke:#8aa8e8;stroke-width:1.4;opacity:.85}'
@@ -1159,6 +1233,649 @@ window.__ModuleLoader__.load({
       }
     }
 
+    // ══════════════════════════════════════════════════════════════════════════
+    // 专家团画布 · 第一批纯函数（依赖分层 / 编队 / 边 / 角色徽章）
+    //
+    // 设计口径（每条都写"为什么"，因为画布上最容易犯的错就是**编造一个看起来合理的层次**）：
+    //   · 层次**完全客户端自算**，只读 TASKS.json 的 `dependsOn`；服务端零改动。
+    //   · 最长路径分层（与既有 `dagLayout` 同口径），但**自带环检测** —— 旧 `compute` 是递归 memo，
+    //     遇环会用"正在计算中"的中间值收口，等于**静默**给环上一个层号。
+    //   · 未知依赖、环、同层/回边**一律只记录不乱画**，绝不静默吞掉。
+    //   · 没有任何 `dependsOn`（含 `tasksLive` 投影）⇒ **绝不编造层次**：只留一层并标 `depsKnown:false`。
+    //
+    // 自包含性：这些函数会被测试按名抽取到 sandbox 里单独求值，所以除 `t`/`h`（全仓通用桩）
+    // 外**不引用任何模块级符号**（依赖数组归一并就地写，`FINAL` 口径就地重复一份并注明来源）。
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 依赖分层：**唯一权威入口**。
+     * @returns {{byId:Object, level:Object, layers:Array, maxLayer:number, cycles:Array,
+     *            unknownDeps:Array, edges:Array, skippedSameLayer:Array, hasDeps:boolean, depsKnown:boolean}}
+     *
+     * `depsKnown=false` 的判据是 `hasDeps===false`（一条 `dependsOn` 都没有）。此时"每层 0"与
+     * "每层 1"完全等价，任何 >1 层的画法都是凭空造的 ⇒ 只留一层。
+     */
+    function canvasLayers(tasks) {
+      // 依赖字段兼容旧格式（可能是字符串），就地归一，不依赖模块级 helper
+      var depList = function (v) { return Array.isArray(v) ? v : (v == null ? [] : [v]) }
+      var arr = (Array.isArray(tasks) ? tasks : []).filter(function (x) { return x && x.id != null && String(x.id) !== '' })
+      var byId = {}
+      arr.forEach(function (t) { byId[String(t.id)] = t })
+      var ids = Object.keys(byId)
+      var unknownDeps = []
+      var deps = {}
+      arr.forEach(function (t) {
+        var id = String(t.id)
+        deps[id] = depList(t.dependsOn).map(function (d) { return d == null ? '' : String(d) }).filter(function (d) {
+          if (!d) return false
+          if (d === id) return false // 自环：单独归入环列，不作为"层内依赖"参与最长路径
+          if (!byId[d]) { unknownDeps.push({ from: id, to: d }); return false } // 未知依赖：记下来，不静默丢
+          return true
+        })
+      })
+      var hasDeps = arr.some(function (t) { return depList(t.dependsOn).length > 0 })
+
+      // ── 环检测：Kahn 残留法（拓扑剥离不掉的即环的候选集）──
+      // 不用递归 DFS：长链会爆栈，而"剥不掉"本身就是**可证明**的环证据。
+      var indeg = {}, layerEdges = {}
+      ids.forEach(function (id) { indeg[id] = 0; layerEdges[id] = [] })
+      ids.forEach(function (id) { deps[id].forEach(function (d) { indeg[id] += 1; layerEdges[d].push(id) }) })
+      var q = ids.filter(function (id) { return indeg[id] === 0 })
+      var order = []
+      while (q.length) {
+        var cur = q.shift()
+        order.push(cur)
+        layerEdges[cur].forEach(function (nx) { indeg[nx] -= 1; if (indeg[nx] === 0) q.push(nx) })
+      }
+      var settled = {}
+      order.forEach(function (id) { settled[id] = 1 })
+      var remainder = {}
+      ids.forEach(function (id) { if (!settled[id]) remainder[id] = 1 })
+      // 残留集里**真正在环上**的才算：从残留节点顺依赖走，能走回自己的才是环成员。
+      // 为什么多这一步：残留集会把"挂在环下游"的节点一起留下（入度永远降不到 0），
+      // 它们其实没有环，直接标"成环"就是假报。
+      var cycleSet = {}
+      Object.keys(remainder).forEach(function (start) {
+        var queue = [start], seen = {}
+        while (queue.length) {
+          var n = queue.shift()
+          deps[n].forEach(function (d) {
+            if (d === start) cycleSet[start] = 1
+            if (remainder[d] && !seen[d]) { seen[d] = 1; queue.push(d) }
+          })
+        }
+      })
+
+      // ── 最长路径分层：只在**非环**节点上算 ──
+      var level = {}, visiting = {}
+      function lvl(id) {
+        if (id in level) return level[id]
+        if (visiting[id]) return 0 // 双保险（环已摘除，这里不该再遇到）；防御，不当结论用
+        visiting[id] = 1
+        var ds = deps[id].filter(function (d) { return !cycleSet[d] })
+        level[id] = ds.length ? 1 + Math.max.apply(null, ds.map(lvl)) : 0
+        visiting[id] = 0
+        return level[id]
+      }
+      ids.forEach(function (id) { if (!cycleSet[id]) lvl(id) })
+      var maxLayer = 0
+      Object.keys(level).forEach(function (id) { if (level[id] > maxLayer) maxLayer = level[id] })
+      var layers = []
+      for (var L = 0; L <= maxLayer; L++) layers.push([])
+      arr.forEach(function (t) { var id = String(t.id); if (!cycleSet[id]) layers[level[id]].push(t) })
+      if (!hasDeps) {
+        layers = [arr.slice()]
+        level = {}
+        arr.forEach(function (t) { level[String(t.id)] = 0 })
+        maxLayer = 0
+      }
+
+      // ── 边表：from=上游，to=下游；同层/反向/指向环的边**只计数不画** ──
+      // 为什么不画：等高层之间贝塞尔箭头退化成水平线，会与"左→右 = 依赖先后"矛盾，
+      // 硬画等于给出错误的因果暗示。
+      //
+      // ⚠️ 实测结论（测试员穷举法证明，2026-09 复核）：**`skippedSameLayer` 恒为空数组**，
+      // 页脚那条「N 条依赖同层或反向」告警在当前口径下**永远不会出现**。理由：
+      //   · 本函数用的是"最长路径分层"⇒ 非环依赖恒有 `level[上游] < level[下游]`，
+      //     所以 `lt <= lf` 这一半判据不可达；
+      //   · 反向边与"依赖目标在环上"的情形，已被上面的 `cycleSet[to]`（1339 行）与
+      //     `cycleSet[from]`（1342 行）两道守卫提前 `return` 掉，`lf/lt === undefined` 那一半同样不可达。
+      // **为什么仍然保留这个分支**：它是"只画跨层边"这条口径的**显式表达**（不是死代码 ——
+      // 删掉它就等于把口径藏进隐式假设），且测试用"edges 与 skipped 不重叠、edges 恰为两端非环的
+      // 依赖边"这个**邻接不变量**把它钉住（比"计数为 0"更强）。若将来换分层算法（例如允许同层边、
+      // 或改成最短路径/波次分层），这里会立刻变成真判据，而调用方与告警文案不必再改。
+      var edges = [], skippedSameLayer = []
+      arr.forEach(function (t) {
+        var to = String(t.id)
+        if (cycleSet[to]) return
+        depList(t.dependsOn).forEach(function (d) {
+          var from = d == null ? '' : String(d)
+          if (!from || !byId[from] || from === to || cycleSet[from]) return
+          var lf = level[from], lt = level[to]
+          if (lf === undefined || lt === undefined || lt <= lf) { skippedSameLayer.push({ from: from, to: to }); return }
+          edges.push({ from: from, to: to })
+        })
+      })
+      var cycles = ids.filter(function (id) { return !!cycleSet[id] })
+      return {
+        byId: byId, level: level, layers: layers, maxLayer: maxLayer,
+        cycles: cycles, unknownDeps: unknownDeps, edges: edges,
+        skippedSameLayer: skippedSameLayer, hasDeps: hasDeps, depsKnown: hasDeps
+      }
+    }
+
+    /**
+     * 派生受阻：该任务**已存在但未完成**的依赖 id 列表。
+     * 只有上报为 `completed`/`done` 才算完成（"绝不推断完成"）。
+     * 依赖不存在 ⇒ 不进这个列表（它进 `canvasLayers().unknownDeps`，两件事不许混为一谈）。
+     */
+    function canvasBlockedBy(task, byId) {
+      var depList = function (v) { return Array.isArray(v) ? v : (v == null ? [] : [v]) }
+      var t = task || {}
+      var map = byId || {}
+      var out = []
+      depList(t.dependsOn).forEach(function (d) {
+        var id = d == null ? '' : String(d)
+        if (!id) return
+        var dep = map[id]
+        if (!dep) return
+        var st = String(dep.status || '')
+        // 缺 status 也算未完成：宁可保守（下游显示"受阻"），也不替它宣布解锁
+        if (st !== 'completed' && st !== 'done') out.push(id)
+      })
+      return out
+    }
+
+    /** 层标题：0 层不叫"第 1 层"（会让人以为还有第 0 层）；最末层且确实有依赖时叫"收尾"。 */
+    function canvasLayerTitle(l, maxLayer) {
+      var max = Number(maxLayer) || 0
+      var n = Number(l) || 0
+      if (n === 0) return t('无依赖 · 可立即领', 'no deps · ready to claim')
+      if (max > 0 && n === max) return t('收尾', 'final')
+      return t('第 ' + (n + 1) + ' 层', 'layer ' + (n + 1))
+    }
+
+    /**
+     * 列模型：按依赖分层的列 + 成环列（单独一列）。
+     * 无任何 `dependsOn` 时返回**单列** `key:'unknown'` —— 调用方据此走"依赖未知"的降级口径。
+     * `done` 口径与面板既有 `FINAL` 计数一致（completed/done/cancelled/failed 视为终态），
+     * 就地重复一份以免依赖模块级常量（测试会单独抽取本函数求值）。
+     */
+    function canvasColumns(tasks) {
+      var FIN = ['completed', 'done', 'cancelled', 'failed']
+      var L = canvasLayers(tasks)
+      var doneOf = function (list) {
+        return list.filter(function (x) { return FIN.indexOf(String((x && x.status) || '')) >= 0 }).length
+      }
+      var blockedOf = function (list) {
+        return list.filter(function (x) {
+          var st = String((x && x.status) || '')
+          if (st !== 'pending' && st !== 'claimed') return false
+          return canvasBlockedBy(x, L.byId).length > 0
+        }).length
+      }
+      if (!L.depsKnown) {
+        var all = L.layers[0] || []
+        return [{
+          key: 'unknown', kind: 'unknown', title: t('依赖关系未知', 'dependencies unknown'),
+          // 措辞必须与"分层成功"区分开：不是"只有一层"，是**依赖无从得知**
+          note: t('本 run 没有 TASKS.json，依赖无从得知', 'no TASKS.json — dependencies unknown'),
+          tasks: all, done: doneOf(all), total: all.length, blocked: blockedOf(all)
+        }]
+      }
+      var cols = L.layers.map(function (list, i) {
+        return {
+          key: 'L' + i, title: canvasLayerTitle(i, L.maxLayer), kind: 'layer',
+          // 每列都写明"层号是本插件推导出来的"：否则用户会以为层号是服务端上报的事实
+          note: t('分层由本插件按 dependsOn 推导（Claude Code 无此视图）', 'layers derived here from dependsOn (no such view in Claude Code)'),
+          tasks: list, done: doneOf(list), total: list.length, blocked: blockedOf(list)
+        }
+      })
+      if (L.cycles.length) {
+        var cyc = L.cycles.map(function (id) { return L.byId[id] }).filter(Boolean)
+        cols.push({
+          key: 'cycle', title: t('成环 · 无法分层', 'cycle · unlayered'), kind: 'cycle',
+          // 环**单独一列**而不是塞进某一层：层号对环上的任务没有意义，塞进去就是给假结论
+          note: t('这 ' + cyc.length + ' 个任务的依赖互相成环，无法分层', cyc.length + ' tasks form a dependency cycle'),
+          tasks: cyc, done: doneOf(cyc), total: cyc.length, blocked: blockedOf(cyc)
+        })
+      }
+      return cols
+    }
+
+    /**
+     * 编队模型（队长 + 成员六态）。
+     *
+     * ⚠️ **诚实前提（已核实，非推测）**：`/state` 负载里**没有 leader 记录**，面板现有队长位置是硬编码
+     * 标记。所以 `lead.label` 返回 `null`，由调用方渲染时打上「本会话」小字 —— 不许冒充真实队员。
+     *
+     * 六态优先级（必须可区分）：in_progress(执行 #id) > claimed(领取中 #id) > running(工作中) >
+     *   有待命(待命) > membersUnresolved && !active(未解析, warn) > (未启动)。
+     * 第 4 态用的是**真实字段**：`/state` 的 `agents[].activity` 为 `idle`/`ready`
+     *   （复核 client.js 既有 `statusOf`/`TaskDetail` 里已验证的取值集合：running/idle/ready/inactive/''）。
+     *   集合外的取值**不当待命**（未验到就不猜），落"未启动"，不虚构活动态。
+     */
+    function canvasFormation(members, agents, tasks, data) {
+      var mem = members && typeof members === 'object' ? members : {}
+      var ats = Array.isArray(agents) ? agents : []
+      var tks = Array.isArray(tasks) ? tasks : []
+      var d = data && typeof data === 'object' ? data : {}
+      var unresolved = d.membersUnresolved === true
+      var byAgent = {}
+      tks.forEach(function (tk) {
+        var aid = tk && tk.agentId != null ? String(tk.agentId) : ''
+        if (aid) (byAgent[aid] = byAgent[aid] || []).push(tk)
+      })
+      var names = []
+      ats.forEach(function (a) { if (a && a.name && names.indexOf(String(a.name)) < 0) names.push(String(a.name)) })
+      var out = []
+      Object.keys(mem).sort().forEach(function (role) {
+        var m = mem[role] || {}
+        var mine = tks.filter(function (tk) { return tk && String(tk.owner || '') === String(role) })
+        var done = mine.filter(function (tk) { var s = String(tk.status || ''); return s === 'completed' || s === 'done' }).length
+        // ① 执行中 / ② 领取中：**只显示已确认的认领** —— 必须真有任务 id，绝不按名字猜
+        var runTask = mine.filter(function (tk) { return String(tk.status || '') === 'in_progress' })[0] || null
+        if (!runTask && m.id && byAgent[String(m.id)]) {
+          runTask = byAgent[String(m.id)].filter(function (tk) { return String(tk.status || '') === 'in_progress' })[0] || null
+        }
+        var claimTask = runTask ? null : (mine.filter(function (tk) { return String(tk.status || '') === 'claimed' })[0] || null)
+        var agentIds = []
+        if (m.id) agentIds.push(String(m.id))
+        ats.forEach(function (a) {
+          if (!a) return
+          var roleOk = a.role && String(a.role) === String(role)
+          var nameOk = a.name && String(a.name) === String(m.name || '')
+          if ((roleOk || nameOk) && agentIds.indexOf(String(a.id)) < 0) agentIds.push(String(a.id))
+        })
+        // ③ 工作中 / ④ 待命：成员自身的 activity 优先，缺失时看归属到的 agent
+        var act = String(m.activity || '')
+        if (!act && agentIds.length) {
+          var mineAts = ats.filter(function (a) { return a && agentIds.indexOf(String(a.id)) >= 0 })
+          var hitRun = mineAts.filter(function (a) { return a && a.activity === 'running' })[0]
+          var hitIdle = mineAts.filter(function (a) { return a && (a.activity === 'idle' || a.activity === 'ready') })[0]
+          if (hitRun) act = 'running'
+          else if (hitIdle) act = hitIdle.activity
+        }
+        var state
+        if (runTask) state = { key: 'in_progress', text: t('执行 #' + runTask.id, 'on #' + runTask.id), warn: false }
+        else if (claimTask) state = { key: 'claimed', text: t('领取中 #' + claimTask.id, 'claimed #' + claimTask.id), warn: false }
+        else if (act === 'running') state = { key: 'running', text: t('工作中', 'working'), warn: false }
+        // 「待命」= **有过完成记录、当前没有进行中/已领取的任务**。`activity` 只是其中一条可用证据，
+        // 不是唯一判据：真实负载里 `members[].activity` 常见为空串（≠ 没干过活），若只看它，
+        // 名下任务全做完的成员会被显示成"未启动"——那是**假话**。所以 `done > 0` 也算待命。
+        // 本分支必须留在「未解析」之前：有完成记录的人不该被判成"未解析"。
+        else if (act === 'idle' || act === 'ready' || done > 0) state = { key: 'standby', text: t('待命', 'standby'), warn: false }
+        else if (unresolved && m.active !== true) state = { key: 'unresolved', text: t('未解析', 'unresolved'), warn: true }
+        else state = { key: 'idle', text: t('未启动', 'not started'), warn: false }
+        out.push({
+          role: role, name: m.name || '', color: m.color || '', initial: m.initial || '',
+          avatarRole: role, state: state,
+          taskId: (runTask || claimTask) ? String((runTask || claimTask).id) : '',
+          done: done, total: mine.length, agents: agentIds
+        })
+      })
+      var empty = null
+      if (!out.length) {
+        empty = { kind: 'no-members', text: t('这一轮还没有登记成员', 'no members registered in this run') }
+        var warmingList = Array.isArray(d.warming) ? d.warming : []
+        // 三种空态语义**必须分开**（"没有成员"/"还没读出来"/"角色待解析"混成一句就是骗人）：
+        // 只用**已核实存在于负载里**的两个字段：`warming`（6978 行附近 sel 合并而来）与 `rolesPending`。
+        if (warmingList.indexOf('subs') >= 0 && !ats.length) {
+          empty = { kind: 'warming', text: t('成员明细还在就绪中（后台读取中，未读出来 ≠ 没有人）', 'member details still warming up (not read yet ≠ no members)') }
+        } else if (Number(d.rolesPending) > 0) {
+          empty = { kind: 'roles-pending', text: t('尚无成员可显示；另有 ' + Number(d.rolesPending) + ' 条子代理角色待解析', 'no members yet; ' + Number(d.rolesPending) + ' subagent role(s) pending') }
+        } else if (!ats.length) {
+          empty = { kind: 'no-members', text: t('这一轮没有任何子代理在运行', 'no subagents in this run') }
+        } else {
+          empty = { kind: 'roles-pending', text: t('有 ' + ats.length + ' 个子代理在跑，但角色未解析出来', ats.length + ' subagent(s) running, roles unresolved') }
+        }
+      }
+      // 队长：**`/state` 里没有 leader 记录**（已核实，不是推测）⇒ 绝不冒充一名真实队员：
+      // 用 badges 把"来源"如实标出来（`长` + `本会话`），并保留冻结契约的字段形状 `label:'team-lead'`，
+      // 免得每个视图各编一个队长名。`phase`/`status` 缺值时退回子代理名字列表（宁可显示读到的东西，不显示空串）。
+      var leadNote = (typeof phaseLabel === 'function' ? phaseLabel(d.phase || '') : String(d.phase == null ? '' : d.phase))
+        + ' · ' + (typeof statusLabel === 'function' ? statusLabel(d.status || '') : String(d.status == null ? '' : d.status))
+      var pend = (Number(d.subsPending) || 0) + (Number(d.rolesPending) || 0)
+      if (pend > 0) leadNote += ' · ' + t('待解析 ' + pend, pend + ' pending parse')
+      if ((Array.isArray(d.warming) ? d.warming : []).length) leadNote += ' · ' + t('还在就绪中', 'warming up')
+      if (!leadNote.replace(/[\s·]/g, '')) leadNote = names.join('、')
+      return {
+        lead: {
+          label: 'team-lead',
+          note: leadNote,
+          // 这两条是**来源标注**（不是上报字段）：画布上必须能看出"队长不是从数据里读出来的"
+          badges: [{ k: 'lead', text: t('长', 'Lead') }, { k: 'this-session', text: t('本会话', 'this session') }]
+        },
+        members: out, empty: empty
+      }
+    }
+
+    /** 边相关子集：给画布覆盖层与页脚图例用（把 `canvasLayers` 的边信息收成一次调用）。 */
+    function canvasEdges(tasks) {
+      var L = canvasLayers(tasks)
+      return {
+        edges: L.edges.map(function (e) {
+          var up = L.byId[e.from] || {}
+          var st = String(up.status || '')
+          // "绝不推断完成"：satisfied 只认上报的 completed/done
+          return { from: e.from, to: e.to, satisfied: (st === 'completed' || st === 'done') }
+        }),
+        skippedSameLayer: L.skippedSameLayer.length,
+        cycles: L.cycles.length,
+        unknownDeps: L.unknownDeps.length
+      }
+    }
+
+    // 12 个固定角色的徽章**几何图形**键（不是颜色差异：色盲/深色主题下也分得开）。
+    var ETC_ROLE_SHAPE = {
+      pm: 'diamond', architect: 'hex', researcher: 'lens', ui: 'round', backend: 'square', frontend: 'grid',
+      dba: 'stack', sec: 'shield', reviewer: 'check', qa: 'bug', devops: 'gear', docs: 'page'
+    }
+    var ETC_ROLE_HUES = [210, 275, 200, 330, 175, 155, 255, 0, 40, 95, 20, 195]
+
+    /**
+     * 角色头像底色：优先用真实 `members[role].color`（服务端下发），否则按 role 字符串**稳定哈希**取色。
+     * 同一 role 恒同色。已知 12 角色不走哈希（它们的区分靠 `ETC_ROLE_SHAPE` 的图形）。
+     * **未验到**：服务端 `AGENT_COLORS` 的确切色域（未读该表）⇒ 只做"是 `#rrggbb` 就原样透传，否则退回哈希"，
+     * 不做任何"看起来像品牌色就替换"的推断。
+     */
+    function roleAvatarColor(role, fallbackColor) {
+      var fb = fallbackColor == null ? '' : String(fallbackColor)
+      if (/^#[0-9a-fA-F]{6}$/.test(fb)) return fb.toLowerCase()
+      var s = String(role == null ? '' : role)
+      var h = 0
+      for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+      var hue = ETC_ROLE_HUES[h % ETC_ROLE_HUES.length]
+      return etcHslHex(hue, 52 + (h % 3) * 8, 42 + (Math.floor(h / 8) % 3) * 4)
+    }
+
+    /** HSL → `#rrggbb`（纯算术；不依赖 CSS 求值，测试里也能跑）。 */
+    function etcHslHex(h, s, l) {
+      var S = s / 100, L = l / 100
+      var c = (1 - Math.abs(2 * L - 1)) * S
+      var hp = (((h % 360) + 360) % 360) / 60
+      var x = c * (1 - Math.abs((hp % 2) - 1))
+      var rgb = hp < 1 ? [c, x, 0] : hp < 2 ? [x, c, 0] : hp < 3 ? [0, c, x] : hp < 4 ? [0, x, c] : hp < 5 ? [x, 0, c] : [c, 0, x]
+      var m = L - c / 2
+      var to = function (v) { var n = Math.round((v + m) * 255); return ('0' + Math.max(0, Math.min(255, n)).toString(16)).slice(-2) }
+      return '#' + to(rgb[0]) + to(rgb[1]) + to(rgb[2])
+    }
+
+    /**
+     * 内联 SVG 角色徽章：12 固定角色各一个极简几何图形；`lead` 用专属图形；未知角色用中性兜底 + 名字首字。
+     * @param {string} role 角色 id
+     * @param {{size?:number,color?:string,initial?:string,name?:string,lead?:boolean}} opts
+     */
+    function roleAvatarSvg(role, opts) {
+      var o = opts || {}
+      var r = String(role == null ? '' : role)
+      var size = Number(o.size) || 36
+      var isLead = o.lead === true || r === 'lead'
+      var col = roleAvatarColor(isLead ? 'lead' : r, o.color)
+      var shape = ETC_ROLE_SHAPE[r] || (isLead ? 'lead' : 'fallback')
+      var fg = 'rgba(255,255,255,.94)'
+      var shapes = {
+        diamond: h('rect', { x: 11, y: 11, width: 18, height: 18, rx: 3, fill: fg, transform: 'rotate(45 20 20)' }),
+        hex: h('path', { d: 'M20 7l11 6.5v13L20 33 9 26.5v-13z', fill: 'none', stroke: fg, strokeWidth: 2.2, strokeLinejoin: 'round' }),
+        lens: h('g', null, h('circle', { cx: 18, cy: 18, r: 7, fill: 'none', stroke: fg, strokeWidth: 2.2 }), h('path', { d: 'M23 23l6 6', stroke: fg, strokeWidth: 2.6, strokeLinecap: 'round' })),
+        round: h('circle', { cx: 20, cy: 20, r: 8, fill: 'none', stroke: fg, strokeWidth: 2.2 }),
+        square: h('rect', { x: 11, y: 11, width: 18, height: 18, rx: 2.5, fill: 'none', stroke: fg, strokeWidth: 2.2 }),
+        grid: h('g', null,
+          h('rect', { x: 10, y: 10, width: 8.5, height: 8.5, rx: 1.5, fill: fg }),
+          h('rect', { x: 21.5, y: 10, width: 8.5, height: 8.5, rx: 1.5, fill: 'none', stroke: fg, strokeWidth: 2 }),
+          h('rect', { x: 10, y: 21.5, width: 8.5, height: 8.5, rx: 1.5, fill: 'none', stroke: fg, strokeWidth: 2 }),
+          h('rect', { x: 21.5, y: 21.5, width: 8.5, height: 8.5, rx: 1.5, fill: fg })),
+        stack: h('g', null,
+          h('ellipse', { cx: 20, cy: 13, rx: 9, ry: 4, fill: fg }),
+          h('path', { d: 'M11 13v7c0 2.2 4 4 9 4s9-1.8 9-4v-7', fill: 'none', stroke: fg, strokeWidth: 2 })),
+        shield: h('path', { d: 'M20 7l11 4v9c0 7-5 11-11 13-6-2-11-6-11-13v-9z', fill: 'none', stroke: fg, strokeWidth: 2.2, strokeLinejoin: 'round' }),
+        check: h('path', { d: 'M10 21l7 7 13-15', fill: 'none', stroke: fg, strokeWidth: 3, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+        bug: h('g', null,
+          h('ellipse', { cx: 20, cy: 21, rx: 7, ry: 8.5, fill: 'none', stroke: fg, strokeWidth: 2.2 }),
+          h('path', { d: 'M13 15l-5-4M27 15l5-4M12 21H4M28 21h8M13 27l-5 4M27 27l5 4', stroke: fg, strokeWidth: 2, strokeLinecap: 'round' })),
+        gear: h('g', null,
+          h('circle', { cx: 20, cy: 20, r: 6.5, fill: 'none', stroke: fg, strokeWidth: 2.2 }),
+          h('path', { d: 'M20 7v5M20 28v5M7 20h5M28 20h5M11 11l3.5 3.5M25.5 25.5L29 29M29 11l-3.5 3.5M14.5 25.5L11 29', stroke: fg, strokeWidth: 2.2, strokeLinecap: 'round' })),
+        page: h('g', null,
+          h('path', { d: 'M12 8h11l6 6v18H12z', fill: 'none', stroke: fg, strokeWidth: 2.2, strokeLinejoin: 'round' }),
+          h('path', { d: 'M23 8v6h6', fill: 'none', stroke: fg, strokeWidth: 2.2, strokeLinejoin: 'round' }),
+          h('path', { d: 'M16 21h9M16 26h9', stroke: fg, strokeWidth: 1.8, strokeLinecap: 'round' })),
+        lead: h('g', null,
+          h('path', { d: 'M8 26l3-12 9 5 9-5 3 12z', fill: 'none', stroke: fg, strokeWidth: 2.4, strokeLinejoin: 'round' }),
+          h('path', { d: 'M8 30h24', stroke: fg, strokeWidth: 2.4, strokeLinecap: 'round' })),
+        fallback: h('circle', { cx: 20, cy: 20, r: 7, fill: fg })
+      }
+      var initial = String(o.initial == null ? '' : o.initial).trim()
+      if (shape === 'fallback' && initial) {
+        shapes.fallback = h('text', { x: 20, y: 25.5, 'text-anchor': 'middle', 'font-size': 16, 'font-weight': 700, fill: '#fff' }, initial.slice(0, 1).toUpperCase())
+      }
+      // `roleLabel` 是可选的显示增强：抽取到 sandbox 单测时可能没有这个模块级函数，缺了就回落 role id（不抛错）
+      var title = o.name ? String(o.name) : (isLead ? t('队长', 'lead') : (typeof roleLabel === 'function' ? roleLabel(r) : r))
+      var kids = [h('title', null, title)]
+      if (isLead) kids.push(h('rect', { x: 2.5, y: 2.5, width: 35, height: 35, rx: 17.5, fill: 'none', stroke: fg, strokeWidth: 2, opacity: 0.55 }))
+      kids.push(h('circle', { cx: 20, cy: 20, r: 19, fill: col }))
+      kids.push(shapes[shape] || shapes.fallback)
+      var svg = h('svg', {
+        className: 'etc-avatar-svg', viewBox: '0 0 40 40', width: size, height: size,
+        role: 'img', 'aria-label': title, focusable: 'false'
+      }, kids)
+      return svg
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 专家团画布 · 视图层（`.etc-*` 的 DOM 只在这里产出；样式规则全在 CSS 常量里，这里不写任何 CSS）
+    //
+    // 三条纪律，每条都对应一种"看起来对、其实在骗人"的画法：
+    //   · 卡片上的状态胶囊 = **上报的 status**；「受阻」是我们**推导**的 ⇒ 单独一行，绝不替换胶囊。
+    //   · 层号、边都是本插件推的 ⇒ 列注与图例写明来源；环/未知依赖/同层边/降级**都要有可见出口**，不许静默吞。
+    //   · 没有的数字不写：不出现百分比文字、不出现"收信箱 N"这类负载里根本没有的字段。
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /** 任务/成员条的状态类：completed⇒ok / in_progress|claimed⇒run / rework|failed⇒bad / 其余空槽。 */
+    function canvasBarCls(status) {
+      var s = String(status || '')
+      if (s === 'completed' || s === 'done') return 'ok'
+      if (s === 'in_progress' || s === 'claimed') return 'run'
+      if (s === 'rework' || s === 'failed') return 'bad'
+      return ''
+    }
+
+    /**
+     * 单个成员卡：几何头像 + 名字 + 六态文字 + 完成度条。
+     * 条宽用**真实 done/total**；`total===0` 时留 0 宽（宁可空着，也不给一条"看起来忙碌"的假进度）。
+     */
+    function canvasMemberNode(m) {
+      var st = (m && m.state) || {}
+      var live = st.key === 'in_progress' || st.key === 'running'
+      var total = Number(m && m.total) || 0, doneN = Number(m && m.done) || 0
+      var barCls = live ? 'run' : (st.warn ? 'bad' : (total > 0 && doneN >= total ? 'ok' : ''))
+      return h('div', { key: m.role, className: 'etc-member' },
+        h('div', { className: 'etc-member-h' },
+          h('span', { className: 'etc-avatar' }, roleAvatarSvg(m.role, { size: 36, color: m.color, initial: m.initial, name: m.name })),
+          h('span', { className: 'etc-name', title: m.role }, esc(m.name || roleLabel(m.role)))),
+        h('div', { className: 'etc-state' },
+          // 状态点：warn（如"未解析"）单独染色 —— 它与"未启动"是两件事，颜色不能一样
+          h('i', { className: 'etc-dot' + (live ? ' run' : ''), style: st.warn ? { background: 'var(--etc-warn)' } : null }),
+          esc(st.text || '')),
+        h('div', { className: 'etc-bar' + (barCls ? ' ' + barCls : '') },
+          h('i', { style: { width: total ? Math.round((doneN / total) * 100) + '%' : '0' } })))
+    }
+
+    /**
+     * 单张任务卡。`ctx = {L, members, selId, onPick}`：分层结果由调用方算一次复用，卡里不重算。
+     *
+     * 为什么「受阻」另起一行、不动状态胶囊：胶囊是 TASKS.json **上报的事实**，
+     * 「依赖未完成 ⇒ 受阻」是**我们推的**；用推导结论覆盖上报事实，用户就再也分不清
+     * "任务自己报了受阻" 和 "我们算出它现在动不了" —— 这正是画布最容易骗人的地方。
+     */
+    function canvasCardNode(tk, ctx) {
+      var c = ctx || {}, L = c.L || { byId: {} }, members = c.members || {}
+      var id = String(tk.id)
+      var st = String(tk.status || '')
+      var bar = canvasBarCls(st)
+      var deps = arrOf(tk.dependsOn).map(function (d) { return d == null ? '' : String(d) }).filter(function (d) { return !!d })
+      var blocked = canvasBlockedBy(tk, L.byId)
+      var chips
+      if (!deps.length) {
+        chips = [h('span', { key: 'start', className: 'etc-chip' }, t('起点', 'start'))]
+      } else {
+        // 只画前 4 个、其余折成 `+N`：卡片宽度固定，多余 chip 会把状态胶囊挤没；
+        // 但 `+N` 的 title 里给出**完整**依赖列表，折叠不等于丢信息。
+        chips = deps.slice(0, 4).map(function (d) {
+          var dep = L.byId[d]
+          var ok = !!dep && (String(dep.status || '') === 'completed' || String(dep.status || '') === 'done')
+          return h('span', { key: d, className: 'etc-chip ' + (ok ? 'ok' : 'warn'), title: d }, '← #' + esc(d))
+        })
+        if (deps.length > 4) chips.push(h('span', { key: 'more', className: 'etc-chip more', title: deps.slice(4).join(', ') }, '+' + (deps.length - 4)))
+      }
+      var ownerKey = String(tk.owner || '')
+      var ownerNode = ownerKey
+        ? h('div', { className: 'etc-owner' },
+            h('span', { className: 'etc-avatar' }, roleAvatarSvg(ownerKey, { size: 14, color: members[ownerKey] && members[ownerKey].color })),
+            esc(roleLabel(ownerKey)))
+        : h('div', { className: 'etc-owner etc-owner-none' }, t('未指派', 'unassigned'))
+      return h('div', {
+        key: id, 'data-etc-id': id, title: t('点击查看任务详情', 'click for task detail'),
+        className: 'etc-card' + (bar ? ' ' + bar : '') + (String(c.selId || '') === id ? ' sel' : ''),
+        onClick: function () { if (c.onPick) c.onPick(tk) }
+      },
+        h('div', { className: 'etc-card-h' },
+          h('span', { className: 'etc-id' }, '#' + esc(id)),
+          h('span', { className: 'exp-badge ' + stBadgeCls(st) }, esc(stLabel(st)))),
+        // 标题回落链：title → objective → #id（负载里可能两个都没有，此时显示 id 而不是空白）
+        h('div', { className: 'etc-card-t' }, esc(String(tk.title || tk.objective || ('#' + id)))),
+        ownerNode,
+        h('div', { className: 'etc-chips' }, chips),
+        // 只在"还没动"的任务上报受阻（pending/claimed）：已完成的任务再挂"受阻"是噪音
+        (blocked.length && (st === 'pending' || st === 'claimed'))
+          ? h('div', { className: 'etc-blocked' }, t('受阻：依赖 ', 'blocked: deps ') + blocked.map(function (b) { return '#' + b }).join(' ') + t(' 未完成', ' not done'))
+          : null,
+        h('div', { className: 'etc-bar' + (bar ? ' ' + bar : '') }, h('i', { style: bar ? { width: '100%' } : { width: '0' } })))
+    }
+
+    /** 一列（一层，或成环列）：标题 + 真实 done/total + 来源注 + 卡片栈。 */
+    function canvasColNode(c, ctx) {
+      var col = c || {}, list = arrOf(col.tasks)
+      var blockedN = Number(col.blocked) || 0
+      return h('div', { key: col.key, className: 'etc-col' },
+        h('div', { className: 'etc-col-h' },
+          h('span', null, esc(col.title || '')),
+          h('span', { className: 'etc-col-n' }, (Number(col.done) || 0) + '/' + (Number(col.total) || list.length)),
+          // 受阻计数只在 >0 时出现：挂一个"受阻 0"是噪音，不是信息
+          blockedN > 0 ? h('span', { className: 'etc-chip warn' }, t('受阻 ', 'blocked ') + blockedN) : null),
+        h('div', { className: 'etc-col-note' }, esc(col.note || '')),
+        h('div', { className: 'etc-cards' }, list.length ? list.map(function (tk) { return canvasCardNode(tk, ctx) }) : h('div', { className: 'etc-empty' }, t('（空）', '(empty)'))))
+    }
+
+    /**
+     * 依赖箭头的几何测量（自定义 hook）：返回 `[{from,to,satisfied,x1,y1,x2,y2}]`，坐标**相对 `.etc-cols` 本体**。
+     *
+     * 为什么要 ResizeObserver + scroll 监听、而且必须清理：列宽随窗口与滚动变化，用旧坐标画的箭头
+     * 会指向错误的卡片 —— 那时它比"没有箭头"更糟，因为它在**断言一个假的依赖关系**。
+     * `typeof document === 'undefined'` 时整体跳过：本文件在测试里会被 `new Function` 求值，渲染期不许摸 document。
+     * 依赖签名 `sig` 由调用方给（任务集合或状态变化才重量），避免每帧都测一遍。
+     */
+    function useCanvasEdges(boxRef, eg, sig) {
+      var s = useState([]); var v = s[0], setV = s[1]
+      useEffect(function () {
+        if (typeof document === 'undefined') return undefined
+        var box = boxRef && boxRef.current
+        if (!box) return undefined
+        function measure() {
+          try {
+            var br = box.getBoundingClientRect(), nb = {}, nodes = box.querySelectorAll('[data-etc-id]')
+            for (var i = 0; i < nodes.length; i++) nb[nodes[i].getAttribute('data-etc-id')] = nodes[i].getBoundingClientRect()
+            var out = [], list = (eg && eg.edges) || []
+            for (var j = 0; j < list.length; j++) {
+              var e = list[j], a = nb[e.from], b = nb[e.to]
+              if (!a || !b) continue   // 端点不可见（还没渲染/不在这一屏）⇒ 不画，不猜位置
+              // scrollLeft 必须计入：容器横向滚动后，getBoundingClientRect 是"视口坐标"，而覆盖层是"内容坐标"
+              out.push({
+                from: e.from, to: e.to, satisfied: e.satisfied,
+                x1: a.right - br.left + box.scrollLeft, y1: a.top + a.height / 2 - br.top,
+                x2: b.left - br.left + box.scrollLeft, y2: b.top + b.height / 2 - br.top
+              })
+            }
+            setV(out)
+          } catch (err) { /* 测量失败就不画箭头：错位的箭头等于伪造依赖关系 */ }
+        }
+        measure()
+        var ro = null
+        try { if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(measure); ro.observe(box) } } catch (e1) {}
+        try { box.addEventListener('scroll', measure) } catch (e2) {}
+        try { window.addEventListener('resize', measure) } catch (e3) {}
+        return function () {
+          try { if (ro) ro.disconnect() } catch (e4) {}
+          try { box.removeEventListener('scroll', measure) } catch (e5) {}
+          try { window.removeEventListener('resize', measure) } catch (e6) {}
+        }
+      }, [sig])
+      return v
+    }
+
+    /**
+     * 画布视图：§A 编队（队长 / 指派总线 / 成员）+ §B 共享任务列表（分层列 + 依赖箭头覆盖层 + 图例）。
+     *
+     * ⚠️ 本函数**含 React hook**（`useCanvasEdges`）⇒ 调用方必须**每次渲染都调用它**，
+     * 不能只在 `viewV === 'canvas'` 的三元分支里调：条件调用会让 hook 数量随视图切换变化，React 直接抛错。
+     * 所以 Panel 里先无条件算出元素、再在三元里挑用（见 `canvasEl`）。
+     *
+     * 降级是**显式**的：没有 dependsOn 时不画层次、不画箭头，只给一列 + 横幅说明；
+     * 环 / 未知依赖 / 同层边各有自己的可见出口 —— 静默吞掉它们等于让用户以为图是完整的。
+     */
+    function canvasView(props) {
+      var p = props || {}
+      var tasks = arrOf(p.tasks)
+      var members = p.members && typeof p.members === 'object' ? p.members : {}
+      var F = canvasFormation(members, arrOf(p.agents), tasks, p.data || {})
+      var cols = canvasColumns(tasks)
+      var L = canvasLayers(tasks)                      // 分层只算一次：卡片的 byId 与边表复用同一份
+      var eg = canvasEdges(tasks)
+      var cctx = { L: L, members: members, selId: p.selectedId, onPick: p.onPick || null }
+      var boxRef = useRef(null)
+      // 任务集合或状态一变就得重量箭头；只看 `tasks.length` 会在"换了一个任务"时留旧箭头
+      var sig = tasks.map(function (t) { return String(t.id) + ':' + String(t.status || '') }).join(',')
+      var edgeV = useCanvasEdges(boxRef, eg, sig)
+      var edgeSvg = h('svg', { className: 'etc-edges' }, edgeV.map(function (e, i) {
+        var mx = (e.x1 + e.x2) / 2
+        return h('g', { key: i },
+          h('path', { className: 'etc-edge ' + (e.satisfied ? 'ok' : 'warn'), d: 'M' + e.x1 + ' ' + e.y1 + 'C' + mx + ' ' + e.y1 + ' ' + mx + ' ' + e.y2 + ' ' + e.x2 + ' ' + e.y2 }),
+          h('path', { className: 'etc-edge-arrow' + (e.satisfied ? ' ok' : ''), d: 'M' + e.x2 + ' ' + e.y2 + 'l-6 -3.5v7z' }))
+      }))
+      var warns = []
+      if (!L.depsKnown) warns.push(t('⚠ 这些任务没有 dependsOn：依赖无从得知 ⇒ 只给一列，不编造层次', '⚠ no dependsOn — dependencies unknown: single column, no invented layers'))
+      if (L.cycles.length) warns.push(t('⚠ 依赖成环 ', '⚠ dependency cycle ') + L.cycles.map(function (x) { return '#' + x }).join(' ') + t('（单独成列，层号对它们无意义）', ' (own column; layer numbers are meaningless)'))
+      if (L.unknownDeps.length) warns.push(t('⚠ ', '⚠ ') + L.unknownDeps.length + t(' 条依赖指向不存在的任务：', ' dep(s) point at missing tasks: ') + L.unknownDeps.slice(0, 6).map(function (u) { return '#' + u.from + '→#' + u.to }).join(' ') + (L.unknownDeps.length > 6 ? ' …' : ''))
+      if (eg.skippedSameLayer) warns.push(t('⚠ ', '⚠ ') + eg.skippedSameLayer + t(' 条依赖同层或反向：只计数不画线（硬画会暗示错误的先后）', ' dep edge(s) same-layer/reversed: counted, not drawn (would imply a false order)'))
+      var degrade = p.degrade || (!L.depsKnown && tasks.length ? t('降级：本 run 没有 TASKS.json（或 dependsOn 全空）⇒ 分层与箭头不可用，下面按单列平铺。', 'degraded: no TASKS.json in this run — layering and arrows unavailable; flat single column below.') : '')
+      return h('div', { className: 'etc-root' },
+        h('div', { className: 'etc-sec-h' }, t('编队', 'Formation')),
+        h('div', { className: 'etc-formation' },
+          h('div', { className: 'etc-leader' },
+            h('span', { className: 'etc-avatar' }, roleAvatarSvg('lead', { lead: true, size: 64 })),
+            h('div', { className: 'etc-leader-name' },
+              // 名字胶囊写 `team-lead`（ASCII 名字/id，**不进 t()**）：旁边的 `.etc-badges` 已经打了「长」徽章，
+              // 这里若再写中文"队长"，渲染出来是「队长 长 本会话」——同一个意思说两遍。
+              h('span', { className: 'etc-name', title: F.lead.label || 'team-lead' }, esc(F.lead.label || 'team-lead')),
+              h('span', { className: 'etc-badges' }, (F.lead.badges || []).map(function (b) { return h('span', { key: b.k, className: 'etc-badge' }, esc(b.text)) }))),
+            h('div', { className: 'etc-lead-note' }, esc(F.lead.note || ''))),
+          h('div', { className: 'etc-bus' },
+            h('span', { className: 'etc-bus-line' }),
+            h('span', { className: 'etc-assign' }, t('指派', 'Assign'))),
+          F.members.length
+            ? h('div', { className: 'etc-members' }, F.members.map(canvasMemberNode))
+            : h('div', { className: 'etc-empty' }, esc((F.empty && F.empty.text) || t('本次 run 还没有成员', 'no members in this run')))),
+        h('div', { className: 'etc-sec-h' }, t('共享任务列表', 'Shared task list')),
+        degrade ? h('div', { className: 'etc-degrade' }, esc(degrade)) : null,
+        warns.map(function (w, i) { return h('div', { key: i, className: 'etc-warn' }, esc(w)) }),
+        // `.etc-edges` 是 `.etc-cols` 的绝对定位覆盖层 ⇒ 必须放在同一个滚动容器里（CSS 已给 position:relative + overflow-x:auto）
+        h('div', { className: 'etc-cols', ref: boxRef }, edgeSvg, cols.map(function (c) { return canvasColNode(c, cctx) })),
+        h('div', { className: 'etc-legend exp-legend' },
+          h('span', { className: 'etc-edge-sample ok' }), t('依赖已满足', 'dep satisfied'),
+          h('span', { className: 'etc-edge-sample' }), t('依赖未完成', 'dep pending'),
+          h('span', { className: 'exp-muted' }, t('层号与箭头由本插件按 dependsOn 推导', 'layers & arrows derived here from dependsOn'))))
+    }
+
     /**
      * F 线第 3 项：把 host 的 `settingsSchema()` + 当前设置编译成**表单行**（纯函数 ⇒ 可单测）。
      * UI 结构来自 host 的 spec（不在客户端另写一份默认值/值域），认不出的类型**如实标出来**
@@ -1697,7 +2414,9 @@ window.__ModuleLoader__.load({
       var prevActRef = useRef(null)
       var prevDecRef = useRef(0)
       var hoverS = useState(null); var hoverId = hoverS[0], setHover = hoverS[1]
-      var view = useState('dag'); var viewV = view[0], setView = view[1]
+      // 默认视图 = 编队画布：它同时回答"这轮谁在编队里"和"任务按依赖怎么排"，是信息密度最高的入口；
+      // dag / panorama 保留为可切换视图（一个都没删）。
+      var view = useState('canvas'); var viewV = view[0], setView = view[1]
       var tabS = useState(null); var tab = tabS[0] || dispCfg.defaultTab; var setTab = tabS[1]   // 1.3.4：初始页签来自设置 display.defaultTab
       var listOpenS = useState(false); var listOpen = listOpenS[0], setListOpen = listOpenS[1]
       // 流转视图（波次带）自己的 UI 状态：宽视图 / 波折叠 / 未绑定任务展开
@@ -2751,6 +3470,15 @@ window.__ModuleLoader__.load({
             t('🗑 计划已丢弃，禁止自动重建（如需重来请明确要求）', '🗑 Plan discarded — auto-recreate blocked'))
         }
 
+        // 画布**无条件**求值一次（不是懒构造）：`canvasView` 内含 hook（箭头测量），
+        // 放进 `viewV === 'canvas'` 的三元分支里条件调用会让 hook 数量随视图切换变化 ⇒ React 抛错。
+        var canvasEl = canvasView({
+          tasks: tasks, members: members, agents: agentsLive, data: data,
+          selectedId: selTaskV && selTaskV.id,
+          degrade: usingLiveTasks ? t('降级：TASKS.json 为空，下面是「实时子代理投影」——角色由 prompt 推断、依赖无从得知，因此不分层、不画依赖箭头。', 'degraded: TASKS.json is empty — this is a LIVE subagent projection (role inferred, no dependency data): no layers, no dependency arrows.') : '',
+          onPick: function (tk) { var same = selTaskV && selTaskV.id === tk.id; setSelTask(same ? null : tk); if (!same) focusPanelRight() }
+        })
+
         var tasksTab = h('div', null,
           planEditor,
           h('div', { className: 'exp-sec exp-sec-col', onClick: function () { setListOpen(!listOpen) }, title: t('点击展开/收起', 'click to expand/collapse') },
@@ -2762,9 +3490,13 @@ window.__ModuleLoader__.load({
           usingLiveTasks ? h('div', { className: 'exp-legend', key: 'live-note' },
             t('⚠ TASKS.json 为空（本轮未按协议回写任务）——以下 ' + tasks.length + ' 行为「实时子代理投影」：角色由各子代理的 prompt 推断，状态取活动态，依赖关系无从得知。', '⚠ TASKS.json is empty — the rows below are a LIVE projection of subagents (role inferred from each prompt; no dependency data).')) : null,
           h('div', { className: 'exp-sec' }, t('团队视图', 'View'),
-            h('span', { className: 'exp-toggle', onClick: function () { setView('dag') }, style: viewV === 'dag' ? { borderColor: '#0969da', color: '#0969da' } : null }, usingLiveTasks ? t('按角色分组', 'By role') : t('任务依赖图', 'Task DAG')),
+            h('span', { className: 'exp-toggle', onClick: function () { setView('canvas') }, style: viewV === 'canvas' ? { borderColor: '#0969da', color: '#0969da' } : null }, t('编队画布', 'Team canvas')),
+            // dag 这个键在 live 投影下展示的是"按角色分组"，所以标签随数据源换词，但**视图分支与实现不动**
+            h('span', { className: 'exp-toggle', onClick: function () { setView('dag') }, style: viewV === 'dag' ? { borderColor: '#0969da', color: '#0969da' } : null }, usingLiveTasks ? t('按角色分组', 'By role') : t('紧凑图', 'Compact graph')),
             h('span', { className: 'exp-toggle', onClick: function () { setView('panorama') }, style: viewV === 'panorama' ? { borderColor: '#0969da', color: '#0969da' } : null }, t('任务人员流转', 'Task-person flow'))),
-          usingLiveTasks && viewV === 'dag'
+          viewV === 'canvas'
+            ? canvasEl
+            : usingLiveTasks && viewV === 'dag'
             ? liveGroups
             : viewV === 'dag'
             ? h('div', null,

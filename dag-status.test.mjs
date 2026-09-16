@@ -133,6 +133,82 @@ console.log('\n⑤ 动画与状态带样式确实存在（CSS 层）');
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ⑥ 画布变量必须在**浅色作用域**里真的有定义（不是只在深色 @media 里）
+//
+// 报障形态（本次修前的实测）：整份样式表里 `--etv-*` **只**出现在
+//   `@media (prefers-color-scheme:dark){ .exp-panel{--etv-run:…} }` 里 ⇒ 浅色用户下
+//   `var(--etv-run)` / `var(--etv-idle)` 全部无值，卡片描边、状态色、依赖边静默降级成透明/继承色。
+//   （纯 grep "样式表里有 --etv-ok 吗" 查不出来：它在深色块里，grep 照样命中 ⇒ 假绿。）
+//
+// 断言方式：**先按花括号配平剥掉**深色 @media 块，再断言浅色作用域里 `--etv-XXX:` / `--etc-XXX:`
+//   定义仍然存在；并断言深色值确实与浅色不同（证明剥掉的确实是覆写块，而不是把整份样式剥没了）。
+console.log('\n⑥ 画布变量：浅色作用域下必须真的有 --etv-* / --etc-* 定义（只有深色定义 = 浅色无样式）');
+{
+  let css = null, cssWhy = '';
+  try {
+    const at = src.indexOf('var CSS =');
+    const endMarker = src.indexOf('// ── session store', at);
+    if (at < 0 || endMarker < 0) cssWhy = '找不到 `var CSS =` / 结束锚点 `// ── session store`';
+    else css = new Function(`${src.slice(at, endMarker).trimEnd()}\nreturn CSS;`)();
+  } catch (e) { cssWhy = `CSS 链求值失败：${e && e.message}`; }
+  check(typeof css === 'string' && css.length > 1000, 'CSS 可求值（沿用 client-css-integrity 范式）', cssWhy || `len=${css ? css.length : 'n/a'}`);
+  if (typeof css !== 'string') { console.log('  （CSS 求值失败 ⇒ 本节无法继续）'); }
+  else {
+    /** 按花括号配平剥掉所有 `@media (prefers-color-scheme:dark){…}` 块（嵌套块一起剥）。 */
+    const stripDark = (s) => {
+      const re = /@media\s*\(prefers-color-scheme\s*:\s*dark\)\s*\{/g;
+      let out = s, m;
+      while ((m = re.exec(out))) {
+        let i = m.index + m[0].length - 1, depth = 0;
+        for (; i < out.length; i += 1) {
+          if (out[i] === '{') depth += 1;
+          else if (out[i] === '}') { depth -= 1; if (depth === 0) break; }
+        }
+        out = out.slice(0, m.index) + out.slice(i + 1);
+        re.lastIndex = m.index;
+      }
+      return out;
+    };
+    const light = stripDark(css);
+    const rawDarkBlocks = (css.match(/@media\s*\(prefers-color-scheme\s*:\s*dark\)/g) || []).length;
+    check(rawDarkBlocks >= 1 && light.length < css.length, '剥掉深色 @media 块（证明后续断言查的是浅色作用域）', `dark块=${rawDarkBlocks} css=${css.length} 剥后=${light.length}`);
+    // 反空转：剥块必须真的剥掉东西，且 CSS 没被剥空
+    check(light.length > css.length * 0.2, '剥块后 CSS 仍有实质内容（防"剥没了"导致假通过）', `剥后=${light.length}`);
+    const def = (re) => new RegExp(re).exec(light);
+    const lightEtv = def('--etv-[a-z0-9-]+\\s*:');
+    const lightEtc = def('--etc-[a-z0-9-]+\\s*:');
+    const lightEtvOk = def('--etv-ok\\s*:');
+    const lightEtcLine = def('--etc-line\\s*:');
+    check(!!lightEtvOk, '浅色作用域里有 --etv-ok 定义（深色独有 ⇒ 本条红）', lightEtvOk ? `${lightEtvOk[0]}（共 ${(light.match(/--etv-[a-z0-9-]+\s*:/g) || []).length} 个 --etv-* 定义）` : '浅色作用域里 0 个 --etv-* 定义');
+    check(!!lightEtcLine, '浅色作用域里有 --etc-line 定义（新画布配色）', lightEtcLine ? lightEtcLine[0] : '零定义');
+    check(!!lightEtv && !!lightEtc, '浅色作用域同时有 --etv-* 与 --etc-* 两族', `${lightEtv ? lightEtv[0] : '缺 --etv-*'} / ${lightEtc ? lightEtc[0] : '缺 --etc-*'}`);
+    // NEGATIVE：浅色定义与**含该变量的那个深色块**里的覆写值必须都存在且不同。
+    // 注意不能只取"第一个深色块"——样式表里有 4 个深色 @media 块，第一个是 .exp-warming（不含画布变量）。
+    const darkBlocks = (() => {
+      const re = /@media\s*\(prefers-color-scheme\s*:\s*dark\)\s*\{/g;
+      const out = []; let m;
+      while ((m = re.exec(css))) {
+        let i2 = m.index + m[0].length - 1, d = 0;
+        for (; i2 < css.length; i2 += 1) {
+          if (css[i2] === '{') d += 1;
+          else if (css[i2] === '}') { d -= 1; if (d === 0) break; }
+        }
+        out.push(css.slice(m.index, i2 + 1));
+        re.lastIndex = i2 + 1;
+      }
+      return out;
+    })();
+    const valIn = (s, name) => { const m = new RegExp(`${name}\\s*:\\s*([^;}\\n]+)`).exec(s); return m ? m[1].trim() : ''; };
+    check(darkBlocks.length >= 1, '找到了深色 @media 块（反空转）', `count=${darkBlocks.length}`);
+    for (const name of ['--etv-ok', '--etc-line']) {
+      const lv = valIn(light, name);
+      const dv = (darkBlocks.map((b) => valIn(b, name)).find((x) => x)) || '';
+      check(!!lv && !!dv && lv !== dv, `NEGATIVE ${name}：浅色定义与深色覆写都存在且取值不同`, `浅色=${lv || '缺'} 深色=${dv || '缺'}`);
+    }
+  }
+}
+
 console.log('');
 if (fail > 0) {
   console.log(`✗ DAG 状态展示测试失败：${fail} 项`);
