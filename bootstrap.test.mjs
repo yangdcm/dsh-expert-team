@@ -197,7 +197,14 @@ console.log('\n⑨ 插件加载时就把 preset 铺到位（2026-09-15 事故：
 
   // 前置：模拟"/team uninstall 之后、且还没跑过 /team <任务>"的状态
   await rm(presetDst, { recursive: true, force: true });
+  // ⚠️ **清单也要一起清**（2026-09-16 CI 实测）：完成信号取的是"清单里有 preset"，
+  // 而 ⑤ 已经登记过一条 ⇒ 不清清单时"清单里有 preset"**立刻为真**，测试会在**这一轮铺盘还
+  // 没做完**时就往下走。旧实现会先 mkdir 目标目录、于是往往侥幸读到文件；换成原子换名后目标
+  // 目录只在最后一步出现 ⇒ 竞态暴露（CI 上直接 ENOENT）。同一类错误：**完成信号必须是"这一轮
+  // 的"，不能是上一轮留下的台账**。
+  await rm(manifestPath, { force: true });
   check(!(await exists(presetDst)), '前置：preset 副本不存在（正是事故现场的状态）');
+  check(!(await exists(manifestPath)), '前置：清单也不存在（否则"完成信号"是上一轮的台账 ⇒ 竞态/假绿）');
 
   // ⑨.1 加载即铺 —— 本事故的核心修复：不再等 createRun
   apply(fakeCtx(), {});
