@@ -32,7 +32,8 @@
 - **权限棘轮的扫描范围**（`docs-integrity.test.mjs` 第 ⑤ 节）= `files` 覆盖的文件 **+ `package.json` + `README.md`**。静态点数：`lib` **29** + `skills` **23** + `presets` **2** + `client.js` + `cordis.patch.yml` + `LICENSE` + `README.en.md` + `CHANGELOG.md` = **59**，再加 `package.json`、`README.md`（后两者不写在 `files` 里，但 npm 会自动打进包，所以棘轮必须一起扫）= **61**。
 - **tarball 里的文件条数**是**另一个数**（1.3.24 的 tarball 曾实测 `fileCount = 60`；当时 `lib` 只有 28 个文件，`lib/subagent-order.js` 尚未加入）。
 
-⇒ 60 既不等于本版的棘轮范围（61），也没交代它指的是哪个口径。**1.3.25 的 tarball 文件条数需用 `tar -tzf` 实点**（预期 61），此处**不写没验过的数字**。
+⇒ 60 既不等于本版的棘轮范围（61），也没交代它指的是哪个口径。**本是"待实测"的一条，已实测完毕**：
+`npm pack` 两段式解包后 `tar -tzf <tgz> | grep -v '/$' | wc -l` = **61**，且与权限棘轮扫描的 **61** 个文件**逐名比对完全相同**（`ONLY IN TARBALL` 与 `ONLY IN RATCHET` 均为空）⇒ **本版两个口径都是 61**：`lib 29 + skills 23 + presets 2 + 根 7（client.js / cordis.patch.yml / LICENSE / README.en.md / CHANGELOG.md / package.json / README.md）= 61`。**60 是 1.3.24 时期的 tarball 条数**（当时 `lib` 28 个文件），它被误当成了 1.3.25 的数字。
 
 ## 1.3.25
 
