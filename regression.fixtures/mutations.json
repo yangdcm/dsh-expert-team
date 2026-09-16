@@ -1838,6 +1838,123 @@
           "replace": "  const missing = []; // MUTANT: 缺档也不报（预检变睁眼瞎）"
         }
       ]
+    },
+    {
+      "id": "M141-subagent-order-no-reverse",
+      "title": "子代理列表「最新在上」退化成原样返回（遮蔽还在，顺序没变）",
+      "why": "2026-09-16 新增（1.3.25 新能力的防回归登记）。这个能力的**全部作用**就是反转浏览器拿到的 catalog：一旦 reverse 被去掉（例如有人「顺手简化」成直接返回），方法仍会被遮蔽、状态路由仍报 effective:true、界面也不会报错 —— 用户只会觉得「怎么还是最旧在上」，而这种「装了却没生效」正是本仓最忌的静默退化。 预期红：`反转 entries`、`包装后反转、且保留其它字段`、`读取方拿到的是**反转后**的结果`（该测试共 6 项红）。 本变异体已实测：基线绿 → 变异红 → **逐字节还原后 sha256 一致** → 再跑绿。",
+      "test": "host-settings.test.mjs",
+      "edits": [
+        {
+          "file": "lib/subagent-order.js",
+          "find": "  return { catalog: { ...catalog, entries: entries.slice().reverse() }, changed: true };",
+          "replace": "  return { catalog: { ...catalog, entries: entries }, changed: true };"
+        }
+      ]
+    },
+    {
+      "id": "M142-subagent-order-forwards-this",
+      "title": "包装函数改为转发调用方的 this（网关下必然在错误的 this 上执行）",
+      "why": "2026-09-16 新增。网关是 Reflect.apply(method, receiver, args)，而 receiver 是 traceable 代理（apply trap 会换 thisArg）⇒ 包装函数必须始终以**捕获的裸实例**为 this。改回转发外来 this 后，真机表现是「顺序有时对有时错」、外观与正确版本一模一样，属最难查的一类。注意不对称：变异下**代理形态**那条断言仍通过（代理的 shadow method 本就以裸实例调用），真正有牙的是**直接调用**的两条 —— 若有人只留代理那条，护栏就是摆设。 预期红：`不依赖 this：原方法始终以捕获到的 target 被调用`、`外来的 this 没有被转发给原方法`（共 2 项）。⚠️ 不对称：变异下**代理形态**那条仍通过（代理的 shadow method 本就以裸实例调用）—— 真正的牙齿是这两条**直接调用**断言，只留代理那条等于没有护栏。 本变异体已实测：基线绿 → 变异红 → **逐字节还原后 sha256 一致** → 再跑绿。",
+      "test": "host-settings.test.mjs",
+      "edits": [
+        {
+          "file": "lib/subagent-order.js",
+          "find": "    const catalog = await Reflect.apply(original, receiver, args);",
+          "replace": "    const catalog = await Reflect.apply(original, this, args);"
+        }
+      ]
+    },
+    {
+      "id": "M143-hindsight-recovery-blind",
+      "title": "「历史失败 ≠ 当前故障」的判定变瞎（不再统计失败之后的成功）",
+      "why": "2026-09-16 新增（1.3.24 那场真机误导事故的防回归登记）。该判定的全部价值在于**与后续成功比较**：一旦 sinceFailure 的统计循环不再执行，successes 恒为 0 ⇒ 两小时前的历史失败又被当成当前故障、红色告警框与整改指令重新挂上 —— 这正是骗过用户与派工方的那个形态。 预期红：`① 失败之后有 2 次成功 ⇒ sinceFailure.successes === 2`、`最近成功的时间与耗时都取到`、`失败之后只有一次召回为空 ⇒ successes=0 / emptyRecalls=1`（共 4 项）。 本变异体已实测：基线绿 → 变异红 → **逐字节还原后 sha256 一致** → 再跑绿。",
+      "test": "hindsight-config.test.mjs",
+      "edits": [
+        {
+          "file": "lib/hindsight-config.js",
+          "find": "    for (let i = last.index + 1; i < lines.length; i += 1) {",
+          "replace": "    for (let i = lines.length; i < lines.length; i += 1) {"
+        }
+      ]
+    },
+    {
+      "id": "M144-host-state-perm-umask",
+      "title": "宿主状态文件权限退化成 umask 默认（token 就写在里头）",
+      "why": "2026-09-16 新增（lib/host-state-file.js 的防回归登记）。这些文件里可能有 token；权限靠**新建 inode 时指定 + chmod 兜住 umask** 两条一起保证。一旦默认模式退化成 0644，同机其他用户就能读到 Hindsight 配置文件里的 token —— 而功能测试、界面、日志全都正常，没有人会察觉。 预期红：`受控入口显式设 0600（文件）/ 0700（目录）`、`**文件权限 = 0600**（token 就在里头）`（实测 0644）、`覆写之后权限**仍是 0600**`（共 3 项）。 本变异体已实测：基线绿 → 变异红 → **逐字节还原后 sha256 一致** → 再跑绿。",
+      "test": "hindsight-config.test.mjs",
+      "edits": [
+        {
+          "file": "lib/host-state-file.js",
+          "find": "export const HOST_STATE_FILE_MODE = 0o600;",
+          "replace": "export const HOST_STATE_FILE_MODE = 0o644;"
+        }
+      ]
+    },
+    {
+      "id": "M145-config-write-validation-passthrough",
+      "title": "写路径校验不再拦截（非法形态也会往下走）",
+      "why": "2026-09-16 新增（Hindsight 配置写路径的防回归登记）。本仓对这条路的承诺是「**校验不过 ⇒ 一个字节都不落盘**」。一旦错误清单不再阻断，非法 serverMode / 带 /v1 的地址就会进入合并与落盘分支 —— 用户会得到一份被写坏的真实配置，而回执可能仍说 ok。 预期红：`非法 serverMode ⇒ 拒绝（没有可写文本）`、`带 /v1 的地址 ⇒ 拒绝`、`非 http(s) ⇒ 拒绝` 等（该测试共 12 项红）。 本变异体已实测：基线绿 → 变异红 → **逐字节还原后 sha256 一致** → 再跑绿。",
+      "test": "hindsight-config.test.mjs",
+      "edits": [
+        {
+          "file": "lib/hindsight-config-write.js",
+          "find": "  if (errors.length) {",
+          "replace": "  if (false && errors.length) {"
+        }
+      ]
+    },
+    {
+      "id": "M146-config-write-echoes-submitted",
+      "title": "回执回显用户提交的原值（哨兵 token 误粘即泄漏）",
+      "why": "2026-09-16 新增。本仓的「token 不回显」必须是**结构性**的：回执里根本不存在任何用户提交的原值，而不是「记得哪个字段是 token」。这条变异把提交值拼进错误信息 —— 于是把哨兵 token 误粘进 serverMode 的那种操作就会把它原样泄回响应与日志。 预期红：`**误粘进 serverMode / apiUrl / clear 的值，回执全文同样不回显**`（共 1 项）。 本变异体已实测：基线绿 → 变异红 → **逐字节还原后 sha256 一致** → 再跑绿。",
+      "test": "hindsight-config.test.mjs",
+      "edits": [
+        {
+          "file": "lib/hindsight-config-write.js",
+          "find": "    errors.push(`serverMode 只能是 ${HINDSIGHT_SERVER_MODES.join(' / ')}（提交的原值不在回执里回显）。`);",
+          "replace": "    errors.push(`serverMode 只能是 ${HINDSIGHT_SERVER_MODES.join(' / ')}「${set.serverMode}」（提交的原值不在回执里回显）。`);"
+        }
+      ]
+    },
+    {
+      "id": "M147-roles-warm-deadline-at-kick",
+      "title": "角色后台批的期限挪回 kick 时刻计算（1.3.22 那个按构造必然的零读回归）",
+      "why": "2026-09-16 新增。1.3.22 的真回归：期限在 **kick 那一刻**按绝对时刻算好，而这一批要延迟 ~1000 ms 才开跑 ⇒ 开跑时期限已过期 ⇒ resolveSubRoles 在**第一次读之前**就 cut=deadline break ⇒ 一条都不读，而调用方照旧挂 warming:['roles']，界面显示「更新中」却永远不动。本条变异让批沿用调用方传进来的 kick 时刻绝对期限，正是那次事故的形状。 预期红：`① 延迟(150 ms) > 期限(60 ms) 时仍**必须读完这一条**`（实测 reads=0）、`① 队列真的前进了`（deferred=1）、`① 有进展 ⇒ 零进展标记不点亮`（共 4 项）。 本变异体已实测：基线绿 → 变异红 → **逐字节还原后 sha256 一致** → 再跑绿。",
+      "test": "state-bounded.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "      runRoleWarmChunks(ctx, subs, wfLabels, { maxReads, deadlineAt: Date.now() + budgetMs, chunk, queueCap, stats }).then(resolve, reject);",
+          "replace": "      const __mutantDeadline = (opts && Number.isFinite(opts.deadlineAt)) ? opts.deadlineAt : Date.now() + budgetMs;\n      runRoleWarmChunks(ctx, subs, wfLabels, { maxReads, deadlineAt: __mutantDeadline, chunk, queueCap, stats }).then(resolve, reject);"
+        }
+      ]
+    },
+    {
+      "id": "M148-scope-caps-into-degraded",
+      "title": "把「按设计的上限」又塞回 degraded（真机 95 agent 时告警灯每轮常亮）",
+      "why": "2026-09-16 新增（1.3.22 的「上限与真故障分开承载」的防回归登记）。上限不是故障：真机 95 个 agent、上限 60 ⇒ 每轮都有 35 条被挡，若把它塞进 degraded，告警灯就永久常亮，真正的期限截断与读失败会被一起降权 —— 常亮的告警等于没有告警。 预期红：`① 只有上限 ⇒ degraded **不**被设置`（实测 [\"roles:35\",\"feed:35\"]）、`④ 上限与真截断同时发生 ⇒ 两者都如实出现`、`⑤ 上限与零进展同时发生 ⇒ 各归各位`（共 4 项）。 本变异体已实测：基线绿 → 变异红 → **逐字节还原后 sha256 一致** → 再跑绿。",
+      "test": "state-bounded.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "    scopeCaps[String(c.key)] = { over: total - limit, limit, total };",
+          "replace": "    scopeCaps[String(c.key)] = { over: total - limit, limit, total };\n    degraded.push(String(c.key) + ':' + (total - limit));"
+        }
+      ]
+    },
+    {
+      "id": "M149-subs-not-ready-unmarked",
+      "title": "冷启动「还没就绪的空」不再标记（与「真的没有成员」长得一样）",
+      "why": "2026-09-16 新增（1.3.24 的「两种零分得开」的防回归登记）。重启后首轮 agents=[] 且没有任何标记时，界面与真正没有成员**完全一样**；标了 notReady 才会挂 warming:['subs'] 并在 120 s 后如实收回。去掉这一行 ⇒ 空列表重新变成不可区分的零。 预期红：`⑩ 空列表 + 宿主没就绪 ⇒ notReady 明确点亮`（实测 rows=0 notReady=false）（共 1 项）。 本变异体已实测：基线绿 → 变异红 → **逐字节还原后 sha256 一致** → 再跑绿。",
+      "test": "state-bounded.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "      SUB_HEADER_STATS.notReady = !!since && (Date.now() - since) <= SUBS_NOT_READY_MAX_MS;",
+          "replace": "      SUB_HEADER_STATS.notReady = false;"
+        }
+      ]
     }
   ]
 }
