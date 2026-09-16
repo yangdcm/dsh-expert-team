@@ -24,6 +24,31 @@ const check = (ok, name, detail) => {
 };
 const exists = async (p) => { try { await stat(p); return true; } catch { return false; } };
 
+/**
+ * **有界轮询**等一个条件成立。
+ *
+ * 为什么不能固定 sleep：preset 的铺盘是 `apply()` 里的 fire-and-forget，**没有可以 await 的完成信号**，
+ * 所以测试只能"猜一个时长"。旧实现猜 100 ms 并只检查**文件在不在** —— 而"文件在"不等于"整轮铺盘做完了"：
+ * 机器 I/O 一忙，`uninstall` 就会与**仍在飞的拷贝**相撞（删掉目录后那次拷贝又把目录建回来），
+ * 于是下一轮 `apply()` 把它当成"用户的定制"而**不覆盖** ⇒ 偶发红。
+ * 2026-09-16 实测：`test:all` 里连续 2 次红（红的是「再次加载 ⇒ preset 又铺回来了」），单跑却绿。
+ * 现在改成等**真正的完成信号**（见下面的 `presetRecorded`），并把实际等待时长报出来。
+ */
+async function waitFor(fn, { everyMs = 25, maxMs = 8000 } = {}) {
+  const t0 = Date.now();
+  for (;;) {
+    if (await fn()) return { ok: true, ms: Date.now() - t0 };
+    if (Date.now() - t0 >= maxMs) return { ok: false, ms: Date.now() - t0 };
+    await new Promise((r) => setTimeout(r, everyMs));
+  }
+}
+
+// **完成信号**：`recordInstalled(preset, …)` 发生在「整目录拷贝 + 版本戳」**之后** ⇒
+// 清单里出现 preset 才等于"这一轮铺盘真的做完了"（只等文件会出现"还没铺完就以为铺完了"）。
+const presetRecorded = async () => {
+  try { return !!JSON.parse(await readFile(manifestPath, "utf8")).preset; } catch { return false; }
+};
+
 // ── 隔离环境：先把 DSH_HOME 指向临时目录，再加载模块 ──
 const root = await mkdtemp(join(tmpdir(), 'dsh-et-boot-'));
 process.env.DSH_HOME = join(root, 'dsh');
@@ -176,7 +201,8 @@ console.log('\n⑨ 插件加载时就把 preset 铺到位（2026-09-15 事故：
 
   // ⑨.1 加载即铺 —— 本事故的核心修复：不再等 createRun
   apply(fakeCtx(), {});
-  await new Promise((r) => setTimeout(r, 100));   // fire-and-forget 需要等一拍
+  const laid1 = await waitFor(presetRecorded);
+  check(laid1.ok, 'apply() 之后铺盘**真的做完**（清单已登记 preset，不只是"文件出现了"）', 'waited=' + laid1.ms + 'ms');
   check(await exists(join(presetDst, 'agent.cordis.yml')), 'apply() 之后 preset 已在位（**加载即铺**，不再等首次 /team）');
   check((await readFile(join(presetDst, _live.INSTALL_STAMP), 'utf8')).trim() === _live.PLUGIN_VERSION, '且带上当前版本戳', _live.PLUGIN_VERSION);
   check(!(await exists(skillDst)), 'skill 仍不落地（运行时注册优先，加载时那次调用立即返回）');
@@ -185,8 +211,9 @@ console.log('\n⑨ 插件加载时就把 preset 铺到位（2026-09-15 事故：
   await _live.uninstallInstalled();
   check(!(await exists(presetDst)), 'uninstall 之后副本被清掉');
   apply(fakeCtx(), {});
-  await new Promise((r) => setTimeout(r, 100));
-  check(await exists(join(presetDst, 'agent.cordis.yml')), '再次加载 ⇒ preset 又铺回来了（**本事故的回归测试**）');
+  const laid2 = await waitFor(presetRecorded);
+  check(laid2.ok, '再次加载 ⇒ preset 又铺回来了（**本事故的回归测试**）', 'waited=' + laid2.ms + 'ms');
+  check(await exists(join(presetDst, 'agent.cordis.yml')), '且文件确实落盘', '');
 
   // ⑨.3 铺不上不许抛（只读盘/权限问题不能把插件挂不上）
   const savedHome = process.env.DSH_HOME;
