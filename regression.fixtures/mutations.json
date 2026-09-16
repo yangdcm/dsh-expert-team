@@ -1994,6 +1994,45 @@
           "replace": "  if (identityMatch !== false) {"
         }
       ]
+    },
+    {
+      "id": "M153-failed-lay-rendered-as-laid",
+      "title": "铺盘失败被渲染成「已铺设」（界面说得比事实满）",
+      "why": "2026-09-16 新增（用户报告的真缺陷）。旧判据只看 state+action，而失败路径也带 action:'lay' ⇒ 一次失败、以及**首次铺设失败**（state:absent）都被渲染成 ok 级「已铺设」。变异把失败判定整条关掉，回到\"只看 state+action\"的旧行为。 预期红：`① outcome=failed ⇒ bad 级`、`① 失败文案里**不许出现「已铺设」**`、`① 只有 lay-failed: 前缀的旧记录 ⇒ 仍判失败`（共 3 项）。",
+      "test": "bootstrap.test.mjs",
+      "edits": [
+        {
+          "file": "lib/preset-lay.js",
+          "find": "  if (outcome === 'failed' || reason.indexOf(LAY_REASON_FAILED_PREFIX) === 0) {",
+          "replace": "  if (false) {"
+        }
+      ]
+    },
+    {
+      "id": "M154-skill-runtime-branch-writes-no-status",
+      "title": "skill 走运行时注册时不写状态 ⇒「铺设状态未知」常亮",
+      "why": "2026-09-16 新增（用户报告的第二处真缺陷：一盏不会自己灭的 warn 灯）。变异把那行 recordLayOutcome 删掉，回到\"该分支从不写 STATUS\"的旧行为。 预期红：`⑤ [接线断言] ensureSkillInstalled 的运行时分支**必须**调 recordLayOutcome`（源码级接线断言，1 项）。",
+      "test": "bootstrap.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "    recordLayOutcome('skill', skillRuntimeRegisteredRecord(SKILL_DIR, PLUGIN_VERSION));",
+          "replace": "    void 0;"
+        }
+      ]
+    },
+    {
+      "id": "M155-runtime-flag-fallback-disabled",
+      "title": "「运行时已注册」这个已知事实不再兜底 ⇒ 界面退回「未知」",
+      "why": "2026-09-16 新增（纵深防御那一半：即使写入点将来漏了，只要\"运行时已注册\"是已知事实，界面也不该显示\"未知\"）。变异把该兜底条件关掉。 预期红：`② 即使 STATUS 没记上，只要「运行时已注册」是已知事实 ⇒ 界面也不该显示「未知」（纵深防御）`（1 项）。注意**不得**因此让\"真判不出来\"变成\"正常\"——另一条 `② **拿不到事实时仍如实说「未知」**` 必须仍然绿。",
+      "test": "bootstrap.test.mjs",
+      "edits": [
+        {
+          "file": "lib/preset-lay.js",
+          "find": "    || (opts.runtimeSkillRegistered === true",
+          "replace": "    || (false && opts.runtimeSkillRegistered === true"
+        }
+      ]
     }
   ]
 }

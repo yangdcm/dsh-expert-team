@@ -1393,8 +1393,8 @@ window.__ModuleLoader__.load({
         lineFor(t('专家团模式 preset', 'Expert-team preset'), d.preset),
         lineFor(t('skill 副本', 'skill copy'), d.skill),
         h('div', { className: 'exp-settings-note' }, esc(t(
-          '当前版本 ' + ((st.preset && st.preset.version) || '') + '。铺设用原子换名：先把整份内容写进临时目录，再整目录换名到位；所以被打断只会留下"目录不存在"或"我们自己的临时目录"，不会再留下"看起来像你的定制的半成品"。但删除旧目录与换名之间若被打断，目录会短暂不存在（下次自动重铺）—— 它消灭的是"假用户定制"，不是"任何时刻都存在一份完整副本"，所以它不是"完全原子"。',
-          'Current version ' + ((st.preset && st.preset.version) || '') + '. Laying is atomic by swapping a fully written temp directory into place, so an interruption leaves either no directory or our own temp dir — never a half copy that looks like your customization. If interrupted between removing the old directory and the swap, the directory can briefly be absent (it is re-laid next time); it removes the false-customization case, not the possibility of a momentary gap, so it is not fully atomic.'))),
+          '本插件版本 ' + ((st.preset && st.preset.pluginVersion) || '') + '。铺设用原子换名：先把整份内容写进临时目录，再整目录换名到位；所以被打断只会留下"目录不存在"或"我们自己的临时目录"，不会再留下"看起来像你的定制的半成品"。但删除旧目录与换名之间若被打断，目录会短暂不存在（下次自动重铺）—— 它消灭的是"假用户定制"，不是"任何时刻都存在一份完整副本"，所以它不是"完全原子"。',
+          'Plugin version ' + ((st.preset && st.preset.pluginVersion) || '') + '. Laying is atomic by swapping a fully written temp directory into place, so an interruption leaves either no directory or our own temp dir — never a half copy that looks like your customization. If interrupted between removing the old directory and the swap, the directory can briefly be absent (it is re-laid next time); it removes the false-customization case, not the possibility of a momentary gap, so it is not fully atomic.'))),
         h('div', { className: 'exp-hs-actions' },
           h('button', { className: 'exp-hs-btn' + (armed ? ' danger' : ''), disabled: busy, onClick: relay },
             esc(armed ? t('确认重新铺设', 'Confirm re-lay') : t('重新铺设', 'Re-lay')))),

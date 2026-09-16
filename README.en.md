@@ -18,7 +18,7 @@ A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 | 12 roles | 9 phases | 89 test files | 0 runtime deps | 0 build steps |
 |---|---|---|---|---|
-| own persona / `toolFilter` / `maxDepth: 1` | 1 hard gate + 1 approval gate | incl. a 152-entry mutation catalog and several ratchets | `dependencies: {}` | no bundler, no `prepare` hook |
+| own persona / `toolFilter` / `maxDepth: 1` | 1 hard gate + 1 approval gate | incl. a 155-entry mutation catalog and several ratchets | `dependencies: {}` | no bundler, no `prepare` hook |
 
 > Zero runtime dependencies. Recommended: also install **Hindsight** (cross-project memory) — see [Dependencies and recommended plugins](#dependencies-and-recommended-plugins).
 
@@ -161,7 +161,7 @@ A persistent status bar also sits directly above the chat input box (client slot
   that is the number-one source of rework.**
 - **Zero runtime dependencies, zero devDependencies, no build step, no `prepare`/`postinstall` hooks.**
   What you install is exactly what runs; there is no "unknown script at install time" layer.
-- **89 test files plus a 152-entry mutation catalog.** `npm run test:all` needs no `install` (it is what CI runs).
+- **89 test files plus a 155-entry mutation catalog.** `npm run test:all` needs no `install` (it is what CI runs).
   ⚠️ **What the catalog actually guarantees (honest version)**: in CI, `mutation-catalog.test.mjs` validates the catalog SHAPE —
   unique ids, each mutant `find` string matching exactly once in its target file, the target test file existing, and the entry count
   matching the constant. **Mutants themselves must be injected by hand** (swap `find` for `replace` and run the target test to see if it

@@ -3,6 +3,42 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.3.27
+
+**主题：修两处"状态展示不可信"的缺陷** —— ① **铺盘失败却显示「已铺设」**（把失败说成成功）；
+② **skill 走运行时注册（正常情形）却常亮「铺设状态未知」**（把正常说成未知）。
+两处都**不影响数据安全**，坏的是**界面可信度** —— 与这几天一直在修的是同一类：**界面说得比事实满 / 说不清**。
+
+### ① 铺盘失败被渲染成「已铺设」
+
+**代码级证据**：
+- 失败路径 `lib/command.js` 记的是 `{ ...plan, action:'lay', reason:'lay-failed:'+msg, … }` —— **展开 `plan` 沿用了它的 `state`**（`state` 不被覆盖）；
+- 判据 `lib/preset-lay.js` 的 `describeLayOutcome` 只做 `if (state==='ours' || state==='absent') { if (rec.action==='lay') return ok '已铺设 '+version }` —— **完全不看 `reason`**；
+⇒ **一次"试图铺但失败"被渲染成 `ok` 级「已铺设 1.3.26」**；而 `state:'absent'` + `action:'lay'` **只可能来自 catch** ⇒ **首次铺设失败也一样**。唯一线索 `lay-failed:` **永远不被 display 读取**。
+
+**改法**：由**写入点给出显式结果** `outcome: 'planned'|'succeeded'|'failed'|'skipped'`（新常量 `LAY_OUTCOMES`），`describeLayOutcome` **只认结果、不再由 `action` 反推**；并兼容旧记录（`reason` 以 `lay-failed:` 开头同样判失败）。
+话术改成 **「上次铺设：…（截至 <ISO>）」** —— 这些字段是**记录时刻的快照、不是实时**（实测连打 3 次 `GET /plugins/dsh-expert-team/preset-lay`，`at` 恒为同一值：路由直接返回模块级 `STATUS`、**不重算**），所以人话里必须能看出"截至某时刻"。
+
+**顺带修掉字段名歧义**：`version` → **`pluginVersion`**。它指"**本条记录针对的插件版本**"，**不是盘上戳的版本**（反证：跳过用户定制/半成品那条路径记的是空串）。消费者只有 `client.js` 两处（已同步，并把「当前版本」改成「本插件版本」）与测试一处示例。
+
+**证据（可复跑）**：
+- 旧码（`06efcda`）+ 新测试 ⇒ `bootstrap.test.mjs` **EXIT=1 / 12 项红**，**逐条报红**（不是崩溃），首条即 `① outcome=failed ⇒ bad 级 — ok | 已铺设`；
+- 新码 ⇒ **EXIT=0**；
+- 新增变异 **M153**（把失败判定整条关掉）⇒ **被抓住**。
+
+### ② skill 的「铺设状态未知」是一盏**不会自己灭**的灯
+
+**代码级证据**：`lib/command.js` 的 `ensureSkillInstalled()` 在 `RUNTIME_SKILL_REGISTERED` 为真时**直接 return、根本不调 `layInstalledAsset`** ⇒ `recordLayOutcome('skill', …)` **永不被调用** ⇒ `STATUS.skill` 恒 `null` ⇒ 落到默认 warn「铺设状态未知」。而这条知识**本来就在代码里**（`relayInstalledAssets` 会 push `skipped:'runtime-registered'`），只是**从未记进状态**。
+
+**改法**：① 该分支**如实记录** `{state:'absent', action:'skip-fresh', outcome:'skipped', reason:'runtime-registered', pluginVersion}`（新函数 `skillRuntimeRegisteredRecord`，单列以便单独断言）；② **纵深防御**：路由把"运行时已注册"这个事实交给 `presetLayStatus({runtimeSkillRegistered})` —— **即使写入点将来漏了**，界面也不该显示"未知"，因为那是**已知的正常**。
+**判据（两个方向都钉住）**：正常情形**不许常亮 warn**；**真判不出来时仍必须说"未知"**（测试同时断言"无事实时"仍是 warn+未知 —— **不许为了消灯把未知说成正常**）。
+新增变异 **M154**（删掉那行记录 ⇒ 接线断言红）、**M155**（关掉兜底 ⇒ 行为断言红）。变异目录 **152 → 155**，5 处文档计数同步。
+
+### 未验边界（不粉饰）
+- **没有真机复现"真实铺设失败"**（要制造磁盘/权限故障并重启宿主）：本轮是**确定性修复 + 单测/变异证据**，**不是**"复现了线上故障"。
+- 上一条 ⑤ 是**源码级接线断言**（**不是**运行期行为断言）：它挡的是"将来有人把那行 `recordLayOutcome` 删掉"。引用时别当行为证据读。
+- 修 `presetLayStatus` 兜底时我**先踩了一个自己造的崩**（生成的兜底记录缺 `missing` 数组 ⇒ 快照函数 `rec.missing.slice()` 抛 TypeError），被新测试当场抓到，已修（`one()` 对缺失字段健壮 + 生成器补齐形状）。
+
 ## 1.3.26
 
 **主题：把 1.3.25 条目里三处"声称改过、实际没改到 / 数字口径没交代"如实补上。**

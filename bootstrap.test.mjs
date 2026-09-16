@@ -400,6 +400,61 @@ console.log('\n⑩ 铺设：四态判定 / 原子换名 / 两条路径都不留�
   } else {
     check(false, '_live 导出 layInstalledAsset / SKILL_DIR（旧代码上：断言失败）');
   }
+  // ⑩.6 **两处缺陷的回归护栏**（2026-09-16 用户报告 → 当天修）：
+  //  ① 铺盘失败却显示「已铺设」：旧判据只看 state+action（失败路径也带 action:'lay'），
+  //     从不看 reason/结果 ⇒ 一次失败被渲染成 ok 级「已铺设」；首次铺设失败同样如此。
+  //  ② skill 走运行时注册是**正常**情形，却因那条分支从不写 STATUS 而常亮「铺设状态未知」。
+  // 两条都要求红→绿（在旧码上先红），所以断言同时钉住"反面"。
+  if (typeof PL?.describeLayOutcome !== 'function' || typeof _live.presetLayStatus !== 'function') {
+    check(false, 'lib/preset-lay.js 导出 describeLayOutcome / _live 导出 presetLayStatus（旧代码上：断言失败）');
+  } else {
+    const D = PL.describeLayOutcome;
+    const noMd = (x) => !/\*\*|\x60|\]\(/.test(String(x == null ? '' : x));
+
+    // ① 失败 ⇒ 绝不许出现「已铺设」
+    const f1 = D({ state: 'ours', action: 'lay', outcome: 'failed', reason: 'lay-failed:disk full', pluginVersion: '1.3.26', at: Date.now() });
+    check(f1.level === 'bad', '① outcome=failed ⇒ bad 级', f1.level + ' | ' + f1.zh);
+    check(!/已铺设/.test(f1.zh), '① 失败文案里**不许出现「已铺设」**', f1.zh);
+    check(/disk full/.test(f1.zh), '① 失败文案必须带上原因', f1.zh);
+    // 旧记录（没有 outcome，只有 lay-failed:）也必须判失败 —— **这条在旧实现上是「ok｜已铺设」**
+    const f2 = D({ state: 'absent', action: 'lay', reason: 'lay-failed:boom', pluginVersion: '1.3.26', at: Date.now() });
+    check(f2.level === 'bad' && !/已铺设/.test(f2.zh), '① 只有 lay-failed: 前缀的旧记录 ⇒ 仍判失败（**首次铺设失败**那条路径）', f2.level + ' | ' + f2.zh);
+    const f3 = D({ state: 'ours', action: 'lay', outcome: 'succeeded', pluginVersion: '1.3.26', at: Date.now() });
+    check(f3.level === 'ok' && /成功/.test(f3.zh), '① 正常成功 ⇒ 仍是 ok（**别把灯一律点红**）', f3.level + ' | ' + f3.zh);
+    check(/截至 |记录时刻未知/.test(f3.zh), '① 文案必须交代「截至某时刻」（记录是快照，不是实时）', f3.zh);
+
+    // ② 运行时注册（正常）⇒ ok；**判不出来**仍必须是「未知」
+    const rtRec = typeof _live.skillRuntimeRegisteredRecord === 'function'
+      ? _live.skillRuntimeRegisteredRecord(_live.SKILL_DIR, _live.PLUGIN_VERSION)
+      : null;
+    check(rtRec !== null, '② _live 导出 skillRuntimeRegisteredRecord（旧代码上：断言失败，不是崩溃）');
+    const rt = rtRec ? D(rtRec) : { level: '(none)', zh: '(none)', en: '(none)' };
+    check(rtRec !== null && rt.level === 'ok' && !/未知/.test(rt.zh), '② 由运行时注册提供 ⇒ ok 级、且不再说「未知」', rt.level + ' | ' + rt.zh);
+    _live._resetPresetLay();
+    const withFlag = _live.presetLayStatus({ runtimeSkillRegistered: true, skillTarget: _live.SKILL_DIR, pluginVersion: _live.PLUGIN_VERSION });
+    check(withFlag.display.skill.level === 'ok' && !/未知/.test(withFlag.display.skill.zh), '② 即使 STATUS 没记上，只要「运行时已注册」是已知事实 ⇒ 界面也不该显示「未知」（纵深防御）', withFlag.display.skill.level + ' | ' + withFlag.display.skill.zh);
+    const noFlag = _live.presetLayStatus();
+    check(noFlag.display.skill.level === 'warn' && /未知/.test(noFlag.display.skill.zh), '② **拿不到事实时仍如实说「未知」**（不许为了消灯把未知说成正常）', noFlag.display.skill.level + ' | ' + noFlag.display.skill.zh);
+    const noRec = D(null);
+    check(noRec.level === 'warn' && /未知/.test(noRec.zh), '② 没有任何记录 ⇒ warn + 未知', noRec.level + ' | ' + noRec.zh);
+    _live._resetPresetLay();
+
+    // ③ 字段名歧义：不再有 `version`（它曾被误读成"盘上戳的版本"）
+    PL.recordLayOutcome('preset', { state: 'ours', action: 'lay', outcome: 'succeeded', pluginVersion: _live.PLUGIN_VERSION });
+    const rec3 = _live.presetLayStatus().preset;
+    check(rec3 && rec3.pluginVersion === _live.PLUGIN_VERSION, '③ 记录里是 pluginVersion（含义 = 本条记录针对的插件版本）', JSON.stringify(rec3 && rec3.pluginVersion));
+    check(rec3 && !('version' in rec3), '③ 旧的 version 字段已移除（不许留着让读者误解）', JSON.stringify(Object.keys(rec3 || {})));
+    _live._resetPresetLay();
+
+    // ④ 新文案同样不许含 markdown 标记（本仓被这个坑咬过两次）
+    check([f1, f2, f3, rt, noRec].every((r) => noMd(r.zh) && noMd(r.en)), '④ 两处新文案都不含 markdown 标记（设置页没有渲染器）', JSON.stringify([f1, f2, f3, rt, noRec].map((r) => r.zh)));
+
+    // ⑤ **接线断言（源码级，不是运行期行为）**：运行时注册那条分支必须写状态 ——
+    //    它盯的是"将来有人把那行 recordLayOutcome 删掉 ⇒ 缺陷 ② 复发"。
+    const cmdSrc = await readFile(join(here, 'lib', 'command.js'), 'utf8');
+    const rtBranch = /if \(RUNTIME_SKILL_REGISTERED\) \{[\s\S]{0,400}?recordLayOutcome\('skill', skillRuntimeRegisteredRecord\(/.test(cmdSrc);
+    check(rtBranch, '⑤ [接线断言] ensureSkillInstalled 的运行时分支**必须**调 recordLayOutcome（否则「状态未知」常亮会复发）');
+  }
 }
 
 await rmFixture(root);
