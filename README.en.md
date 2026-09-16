@@ -483,6 +483,14 @@ Then **restart `dsh web`** (the preset roster is read at startup; refreshing the
 - Node.js ≥ 20.
 - Profile: `web` (see "Honest boundaries" above).
 
+## Author & contact
+
+Questions, feedback, or just want to share how you plan to use it — scan to add me on WeChat:
+
+<img src="https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/author-wechat.jpg" alt="Author WeChat QR code" width="220">
+
+WeChat: `ppppue` — the QR code above may expire; the ID does not. An issue in the repository reaches me just as well.
+
 ## License
 
 MIT © yangdcm

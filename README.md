@@ -424,6 +424,14 @@ dsh 安装里插件自带的 Config schema（dsh 路径自动探测，可用 `DS
 - Node.js ≥ 20。
 - profile：`web`（见上「诚实边界」）。
 
+## 作者与联系
+
+有问题、想反馈，或者想聊聊你打算怎么用它，扫码加我微信：
+
+<img src="https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/author-wechat.jpg" alt="作者微信二维码" width="220">
+
+微信号：`ppppue` —— **二维码可能过期，微信号不变**，所以急事直接搜这个号；仓库里开 issue 也一样能找到我。
+
 ## License
 
 MIT © yangdcm

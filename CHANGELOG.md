@@ -3,6 +3,20 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## Unreleased
+
+### 文档
+
+- `README.md` / `README.en.md` 新增「作者与联系 / Author & contact」一节：作者微信二维码
+  `docs/images/author-wechat.jpg`，**并加一行文字微信号 `ppppue`**，中英各一份（内容等价），放在
+  `## License` 之前。**纯文档改动**：`docs/` **不在** `package.json` 的 `files` 里 ⇒ **不进 npm 产物**，
+  只影响 GitHub 上的 README 展示。
+- **为什么图和文字都留**：个人微信二维码会被微信轮换、**会过期**，而**微信号不变** ⇒ 文字那一行才是**耐久
+  渠道**。因此文案里**不写**"二维码永久有效/长期有效"这类话，也不把微信号写成排他渠道（仓库 issue 同样可用）。
+- 二维码是**字节拷贝**（未重新编码）：888×1131 JPEG / 97,434 字节，与源文件 `cmp` 与 sha256 均一致。
+- 图片用**绝对 raw URL** 引用（与 README 里既有 9 张图一致），**不用相对路径**：README 会进 npm 产物而
+  `docs/` 不进 ⇒ 相对路径在 npm 页面上会裂图。
+
 ## 1.3.28
 
 **主题：1.3.26/1.3.27 声称"冷启动时会如实标 `warming:['subs']`"——独立验收在 222 个样本 / 三个场景里
