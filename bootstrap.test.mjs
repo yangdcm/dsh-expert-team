@@ -273,7 +273,7 @@ console.log('\n⑩ 铺设：四态判定 / 原子换名 / 两条路径都不留�
   let PL = null;
   try { PL = await import(join(here, 'lib', 'preset-lay.js')); } catch { PL = null; }
   check(PL && typeof PL.classifyLayTarget === 'function', 'lib/preset-lay.js 导出 classifyLayTarget（旧代码上：断言失败，不是崩溃）');
-  const CL = (PL && PL.classifyLayTarget) || (() => ({ state: undefined, action: undefined, stale: undefined, complete: undefined, missing: [] }));
+  const CL = (PL && PL.classifyLayTarget) || (() => ({ state: undefined, action: undefined, stale: undefined, complete: undefined, missingBeforeLay: [] }));
   const base = { currentVersion: '1.3.25', expectedEntryFiles: ['agent.cordis.yml', 'preset.yml'], presentEntryFiles: ['agent.cordis.yml', 'preset.yml'] };
 
   // ⑩.1 四态
@@ -304,7 +304,7 @@ console.log('\n⑩ 铺设：四态判定 / 原子换名 / 两条路径都不留�
     const samples = [
       PL.describeLayOutcome({ state: 'ours', action: 'lay', version: '1.3.25' }),
       PL.describeLayOutcome({ state: 'foreign-complete' }),
-      PL.describeLayOutcome({ state: 'partial-or-unknown', missing: ['agent.cordis.yml'] }),
+      PL.describeLayOutcome({ state: 'partial-or-unknown', missingBeforeLay: ['agent.cordis.yml'] }),
       PL.describeLayOutcome(null),
     ];
     check(samples.every((s) => s && !hasMd(s.zh) && !hasMd(s.en)), '给界面的一句话不含 markdown 标记（会被原样渲染）', JSON.stringify(samples.map((s) => s.zh)));
@@ -358,7 +358,13 @@ console.log('\n⑩ 铺设：四态判定 / 原子换名 / 两条路径都不留�
     check((await readFile(join(presetDst, 'preset.yml'), 'utf8')) === '# 半成品：只拷到这一个文件就被打断了\n', '(ii) partial-or-unknown ⇒ 不覆盖');
     const stPart = statusOf();
     check(stPart && stPart.preset && stPart.preset.state === 'partial-or-unknown', '(ii) 状态如实记为 partial-or-unknown', JSON.stringify(stPart && stPart.preset && stPart.preset.state));
-    check(stPart && stPart.preset && stPart.preset.missing.length > 0, '(ii) 并列出**缺哪些入口文件**（可操作）', JSON.stringify(stPart && stPart.preset && stPart.preset.missing));
+    check(stPart && stPart.preset && stPart.preset.missingBeforeLay.length > 0, '(ii) 并列出**缺哪些入口文件**（可操作）', JSON.stringify(stPart && stPart.preset && stPart.preset.missingBeforeLay));
+    // ⚠️ 字段名必须**自己说清**它是"铺设前"的快照：全新 DSH_HOME 上 `state:'absent'` 会列出
+    // 全部期望文件，铺完之后 `outcome:'succeeded'` 与它**并列**出现 —— 叫 `missing` 时极易被
+    // 读成"成功了但文件缺"（2026-09-16 独立验收就是这么被读偏的）。所以既钉住新名，也钉住旧名不再出现。
+    check(stPart && stPart.preset && !('missing' in stPart.preset),
+      '(ii) 那个字段叫 `missingBeforeLay`（铺设前快照），不再是与 `succeeded` 并列时会被读偏的 `missing`',
+      JSON.stringify(Object.keys((stPart && stPart.preset) || {})));
     check(stPart && stPart.display && stPart.display.preset && stPart.display.preset.level === 'bad', '(ii) 给界面的一句话是"未覆盖：内容不完整"（显眼，不是一行 warn）', JSON.stringify(stPart && stPart.display && stPart.display.preset));
 
     // (iii) **用户显式**重铺 ⇒ 照铺，且**如实记录替换了什么**

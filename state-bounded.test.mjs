@@ -559,8 +559,15 @@ console.log('\n⑩ "还没就绪的空" vs "真的没有成员"（1.3.24）：�
 {
   const {
     listSubagentStatusBySession, SUB_HEADER_STATS, _resetSubRowsMemo, _resetSubHeaderMemo,
-    SUB_ROWS_MEMO, _resetBoundedState,
+    SUB_ROWS_MEMO, SUB_UNCOVERED_SINCE, _resetBoundedState,
   } = _live;
+  // ⚠️ 只有修后的代码才导出这个 Map。旧代码（`9e0832f`）上没有它 —— 用局部别名 + 空 Map 兜底，
+  // 让"旧码红跑"**逐条报红**而不是抛 TypeError（本仓纪律：**崩溃不算体面地红**）。
+  const sinceMap = (SUB_UNCOVERED_SINCE && typeof SUB_UNCOVERED_SINCE.set === 'function')
+    ? SUB_UNCOVERED_SINCE : new Map();
+  check(sinceMap === SUB_UNCOVERED_SINCE,
+    '⑩ 生产代码把"起算点"独立于行备忘地暴露出来（`SUB_UNCOVERED_SINCE`）',
+    'type=' + typeof SUB_UNCOVERED_SINCE);
   const UUID10 = '11111111-2222-3333-4444-555555555555';
   // 宿主刚起来：`knownIds` 里有人（来自 STATE.json），但一行子会话都还没枚举到。
   const mkCold = () => ({
@@ -582,8 +589,71 @@ console.log('\n⑩ "还没就绪的空" vs "真的没有成员"（1.3.24）：�
   check(!!memo10 && memo10.provisional === true,
     '⑩ 空结果**没有**被当成有效基线（provisional，1.3.21 的修法仍然有效）',
     JSON.stringify(memo10 && { provisional: memo10.provisional, streak: memo10.emptyStreak }));
+  // 子情形①（2026-09-16 独立验收坐实的缺口）：预热**还在飞**（行备忘压根不存在）。
+  // 真机冷启动首个可连接响应在 6.7 s 拿到，那时备忘还没写 ⇒ 旧判据
+  // （要求 `SUB_ROWS_MEMO.get(root).provisional === true`）**必然为假** ⇒ 从未标出。
+  const mkHung = () => ({
+    get: (k) => {
+      if (k === 'subagents') return { listChildren: () => new Promise(() => {}) };
+      if (k === 'sessionQuery') return { listSessions: async () => [], readSession: async () => ({ events: [] }) };
+      if (k === 'sessions') return { list: () => [] };
+      return null;
+    },
+  });
+  _resetSubRowsMemo(); _resetSubHeaderMemo();
+  const rows10b = await listSubagentStatusBySession(mkHung(), 'hung-root', [UUID10],
+    { allowEnum: true, enumDeadlineAt: Date.now() + 40 });
+  check(SUB_ROWS_MEMO.get('hung-root') === undefined,
+    '⑩① 前置：预热在飞 ⇒ 行备忘**不存在**（旧判据在这一态必然为假）',
+    'memo=' + JSON.stringify(SUB_ROWS_MEMO.get('hung-root')));
+  check(rows10b.length === 0 && SUB_HEADER_STATS.notReady === true,
+    '⑩① 预热在飞 + 在册有人却一行没覆盖 ⇒ 仍须标"还没就绪"',
+    'rows=' + rows10b.length + ' notReady=' + SUB_HEADER_STATS.notReady);
+
+  // 子情形②：备忘写了，但写的是 `provisional:false` 的**合法空基线**
+  // （预热当时 `expectRows` 为假）⇒ 不能因此就不标。
+  _resetSubRowsMemo(); _resetSubHeaderMemo();
+  await listSubagentStatusBySession(mkCold(), 'cold2-root', [], { allowEnum: true, enumDeadlineAt: Date.now() + 40 });
+  const memo10c = SUB_ROWS_MEMO.get('cold2-root');
+  check(!!memo10c && memo10c.provisional === false,
+    '⑩② 前置：没有成员时的空基线是**合法**的（provisional:false）',
+    JSON.stringify(memo10c && { provisional: memo10c.provisional }));
+  await listSubagentStatusBySession(mkCold(), 'cold2-root', [UUID10], { allowEnum: true, enumDeadlineAt: Date.now() + 40 });
+  check(SUB_HEADER_STATS.notReady === true,
+    '⑩② 同一 root 换成"在册有人"、备忘却是非 provisional 的空基线 ⇒ 仍须标"还没就绪"',
+    'notReady=' + SUB_HEADER_STATS.notReady);
+
+  // 子情形③（真机第三个场景：200 样本 / 约 37 s / `agents:0 subsPending:1` **全程无标记**）：
+  // 预热**返回了别的行**（覆盖不到在册 id）⇒ 备忘是"有行、非 provisional"，也不能因此不标。
+  const OTHER10 = '99999999-8888-7777-6666-555555555555';
+  const mkOther = () => ({
+    get: (k) => {
+      if (k === 'subagents') return {
+        listChildren: async () => [{ id: OTHER10, mode: 'continuable', label: '', activity: 'inactive', model: '', createdAt: 1, parentId: 'other-parent', depth: 1 }],
+      };
+      if (k === 'sessionQuery') return { listSessions: async () => [], readSession: async () => ({ events: [] }) };
+      if (k === 'sessions') return { list: () => [] };
+      return null;
+    },
+  });
+  _resetSubRowsMemo(); _resetSubHeaderMemo();
+  const rows10d = await listSubagentStatusBySession(mkOther(), 'other-root', [UUID10],
+    { allowEnum: true, enumDeadlineAt: Date.now() + 40 });
+  const memo10d = SUB_ROWS_MEMO.get('other-root');
+  check(rows10d.length === 1 && !!memo10d && memo10d.provisional === false,
+    '⑩③ 前置：预热返回了**别的**行 ⇒ 备忘是"有行、非 provisional"',
+    'rows=' + rows10d.length + ' provisional=' + (memo10d && memo10d.provisional));
+  check(SUB_HEADER_STATS.notReady === true,
+    '⑩③ 有行、但在册成员一个都没覆盖 ⇒ 仍须标"还没就绪"（旧判据在这一态必然为假）',
+    'notReady=' + SUB_HEADER_STATS.notReady);
+
   // 限时：一直拿不到就把"还没就绪"这句**收回**，交给 `subsPending` 表达"明细拿不到"。
-  if (memo10) memo10.provisionalSince = Date.now() - (200 * 60 * 1000);
+  // ⚠️ 起算点现在绑在**消费者侧的事实**上（`SUB_UNCOVERED_SINCE`），不再依赖行备忘 ——
+  // 所以测试也必须篡改它，而不是 `memo.provisionalSince`（后者只覆盖三种情形里的一种）。
+  // ⚠️ `_resetSubHeaderMemo()` = **模拟一次新的请求**：`notReady` 的复位权已从函数内部
+  // 移到调用点（每请求一次），否则同一请求里的第二次调用会把第一次的事实抹掉。
+  sinceMap.set('cold-root', Date.now() - (200 * 60 * 1000));
+  _resetSubHeaderMemo();
   await listSubagentStatusBySession(mkCold(), 'cold-root', [UUID10], { allowEnum: true, enumDeadlineAt: Date.now() + 40 });
   check(SUB_HEADER_STATS.notReady === false,
     '⑩ 超过限时后**不再**声称"还没就绪"（这句话有保质期 —— 否则它自己又会变成一盏常亮灯）',
@@ -592,10 +662,50 @@ console.log('\n⑩ "还没就绪的空" vs "真的没有成员"（1.3.24）：�
   _resetSubRowsMemo(); _resetSubHeaderMemo();
   await listSubagentStatusBySession(mkCold(), 'cold-root', [], { allowEnum: true, enumDeadlineAt: Date.now() + 40 });
   check(SUB_HEADER_STATS.notReady === false, '⑩ 本来就没有成员 ⇒ 不标"还没就绪"（两种零分得开）', 'notReady=' + SUB_HEADER_STATS.notReady);
+  // 反向（更强）：先"在册有人却一个都没覆盖" ⇒ 标；随后**覆盖上了** ⇒ 起算点必须清掉（不许粘住）。
+  _resetSubRowsMemo(); _resetSubHeaderMemo();
+  await listSubagentStatusBySession(mkCold(), 'cover-root', [UUID10], { allowEnum: true, enumDeadlineAt: Date.now() + 40 });
+  check(SUB_HEADER_STATS.notReady === true && sinceMap.has('cover-root'),
+    '⑩④ 前置：拿不到 ⇒ 标"还没就绪"并记下起算点',
+    'notReady=' + SUB_HEADER_STATS.notReady + ' since=' + sinceMap.get('cover-root'));
+  const mkCover = () => ({
+    get: (k) => {
+      if (k === 'subagents') return {
+        listChildren: async () => [{ id: UUID10, mode: 'continuable', label: '', activity: 'inactive', model: '', createdAt: 1, parentId: 'cover-root', depth: 1 }],
+      };
+      if (k === 'sessionQuery') return { listSessions: async () => [], readSession: async () => ({ events: [] }) };
+      if (k === 'sessions') return { list: () => [] };
+      return null;
+    },
+  });
+  // ⚠️ 必须先把**重试窗口**推过去：上一发刚写过 `provisional` 备忘（`retryMs` 默认 2 s），
+  // 窗口内不会再预热 ⇒ 那一轮**拿不到行是正常的**，标记也该留着（"还没就绪"仍然为真）。
+  // 这条细节本身就是诚实性的一部分：标记跟着**事实**走，不跟着"我们又问了一次"走。
+  const memoCover = SUB_ROWS_MEMO.get('cover-root');
+  if (memoCover) memoCover.at = Date.now() - (10 * 60 * 1000);
+  // 又是一次**新请求**（复位归调用点）⇒ 这一发的 `notReady` 必须由这一发自己的观察决定。
+  _resetSubHeaderMemo();
+  await listSubagentStatusBySession(mkCover(), 'cover-root', [UUID10], { allowEnum: true, enumDeadlineAt: Date.now() + 40 });
+  check(SUB_HEADER_STATS.notReady === false && !sinceMap.has('cover-root'),
+    '⑩④ 覆盖上了 ⇒ 起算点清掉（下次再出现重新计时；否则又是一盏粘住的灯）',
+    'notReady=' + SUB_HEADER_STATS.notReady + ' has=' + sinceMap.has('cover-root'));
   // 接线棘轮：这个事实**必须**被送到响应里，否则它只是又一个内部字段（1.3.23 的教训）。
+  // ⚠️ 同时钉住"判据只看消费者侧事实"：那条 2026-09-16 被证伪的 `memoNow.provisional` 前置条件
+  // **不许**回来（222 样本 / 三场景实测它在真实场景里一次都没置位）。
   const cmdSrc10 = readFileSync(join(here, 'lib', 'command.js'), 'utf8');
   check(/if \(needSubs && SUB_HEADER_STATS\.notReady\) warming\.push\('subs'\)/.test(cmdSrc10),
     "⑩ 生产接线把它挂成 `warming:['subs']`（沿用既有语义，不造新概念）", '');
+  check(!/memoNow\.provisional/.test(cmdSrc10) && /SUB_UNCOVERED_SINCE/.test(cmdSrc10),
+    '⑩⑤ `notReady` 的判据**不再**依赖行备忘的 `provisional`（改用消费者侧事实 + 独立起算点）', '');
+  // ⑩⑥ **归属权**棘轮：复位必须在**每请求一次**的调用点（与 `cut` 同一处），**不许**回到函数内部的
+  // "每次调用开头复位" —— 同一请求里该函数会被调两次（归属会话拿不到人 ⇒ 退路再调一次），
+  // 第二次会把手第一次算出的事实抹掉（2026-09-16 临时实例实测：`members:13 / agents:0 /
+  // `subsPending:13` 却依然没有 `warming:['subs']`）。
+  check(/SUB_HEADER_STATS\.cut = '';\n\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*SUB_HEADER_STATS\.notReady = false;/.test(cmdSrc10)
+        || /SUB_HEADER_STATS\.cut = '';[\s\S]{0,400}?SUB_HEADER_STATS\.notReady = false;/.test(cmdSrc10),
+    '⑩⑥ 调用点在"每请求一次"的位置复位 `notReady`（与 `cut` 同一处）', '');
+  check(!/SUB_HEADER_STATS\.notReady = false;\s*\n\s*\/\/ 有界化（2026-09-15）/.test(cmdSrc10),
+    '⑩⑥ 函数内部**不再**每次调用都复位它（否则退路那次调用会把事实抹掉）', '');
   const clientSrc10 = readFileSync(join(here, 'client.js'), 'utf8');
   check(/subs: t\('成员明细'/.test(clientSrc10) && /warmingNoSnapshot/.test(clientSrc10),
     '⑩ 客户端认识 `subs`，且标题按"尚无快照"与"上一份快照"分开措辞（旧文案对这种情况是假话）', '');

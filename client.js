@@ -1370,7 +1370,7 @@ window.__ModuleLoader__.load({
             // 如实回报**替换了什么**（不静默）——服务端把 before 一起回来了。
             var parts = (d.results || []).map(function (r) {
               if (r.skipped) return t(r.kind + '：走运行时注册，无需铺盘', r.kind + ': runtime registration, nothing laid')
-              var b = r.before ? t('（原 ' + r.before.state + '，' + (r.before.missing || []).length + ' 项缺失）', ' (was ' + r.before.state + ')') : ''
+              var b = r.before ? t('（原 ' + r.before.state + '，' + (r.before.missingBeforeLay || []).length + ' 项缺失）', ' (was ' + r.before.state + ')') : ''
               return r.kind + b
             })
             setMsg(t('已重新铺设 ', 're-laid ') + parts.join('；'))

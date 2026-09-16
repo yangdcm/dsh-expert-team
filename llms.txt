@@ -22,7 +22,7 @@
 - 落盘位置：工件在 `<你的工作区>/team/<run-id>/`；本机偏好与跨项目经验在 `$DSH_HOME/expert-team/`
 - 推荐插件：Hindsight（跨项目/跨会话长期记忆）— 不装也能跑完整个流程
 - 可选插件：`dsh-cost-meter`（会话费用视图）
-- 测试：89 个测试文件（`npm run test:all`，零依赖、无需 `install`），含 155 条变异目录与多组棘轮（ratchet）测试（变异目录在 CI 里只校验形状；变异体需手动注入验证）
+- 测试：89 个测试文件（`npm run test:all`，零依赖、无需 `install`），含 156 条变异目录与多组棘轮（ratchet）测试（变异目录在 CI 里只校验形状；变异体需手动注入验证）
 - 写侧门禁：`write`/`edit` 通道有工件归属硬门禁（`tools/pre-execute`；创建放行、覆写他人工件当场拒绝；持 `bash` 的角色仍可能绕过）
 - 设置页：官方 `设置 →「专家团」`（宿主命名空间 `expert-team`，改动即时生效，随插件市场备份/恢复）
 - 会改宿主 GUI 的**一处展示顺序**（默认开，可关）：装上后**子代理列表按最新在上**显示。只改展示顺序——插件遮蔽宿主把目录送到浏览器的那一个 remote 方法（`subagents/list` → `remoteExportList`）并反转数组；服务端 `listChildren` 的契约（按 createdAt 升序）**原样不动**，模型侧 `list_agents` 与本插件 `/state` 不受影响。设置项 `display.subagentListNewestFirst` 可关；宿主结构不匹配时**自动退回宿主默认顺序**并在设置页如实显示「未生效」

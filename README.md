@@ -16,7 +16,7 @@
 
 | 12 角色 | 9 阶段 | 89 个测试文件 | 0 运行时依赖 | 0 构建步骤 |
 |---|---|---|---|---|
-| 各带人设 / `toolFilter` / `maxDepth: 1` | 含 1 道硬门 + 1 道确认门 | 含 155 条变异目录与多组棘轮 | `dependencies: {}` | 无 bundler、无 `prepare` 钩子 |
+| 各带人设 / `toolFilter` / `maxDepth: 1` | 含 1 道硬门 + 1 道确认门 | 含 156 条变异目录与多组棘轮 | `dependencies: {}` | 无 bundler、无 `prepare` 钩子 |
 
 > 零运行时依赖。推荐同时装 **Hindsight**（跨项目记忆）—— 见[依赖与推荐插件](#依赖与推荐插件--dependencies-and-recommended-plugins)。
 
@@ -143,7 +143,7 @@ $ /team 做一个带登录的支付模块
   （`SPEC_COMPLETE_PHASES`）。**规格沉默等于允许，那正是头号返工源。**
 - **零运行时依赖、零 devDependencies、无构建步骤、无 `prepare`/`postinstall` 钩子。** 装完就是能跑的那份代码，
   没有"安装时执行未知脚本"这一层。
-- **89 个测试文件 + 155 条变异目录。** `npm run test:all` 无需 `install` 即可跑（CI 跑的就是它）。
+- **89 个测试文件 + 156 条变异目录。** `npm run test:all` 无需 `install` 即可跑（CI 跑的就是它）。
   ⚠️ **变异目录的实际保障范围（如实说）**：`mutation-catalog.test.mjs` 在 CI 里校验的是目录**形状** —— id 唯一、每个变异体的 `find` 串在目标文件里**恰好命中一次**、目标测试文件存在、条数与常量一致；**变异体本身需要手动注入**（把 `find` 换成 `replace` 再跑对应测试，看它是否变红），**CI 目前不执行变异体**。所以它是"防呆 + 防漂移"，不是"自动证明测试能抓错" —— 别把它读成后者。
 - **多组棘轮（ratchet）测试**，把"已经想清楚的规矩"钉住，防止悄悄退化：
   `vocab-consistency`（术语与角色标签单一真源）、`scan-single-source`（同一事实不许有两个家）、
