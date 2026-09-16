@@ -1443,15 +1443,45 @@ window.__ModuleLoader__.load({
           h('span', { className: 'exp-hs-v' }, h('code', null, esc(String(d.bankForWorkspace))))))
       }
       if (d.lastFailure && d.lastFailure.summary) {
-        // ⚠️ 历史失败 ≠ 当前故障（2026-09-16 纠错：真机上它把用户和派工方都误导了）：
-        // 旧实现一律按"当前故障"渲染 —— 告警框 + 整改指令，即使那条失败发生在**两小时前**、
-        // 之后已有大量成功。现在按 `sinceFailure.successes` 分两态：
-        //   · 有后续成功 ⇒ 中性「历史 · 已恢复」：说清"这是 <ts> 的历史失败，此后已有 N 次成功
-        //     （最近 <ts>，耗时 <ms> ms）"，**不再**给"处理建议"（前提没被验证的动作比不给动作更坏）；
-        //   · 无后续成功 ⇒ 才按当前故障处理（告警框 + 分类 + 说明）。
+        // ⚠️ 历史失败 ≠ 当前故障（2026-09-16 两次纠错；第二次是"证据撑不起结论"）：
+        //   ① 旧实现一律按"当前故障"渲染 ⇒ 把两小时前的失败以现在时呈现（已修）；
+        //   ② 第二次修的：判"已恢复"**必须用同类证据** —— 那次失败是 `retain_failed`（写 memories），
+        //      而旧判据（一个把**一切无 error 记录**都算成"成功"的混合计数）把 `inject_ok`（读路径）、`session_start`（生命周期）、
+        //      `reflect_deferred_new_bank`（**被推迟**，根本没干活）全算成"成功" ⇒ 界面说"已恢复"，
+        //      但读者无法从中判断**写入**是否恢复。现在只认 `sfa.recovered`（= 其后有**同操作**的 `_ok`），
+        //      并在话术里点明是**哪一类**成功；证据不足时**一律按当前故障渲染**，绝不说"已恢复"。
         var lf = d.lastFailure
         var sfa = (lf.sinceFailure && typeof lf.sinceFailure === 'object') ? lf.sinceFailure : null
-        var recovered = !!(sfa && sfa.successes > 0)
+        var same = (sfa && sfa.sameKind && typeof sfa.sameKind === 'object') ? sfa.sameKind : null
+        var recovered = !!(sfa && sfa.recovered === true)
+        var HS_OP_LABEL = {
+          retain: ['记忆写入 retain', 'memory write (retain)'],
+          pages: ['知识页写入 pages', 'knowledge-page write (pages)'],
+          inject: ['召回读取 inject', 'recall / inject'],
+          reflect: ['反思 reflect', 'reflect'],
+        }
+        // 未知操作**原样显示**事件里那个词（不替它编一个好听的名字 —— 分类是观察，不是结论）
+        var hsOpLabel = function (op) {
+          var key = String(op == null ? '' : op)
+          var pair = HS_OP_LABEL[key]
+          if (pair) return t(pair[0], pair[1])
+          return key ? key : t('（未知操作）', '(unknown op)')
+        }
+        // "其它类别的成功"要摆出来，但**必须**同时说清它们不构成证据
+        var hsOtherCounts = function () {
+          if (!sfa || !sfa.byKind || typeof sfa.byKind !== 'object') return ''
+          var parts = []
+          var label = { write: ['写入', 'write'], read: ['读取', 'read'], reflect: ['反思', 'reflect'], lifecycle: ['生命周期', 'lifecycle'], unknown: ['未知类别', 'unknown'] }
+          for (var k in label) {
+            if (!Object.prototype.hasOwnProperty.call(label, k)) continue
+            var b = sfa.byKind[k]
+            if (!b || !(b.ok > 0)) continue
+            if (k === (same && same.kind)) continue
+            parts.push(t(label[k][0], label[k][1]) + ' ' + String(b.ok))
+          }
+          if (sfa.emptyRecalls > 0) parts.push(t('召回为空', 'empty recalls') + ' ' + String(sfa.emptyRecalls))
+          return parts.length ? t('（另有：', '(also: ') + parts.join(' / ') + t(' —— 它们不构成"这一类已恢复"的证据）', ' — they do NOT prove THIS kind recovered)') : ''
+        }
         if (recovered) {
           rows.push(h('div', { key: 'hs-fail', className: 'exp-hs-hist' },
             h('div', null,
@@ -1459,21 +1489,29 @@ window.__ModuleLoader__.load({
               h('span', { className: 'exp-hs-tag' }, esc(String(lf.classification || 'unknown'))),
               esc(' ' + String(lf.at || '') + (lf.event ? ' · ' + String(lf.event) : ''))),
             h('div', null, esc(t('这是 ', 'This failure happened at ') + String(lf.at || '')
-              + t(' 的历史失败；此后已有 ', '; since then there have been ')
-              + String(sfa.successes) + t(' 次成功', ' successful calls')
-              + (sfa.lastSuccessAt ? t('（最近 ', ' (latest ') + String(sfa.lastSuccessAt)
-                + (sfa.lastSuccessMs == null ? '' : t('，耗时 ', ', took ') + String(sfa.lastSuccessMs) + ' ms') + '）' : '')
+              + t(' 的历史失败（', ' ; it was a ')
+              + hsOpLabel(same && same.op)
+              + t(' 失败）；此后已有 ', ' failure); since then there have been ')
+              + String((same && same.count) || 0)
+              + t(' 次同类成功', ' same-operation successes')
+              + (same && same.lastAt ? t('（最近 ', ' (latest ') + String(same.lastAt)
+                + (same.lastMs == null ? '' : t('，耗时 ', ', took ') + String(same.lastMs) + ' ms') + '）' : '')
               + t('。它现在不是当前故障 —— 因此不给你整改动作。', '. It is NOT a current failure, so no fix is suggested.'))),
+            h('div', null, esc(hsOtherCounts())),
             h('div', { className: 'exp-hs-hint' }, esc(String(lf.summary || '')))))
         } else {
+          var basis = (sfa && sfa.recovered === false)
+            ? t('尚无同类成功', 'no same-operation success yet')
+            : t('无法判定（缺后续证据）', 'cannot tell (no later evidence)')
           rows.push(h('div', { key: 'hs-fail', className: 'exp-hs-warn' },
             h('div', null, h('span', { className: 'exp-hs-tag' }, esc(String(lf.classification || 'unknown'))),
               esc(' ' + String(lf.at || '') + (lf.event ? ' · ' + String(lf.event) : '')),
-              h('span', { className: 'exp-hs-tag' }, esc(t('尚无后续成功', 'no later success yet')))),
-            (sfa && sfa.emptyRecalls > 0)
-              ? h('div', null, esc(t('（此后有 ', '(there were ') + String(sfa.emptyRecalls)
-                + t(' 次召回为空：说明服务在响应，但这不等于写入已恢复）', ' empty recalls: the service responds, but that does NOT prove writes recovered)')))
-              : null,
+              h('span', { className: 'exp-hs-tag' }, esc(basis))),
+            h('div', null, esc(sfa && sfa.recovered === false
+              ? t('这条失败是「', 'The failure was in ') + hsOpLabel(sfa.lastFailureOp)
+                + t('」；此后没有同一个操作的成功记录 ⇒ 不能据此说它已恢复。', ' — there is NO later success for that same operation, so it cannot be called recovered.')
+              : t('拿不到"此后有没有同类成功"的证据（诊断日志读不到或字段缺失）⇒ 不做判断。', 'No evidence about later same-operation successes (diag log unreadable or fields missing) — no judgement made.'))),
+            h('div', null, esc(hsOtherCounts())),
             h('div', null, esc(String(lf.summary || ''))),
             h('div', { className: 'exp-hs-hint' }, esc(t('这说明什么：', 'What this means: ') + String(lf.hint || '')))))
         }

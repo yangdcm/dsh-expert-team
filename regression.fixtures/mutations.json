@@ -1955,6 +1955,19 @@
           "replace": "      SUB_HEADER_STATS.notReady = false;"
         }
       ]
+    },
+    {
+      "id": "M150-same-kind-evidence-any-op",
+      "title": "「已恢复」的同类证据判据被放宽成「任何操作的成功都算」",
+      "why": "2026-09-16 新增（A 线：修「结论对、证据撑不起结论」）。真机事故：那次失败是 `retain_failed`（写 memories），而旧判据把 `inject_ok`（读路径）、`session_start`（生命周期）、`reflect_deferred_new_bank`（**被推迟**，根本没干活）全算成「成功」⇒ 界面说「已恢复」，读者却无法判断**写入**是否恢复。修法是只认**同类**证据（`op === lastFailureOp`）；把它放宽成 `if (true)`，跨类别/跨端点的成功就会重新被当成本类恢复的证据。 预期红：`② **写失败 + 其后只有读路径/生命周期 ⇒ recovered=false**`、`③ 失败在**读**路径、其后只有**写**成功 ⇒ recovered=false`、`④ 同类证据只认**同一个端点**`（**实测 3 项**）。",
+      "test": "hindsight-config.test.mjs",
+      "edits": [
+        {
+          "file": "lib/hindsight-config.js",
+          "find": "      if (op === since.lastFailureOp) {",
+          "replace": "      if (true) {"
+        }
+      ]
     }
   ]
 }

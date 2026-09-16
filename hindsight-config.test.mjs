@@ -71,9 +71,16 @@ console.log('\n③ 日志解析：两种零分得开；坏行/半行不许抛');
     JSON.stringify({ ts: '2026-09-15T12:06:00Z', event: 'inject_empty', ms: 12 }),
   ].join('\n'));
   check(ok && ok.classification === 'http-403-html' && ok.at === '2026-09-15T12:05:26Z', '取到带 error 的那条并分类', ok && ok.classification);
-  check(ok && ok.sinceFailure && ok.sinceFailure.successes === 0 && ok.sinceFailure.emptyRecalls === 1,
-    '失败之后**没有**真正的成功、只有一次召回为空 ⇒ successes=0 / emptyRecalls=1（两者分开计数）',
-    JSON.stringify(ok && ok.sinceFailure));
+  // 新判据（2026-09-16 第二次纠错）：不再有那个"把一切无 error 记录都算成功"的混合计数。
+  // 失败的操作是 `retain`，其后只有一次 `inject_empty` ⇒ 同类成功 0，且**不得**判为已恢复。
+  check(ok && ok.sinceFailure && ok.sinceFailure.recovered === false
+    && ok.sinceFailure.sameKind && ok.sinceFailure.sameKind.count === 0
+    && ok.sinceFailure.emptyRecalls === 1,
+    '失败之后**没有同类成功**、只有一次召回为空 ⇒ recovered=false / sameKind.count=0 / emptyRecalls=1（三者分开）',
+    JSON.stringify(ok && ok.sinceFailure && { recovered: ok.sinceFailure.recovered, same: ok.sinceFailure.sameKind && ok.sinceFailure.sameKind.count, empty: ok.sinceFailure.emptyRecalls }));
+  check(ok && ok.op === 'retain' && ok.kind === 'write',
+    '失败记录本身带上「操作/类别」（retain_failed ⇒ retain / write）—— 判"同类证据"必须先知道失败在哪一类',
+    ok && (ok.op + ' / ' + ok.kind));
 
   check(hs.pickLastFailure(JSON.stringify({ ts: 't', event: 'inject_empty', ms: 3 })) === null,
     '**只有 `inject_empty`（召回为空）⇒ 不算失败**（两种零必须分得开）', '');
@@ -127,9 +134,12 @@ console.log('\n⑥ 探测语义：不探测绝不发网络；任何 HTTP 响应�
   check(!JSON.stringify(noProbe).includes('SENTINEL-abc'), '**安全红线：整个响应全文不含 token 值**', '');
   check(noProbe.bankForWorkspace === 'coding-agent::liangge', '带 cwd ⇒ 给出本工作区 bank', String(noProbe.bankForWorkspace));
   check(noProbe.lastFailure && noProbe.lastFailure.classification === 'http-403-html', '最近失败已分类并带 hint', noProbe.lastFailure && noProbe.lastFailure.classification);
-  check(noProbe.lastFailure && noProbe.lastFailure.sinceFailure && typeof noProbe.lastFailure.sinceFailure.successes === 'number',
-    '报告里的 lastFailure **带 `sinceFailure`**（调用方据此判断它是历史还是当前 —— 这是本次修复的承重字段）',
-    JSON.stringify(noProbe.lastFailure && noProbe.lastFailure.sinceFailure));
+  check(noProbe.lastFailure && noProbe.lastFailure.sinceFailure
+    && typeof noProbe.lastFailure.sinceFailure.recovered === 'boolean'
+    && noProbe.lastFailure.sinceFailure.sameKind && typeof noProbe.lastFailure.sinceFailure.sameKind.count === 'number'
+    && noProbe.lastFailure.op === 'retain' && noProbe.lastFailure.kind === 'write',
+    '报告里的 lastFailure 带 `sinceFailure`（判"历史还是当前"的承重字段）＋ 失败自身的 `op`/`kind`（判"同类证据"的前提）',
+    JSON.stringify({ op: noProbe.lastFailure.op, kind: noProbe.lastFailure.kind, recovered: noProbe.lastFailure.sinceFailure.recovered, sameKind: (noProbe.lastFailure.sinceFailure.sameKind || {}).count }));
   const keys = Object.keys(noProbe).sort().join(',');
   check(keys === 'apiTokenConfigured,apiUrl,apiUrlEffective,bankForWorkspace,diagPath,exists,lastFailure,notes,ok,path,probeMs,reachable,serverMode',
     '报告字段集合稳定（前端可依赖）', keys);
@@ -447,47 +457,94 @@ console.log('\n⑨ 面板文案不许带 markdown 标记（这些字符串是**�
 }
 
 
-console.log('\n⑩ **历史失败 ≠ 当前故障**（2026-09-16 纠错）：必须与后续成功比较，且读不到日志 ≠ 没有失败');
+console.log('\n⑩ **历史失败 ≠ 当前故障**（2026-09-16 两次纠错）：判「已恢复」只认**同类证据**；读不到日志 ≠ 没有失败');
 {
   const mk = (o) => JSON.stringify(o);
   const FAIL = mk({ ts: '2026-09-15T14:22:32.239Z', event: 'retain_failed', ms: 1200, error: WAF_403 });
   const OK1 = mk({ ts: '2026-09-15T16:34:26Z', event: 'retain_ok', ms: 88 });
   const OK2 = mk({ ts: '2026-09-15T16:36:00Z', event: 'retain_ok', ms: 74 });
   const EMPTY = mk({ ts: '2026-09-15T16:35:00Z', event: 'inject_empty', ms: 6 });
+  // 断言里的**取值**一律走这三个 null-safe 取值器：旧代码没有这些字段时，
+  // 断言要**逐条报红**（"修复前是红的"才算证据），而不是在详情表达式里崩掉。
+  const sk = (sf) => (sf && sf.sameKind) || { count: 0, op: null, lastAt: null, lastMs: null, lastEvent: null };
+  const bk = (sf, kind) => (sf && sf.byKind && sf.byKind[kind]) || { ok: 0, neutral: 0 };
+  const bop = (sf, op) => (sf && sf.byOperation && sf.byOperation[op]) || { ok: 0, neutral: 0 };
 
-  // ① 失败**之后有成功** ⇒ 判定为历史（真机事故：两小时前那一条被当成当前故障）
+  // ① 失败之后有**同操作**成功 ⇒ 判为历史，且证据能说清是哪一类
   const rec = hs.scanDiag([FAIL, EMPTY, OK1, OK2].join('\n'));
-  check(rec.lastFailure && rec.lastFailure.sinceFailure.successes === 2,
-    '① 失败之后有 2 次成功 ⇒ sinceFailure.successes === 2（**判定的唯一依据**）',
-    JSON.stringify(rec.lastFailure && rec.lastFailure.sinceFailure));
-  check(rec.sinceFailure.lastSuccessAt === '2026-09-15T16:36:00Z' && rec.sinceFailure.lastSuccessMs === 74,
-    '① 最近成功的时间与耗时都取到（文案要用它们说清「此后有 N 次成功」）',
-    rec.sinceFailure.lastSuccessAt + ' / ' + rec.sinceFailure.lastSuccessMs);
-  check(rec.sinceFailure.emptyRecalls === 1,
-    '① 「召回为空」**不计入**成功（它只证明读路径在响应，不证明写入已恢复）—— 但单独计数不丢',
-    String(rec.sinceFailure.emptyRecalls));
+  check(rec.lastFailure && rec.lastFailure.op === 'retain' && rec.lastFailure.kind === 'write',
+    '① 失败记录带上 op/kind（retain_failed ⇒ retain / write）—— 判"同类证据"必须先知道失败在哪一类',
+    rec.lastFailure && (rec.lastFailure.op + ' / ' + rec.lastFailure.kind));
+  check(rec.sinceFailure.recovered === true && sk(rec.sinceFailure).count === 2
+    && sk(rec.sinceFailure).op === 'retain' && sk(rec.sinceFailure).lastEvent === 'retain_ok',
+    '① 其后有 2 次**同类**（retain_ok）成功 ⇒ recovered=true，且 sameKind 指向同一个操作',
+    JSON.stringify(rec.sinceFailure.sameKind));
+  check(sk(rec.sinceFailure).lastAt === '2026-09-15T16:36:00Z' && sk(rec.sinceFailure).lastMs === 74,
+    '① 同类证据的**最近一次**时间与耗时都取到（文案要用它们说清「最近 <ts>，耗时 <ms> ms」）',
+    sk(rec.sinceFailure).lastAt + ' / ' + sk(rec.sinceFailure).lastMs);
+  check(rec.sinceFailure.emptyRecalls === 1 && bk(rec.sinceFailure, 'read').ok === 0,
+    '① 「召回为空」既不算成功也不算失败 ⇒ 单独计数，且不进任何 ok 桶',
+    'empty=' + rec.sinceFailure.emptyRecalls + ' read.ok=' + bk(rec.sinceFailure, 'read').ok);
 
-  // ② 失败之后**没有**成功 ⇒ 仍按当前故障处理
+  // ② 【本次承重用例】写失败 + 其后**只有读路径 / 生命周期** ⇒ **不得**判为已恢复
+  const wrong = hs.scanDiag([
+    FAIL,
+    mk({ ts: '2026-09-15T16:30:00Z', event: 'inject_ok', ms: 5 }),
+    mk({ ts: '2026-09-15T16:31:00Z', event: 'session_start' }),
+    mk({ ts: '2026-09-15T16:32:00Z', event: 'reflect_deferred_new_bank' }),
+    EMPTY,
+  ].join('\n'));
+  check(wrong.sinceFailure.recovered === false && sk(wrong.sinceFailure).count === 0,
+    '② **写失败 + 其后只有读路径/生命周期 ⇒ recovered=false**（真机上"结论碰巧对、证据撑不起结论"就是这个形态）',
+    JSON.stringify({ recovered: wrong.sinceFailure.recovered, sameKind: sk(wrong.sinceFailure).count }));
+  check(bk(wrong.sinceFailure, 'read').ok === 1 && bk(wrong.sinceFailure, 'lifecycle').neutral === 1
+    && bk(wrong.sinceFailure, 'lifecycle').ok === 0,
+    '② 分类计数互不串台：读路径成功进 read.ok；`session_start` 是 lifecycle.**neutral**（"发生了" ≠ "成功"）',
+    JSON.stringify(wrong.sinceFailure.byKind));
+  check(bk(wrong.sinceFailure, 'reflect').neutral === 1 && bk(wrong.sinceFailure, 'reflect').ok === 0,
+    '② **被推迟**的事件（`reflect_deferred_new_bank`）算 neutral、**不算成功**（没干活的不许记成功）',
+    JSON.stringify(bk(wrong.sinceFailure, 'reflect')));
+
+  // ③ 跨类别不算证据：读失败 + 其后只有写成功 ⇒ 仍不得判为已恢复
+  const cross = hs.scanDiag([mk({ ts: '2026-09-15T16:00:00Z', event: 'inject_failed', error: 'boom' }), OK1].join('\n'));
+  check(cross.sinceFailure.recovered === false && bk(cross.sinceFailure, 'write').ok === 1,
+    '③ 失败在**读**路径、其后只有**写**成功 ⇒ recovered=false（写成功证明不了读恢复了）',
+    JSON.stringify({ recovered: cross.sinceFailure.recovered, writeOk: bk(cross.sinceFailure, 'write').ok }));
+
+  // ④ 按**端点**分开归并：`pages_ok` 与 `retain_ok` 同属 write，但是两个不同的操作
+  const ops = hs.scanDiag([FAIL, OK1, mk({ ts: '2026-09-15T16:40:00Z', event: 'pages_ok', ms: 30 })].join('\n'));
+  check(bop(ops.sinceFailure, 'retain').ok === 1 && bop(ops.sinceFailure, 'pages').ok === 1
+    && bk(ops.sinceFailure, 'write').ok === 2,
+    '④ `retain`（写 memories）与 `pages`（写知识页）按端点分开计数，同时都归 write（那次 WAF 403 就出在 /pages 上）',
+    JSON.stringify(ops.sinceFailure.byOperation));
+  check(sk(ops.sinceFailure).count === 1,
+    '④ 同类证据只认**同一个端点**（`pages_ok` 不被当成 `retain` 的同类成功）', String(ops.sinceFailure.sameKind.count));
+
+  // ⑤ 失败之后没有任何成功 ⇒ 仍按当前故障处理
   const cur = hs.scanDiag([OK1, FAIL].join('\n'));
-  check(cur.lastFailure && cur.lastFailure.sinceFailure.successes === 0,
-    '② 失败在最后、之后没有任何成功 ⇒ successes === 0（仍按当前故障处理）',
-    JSON.stringify(cur.lastFailure && cur.lastFailure.sinceFailure));
+  check(cur.sinceFailure.recovered === false && sk(cur.sinceFailure).count === 0,
+    '⑤ 失败在最后、之后没有任何记录 ⇒ recovered=false（仍按当前故障处理）',
+    JSON.stringify(sk(cur.sinceFailure)));
 
-  // ③ 客户端必须**按这两态分别渲染**，且历史态不许再挂告警框 / 整改指令
+  // ⑥ 客户端：只认同类证据；证据不足时**不许**出现"已恢复"
   const clientSrc = readFileSync(join(here, 'client.js'), 'utf8');
-  check(/var recovered = !!\(sfa && sfa\.successes > 0\)/.test(clientSrc),
-    '③ 客户端按 sinceFailure.successes > 0 判「已恢复」（不是一个写死的样式）', '');
+  check(/var recovered = !!\(sfa && sfa\.recovered === true\)/.test(clientSrc),
+    '⑥ 客户端按 `sinceFailure.recovered === true` 判「已恢复」（不再用那个把一切无 error 记录都算成功的混合计数）', '');
+  check(!/sfa\.successes|sinceFailure\.successes/.test(clientSrc) && !/\.successes/.test(readFileSync(join(here, 'lib', 'hindsight-config.js'), 'utf8')),
+    '⑥ 客户端与诊断模块里**都再也没有** `successes` 这个混合计数（它是这次缺陷的载体）', '');
   check(/className: 'exp-hs-hist'/.test(clientSrc) && /\.exp-hs-hist\{/.test(clientSrc),
-    '③ 历史态走**中性的** .exp-hs-hist（告警框是 .exp-hs-warn，两者样式区分）', '');
-  check(/历史 · 已恢复/.test(clientSrc) && /次成功/.test(clientSrc) && /lastSuccessMs/.test(clientSrc),
-    '③ 历史态文案说清「这是 <ts> 的历史失败，此后已有 N 次成功（最近 <ts>，耗时 <ms> ms）」', '');
-  check(/尚无后续成功/.test(clientSrc),
-    '③ 当前故障态**明确标出**「尚无后续成功」（否则用户无法区分两态）', '');
+    '⑥ 历史态走**中性的** .exp-hs-hist（告警框是 .exp-hs-warn，两者样式区分）', '');
+  check(/历史 · 已恢复/.test(clientSrc) && /次同类成功/.test(clientSrc) && /same\.lastMs/.test(clientSrc),
+    '⑥ 历史态文案说清「这是 <ts> 的历史失败（<哪一类>失败）；此后已有 N 次**同类**成功（最近 <ts>，耗时 <ms> ms）」', '');
+  check(/尚无同类成功/.test(clientSrc) && /不能据此说它已恢复/.test(clientSrc),
+    '⑥ 没有同类成功时**明说**"不能据此说它已恢复"（不许含糊成"尚无后续成功"）', '');
+  check(/无法判定（缺后续证据）/.test(clientSrc),
+    '⑥ 拿不到证据时**明说无法判定**（证据不足时不许显示"已恢复"）', '');
   const histBlock = (clientSrc.match(/if \(recovered\) \{[\s\S]*?\} else \{/) || [''])[0];
   check(histBlock.length > 0 && !/处理建议|这说明什么/.test(histBlock),
-    '③ 历史态里**不含**任何整改指令（把历史失败当当前故障给动作，正是这次误导的形态）', 'len=' + histBlock.length);
+    '⑥ 历史态里**不含**任何整改指令（把历史失败当当前故障给动作，正是这次误导的形态）', 'len=' + histBlock.length);
 
-  // ④ 「读不到」 ≠ 「没有失败」（两种零必须分得开）
+  // ⑦ 「读不到」 ≠ 「没有失败」（两种零必须分得开）
   const cfgText10 = JSON.stringify({ serverMode: 'self-hosted', apiUrl: 'https://qbbt.8nit.cn', apiToken: 'SENTINEL-abc' });
   const reportWith = async (diag) => hs.buildHindsightReport({
     env: {}, home: '/fake/home', probe: false, io: { readText: async (p) => { if (p.endsWith('coding-agent.json')) return cfgText10; if (diag === null) throw new Error('ENOENT'); return diag; } },
@@ -495,15 +552,15 @@ console.log('\n⑩ **历史失败 ≠ 当前故障**（2026-09-16 纠错）：�
   });
   const noLog = await reportWith(null);
   check(noLog.lastFailure === null && noLog.notes.some((n) => /读不到/.test(n) && /无法判断/.test(n)),
-    '④ 日志**读不到** ⇒ 如实说「无法判断有没有失败」（**不许**说成「没有失败」）',
+    '⑦ 日志**读不到** ⇒ 如实说「无法判断有没有失败」（**不许**说成「没有失败」）',
     JSON.stringify(noLog.notes.filter((n) => /日志/.test(n))));
   const junkLog = await reportWith('{"ts":"a","event":\n不是 JSON\n{');
   check(junkLog.lastFailure === null && junkLog.notes.some((n) => /没有一条可解析/.test(n) && /无法判断/.test(n)),
-    '④ 日志**存在但一行都解析不出来**（坏行/半写）⇒ 同样是「无法判断」（读不懂 ≠ 没问题）',
+    '⑦ 日志**存在但一行都解析不出来**（坏行/半写）⇒ 同样是「无法判断」（读不懂 ≠ 没问题）',
     JSON.stringify(junkLog.notes.filter((n) => /日志/.test(n))));
   const cleanLog = await reportWith(mk({ ts: 't', event: 'retain_ok', ms: 5 }));
   check(cleanLog.lastFailure === null && cleanLog.notes.some((n) => /其中没有失败/.test(n)),
-    '④ 真读到了记录且其中没有失败 ⇒ 这才叫「没有失败」（三种情况三种说法）',
+    '⑦ 真读到了记录且其中没有失败 ⇒ 这才叫「没有失败」（三种情况三种说法）',
     JSON.stringify(cleanLog.notes.filter((n) => /日志/.test(n))));
 }
 
