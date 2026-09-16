@@ -196,6 +196,18 @@ console.log('\n⑨ 插件加载时就把 preset 铺到位（2026-09-15 事故：
   });
 
   // 前置：模拟"/team uninstall 之后、且还没跑过 /team <任务>"的状态
+  // ⚠️ 先等**上一轮**（前面几段的 fire-and-forget 铺设）彻底安静：清单是会被上一轮**重写**的，
+  // 所以"rm 掉清单"这一步本身会与它抢 —— 2026-09-16 CI(Node 20) 实测：rm 之后上一轮又把清单
+  // 写回来 ⇒ 完成信号立刻为真（waited=1ms）⇒ 测试在新一轮铺盘完成前就往下走 ⇒ 目标目录尚未
+  // 出现 ⇒ 读版本戳 ENOENT。**心跳用进程内**的 presetLayStatus().preset.at：它是本进程自己写下
+  // 的，不会被外部重写，所以能真实反映"还有没有铺设在发生"。
+  const quiet = await waitFor(async () => {
+    const a = (_live.presetLayStatus().preset || {}).at || 0;
+    await new Promise((r) => setTimeout(r, 120));
+    const b = (_live.presetLayStatus().preset || {}).at || 0;
+    return a === b;
+  }, { everyMs: 30, maxMs: 5000 });
+  check(quiet.ok, '前置：上一轮后台铺设已安静（120ms 内没有新的铺设记录）', 'waited=' + quiet.ms + 'ms');
   await rm(presetDst, { recursive: true, force: true });
   // ⚠️ **清单也要一起清**（2026-09-16 CI 实测）：完成信号取的是"清单里有 preset"，
   // 而 ⑤ 已经登记过一条 ⇒ 不清清单时"清单里有 preset"**立刻为真**，测试会在**这一轮铺盘还
@@ -207,9 +219,16 @@ console.log('\n⑨ 插件加载时就把 preset 铺到位（2026-09-15 事故：
   check(!(await exists(manifestPath)), '前置：清单也不存在（否则"完成信号"是上一轮的台账 ⇒ 竞态/假绿）');
 
   // ⑨.1 加载即铺 —— 本事故的核心修复：不再等 createRun
+  // **完成信号 = 本轮自己的记录**（at >= t0 且 outcome === succeeded），**不是**"清单里有 preset"：
+  // 后者可能来自上一轮（CI 上出现过 waited=1ms 的假绿），前者只可能由这一轮写下。
+  const t0 = Date.now();
   apply(fakeCtx(), {});
-  const laid1 = await waitFor(presetRecorded);
-  check(laid1.ok, 'apply() 之后铺盘**真的做完**（清单已登记 preset，不只是"文件出现了"）', 'waited=' + laid1.ms + 'ms');
+  const laid1 = await waitFor(() => {
+    const st = _live.presetLayStatus().preset;
+    return !!(st && st.at >= t0 && st.outcome === 'succeeded');
+  });
+  check(laid1.ok, 'apply() 之后**本轮**铺盘真的做完（信号是本轮记录 outcome=succeeded，不是上一轮的台账）', 'waited=' + laid1.ms + 'ms');
+  check(await presetRecorded(), '且清单也登记了 preset（两个信号都到位）', '');
   check(await exists(join(presetDst, 'agent.cordis.yml')), 'apply() 之后 preset 已在位（**加载即铺**，不再等首次 /team）');
   check((await readFile(join(presetDst, _live.INSTALL_STAMP), 'utf8')).trim() === _live.PLUGIN_VERSION, '且带上当前版本戳', _live.PLUGIN_VERSION);
   check(!(await exists(skillDst)), 'skill 仍不落地（运行时注册优先，加载时那次调用立即返回）');
@@ -217,9 +236,13 @@ console.log('\n⑨ 插件加载时就把 preset 铺到位（2026-09-15 事故：
   // ⑨.2 事故回归：uninstall → 再加载 ⇒ preset 又回来
   await _live.uninstallInstalled();
   check(!(await exists(presetDst)), 'uninstall 之后副本被清掉');
+  const t1 = Date.now();
   apply(fakeCtx(), {});
-  const laid2 = await waitFor(presetRecorded);
-  check(laid2.ok, '再次加载 ⇒ preset 又铺回来了（**本事故的回归测试**）', 'waited=' + laid2.ms + 'ms');
+  const laid2 = await waitFor(() => {
+    const st = _live.presetLayStatus().preset;
+    return !!(st && st.at >= t1 && st.outcome === 'succeeded');
+  });
+  check(laid2.ok, '再次加载 ⇒ preset 又铺回来了（**本事故的回归测试**；信号同样是本轮记录）', 'waited=' + laid2.ms + 'ms');
   check(await exists(join(presetDst, 'agent.cordis.yml')), '且文件确实落盘', '');
 
   // ⑨.3 铺不上不许抛（只读盘/权限问题不能把插件挂不上）
