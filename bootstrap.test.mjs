@@ -10,7 +10,7 @@
 // 全部操作在**临时 DSH_HOME** 上完成，不触碰真实 ~/.dsh。
 // 运行：node bootstrap.test.mjs
 
-import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -226,6 +226,173 @@ console.log('\n⑨ 插件加载时就把 preset 铺到位（2026-09-15 事故：
     process.env.DSH_HOME = savedHome;
   }
   check(threw === null, '$DSH_HOME 不可写时 apply() 不抛（铺不上不影响插件加载）', threw || '（预期会出现一条一次性的 warn）');
+}
+
+
+// ── ⑩ 铺设的**归属判定**与**原子换名**（2026-09-16 · 用户批准 (a)+(b)）──────────
+//
+// 为什么单独一节：铺盘被打断会留下**无戳的半成品**，而旧归属判定只有"是不是我们的"两态 ⇒
+// 那种半成品被当成「用户的定制」而**永不覆盖**，只打一行 warn（看起来完全正常）。
+// 本节钉四件事：四态判定（含两个方向）、原子换名不留半成品、preset 与 skill **两条路径**都如此、
+// 以及"显式重铺"必须**如实记录替换了什么**。
+//
+// ⚠️ 旧代码上这些断言必须是**断言失败**、不能是 TypeError 崩溃（本仓吃过"崩溃不算体面地红"的亏）：
+// 所以先动态 import 再**断言导出存在**，缺失时后续断言各自判假，而不是直接炸。
+console.log('\n⑩ 铺设：四态判定 / 原子换名 / 两条路径都不留半成品');
+{
+  let PL = null;
+  try { PL = await import(join(here, 'lib', 'preset-lay.js')); } catch { PL = null; }
+  check(PL && typeof PL.classifyLayTarget === 'function', 'lib/preset-lay.js 导出 classifyLayTarget（旧代码上：断言失败，不是崩溃）');
+  const CL = (PL && PL.classifyLayTarget) || (() => ({ state: undefined, action: undefined, stale: undefined, complete: undefined, missing: [] }));
+  const base = { currentVersion: '1.3.25', expectedEntryFiles: ['agent.cordis.yml', 'preset.yml'], presentEntryFiles: ['agent.cordis.yml', 'preset.yml'] };
+
+  // ⑩.1 四态
+  check(CL({ ...base, exists: false }).state === 'absent', '目标不存在 ⇒ absent');
+  check(CL({ ...base, exists: true, hasStamp: true, stampVersion: '1.3.25', identityMatch: true }).action === 'skip-fresh', '带戳+版本当前+齐全 ⇒ 不重铺');
+  check(CL({ ...base, exists: true, hasStamp: true, stampVersion: '1.3.24', identityMatch: true }).state === 'ours', '带戳但版本旧 ⇒ ours（要重铺）');
+  check(CL({ ...base, exists: true, hasStamp: false, identityMatch: true }).state === 'ours', '无戳但身份是本插件 ⇒ ours（1.2.0 之前的历史副本）');
+  check(CL({ ...base, exists: true, hasStamp: false, identityMatch: false }).state === 'foreign-complete', '身份不符 + 入口齐全 ⇒ foreign-complete');
+  check(CL({ ...base, exists: true, hasStamp: false, identityMatch: false, presentEntryFiles: ['preset.yml'] }).state === 'partial-or-unknown', '身份不符 + 缺入口 ⇒ partial-or-unknown');
+
+  // ⑩.2 **两个方向**（派工方追加要求 1）：缺一头都会出人命 —— 要么覆盖用户的定制，要么给用户无谓告警
+  const unknown = CL({ ...base, exists: true, hasStamp: null, identityMatch: null });
+  // 反空转：要求它是**已知四态之一且不是 ours** —— 否则旧代码上  会**假绿**。
+  check(!!PL && Array.isArray(PL.LAY_STATES) && PL.LAY_STATES.indexOf(unknown.state) !== -1 && unknown.state !== 'ours', '方向①：**不确定**（戳读不到 + 身份判不出来）⇒ 是已知四态之一且不是 ours（绝不动可能是用户的东西）', String(unknown.state));
+  check(unknown.state === 'partial-or-unknown', '方向①：不确定 ⇒ 落在 partial-or-unknown（显眼报告、不覆盖）', String(unknown.state));
+  const oursStale = CL({ ...base, exists: true, hasStamp: true, stampVersion: '1.0.0', identityMatch: true });
+  check(oursStale.state === 'ours' && oursStale.stale === true, '方向②：ours-stale ⇒ 不是 partial-or-unknown（别给用户无谓告警）', String(oursStale.state));
+  check(CL({ ...base, exists: true, hasStamp: true, stampVersion: '1.3.25', identityMatch: true, presentEntryFiles: [] }).state === 'ours', '方向②：带戳但不完整 ⇒ 仍是 ours（我们自己的残留）');
+  check(CL({ ...base, exists: true, hasStamp: false, identityMatch: false, expectedEntryFiles: [] }).state === 'partial-or-unknown', '反空转：期望清单读不到 ⇒ 判不出来 ⇒ 不许当 foreign-complete');
+
+  // ⑩.2b 给界面的一句话**不许含 markdown 标记** —— 它会**原样渲染**（设置页没有 markdown 渲染器）。
+  // 这条是 2026-09-16 的真实教训：Hindsight 面板刚修过"把 markdown 当纯文本显示"，
+  // 本节新写的文案差点又犯一次（`**原子换名**` 的星号会被用户看见）——所以在这里钉住。
+  if (typeof PL?.describeLayOutcome !== 'function') {
+    check(false, 'lib/preset-lay.js 导出 describeLayOutcome（旧代码上：断言失败）');
+  } else {
+    const hasMd = (s) => /\*\*|\x60|\]\(|^#{1,6}\s/.test(String(s == null ? '' : s));
+    const samples = [
+      PL.describeLayOutcome({ state: 'ours', action: 'lay', version: '1.3.25' }),
+      PL.describeLayOutcome({ state: 'foreign-complete' }),
+      PL.describeLayOutcome({ state: 'partial-or-unknown', missing: ['agent.cordis.yml'] }),
+      PL.describeLayOutcome(null),
+    ];
+    check(samples.every((s) => s && !hasMd(s.zh) && !hasMd(s.en)), '给界面的一句话不含 markdown 标记（会被原样渲染）', JSON.stringify(samples.map((s) => s.zh)));
+    check(samples.every((s) => s && ['ok', 'warn', 'bad'].indexOf(s.level) !== -1), '每句话都带一个明确级别（ok/warn/bad）供界面着色', JSON.stringify(samples.map((s) => s.level)));
+  }
+
+  // ⑩.3 原子换名：中途失败**不留半成品**（直接打在原语上，确定性最高）
+  if (typeof PL?.layDirAtomic !== 'function') {
+    check(false, 'lib/preset-lay.js 导出 layDirAtomic（旧代码上：断言失败）');
+  } else {
+    const atomicRoot = join(root, 'atomic');
+    const aSrc = join(atomicRoot, 'src');
+    await mkdir(aSrc, { recursive: true });
+    await writeFile(join(aSrc, 'agent.cordis.yml'), 'src\n');
+    const aDst = join(atomicRoot, 'out', 'expert-team');
+    await mkdir(aDst, { recursive: true });
+    await writeFile(join(aDst, 'agent.cordis.yml'), 'ORIGINAL\n');
+    let threw = null;
+    try {
+      await PL.layDirAtomic(aSrc, aDst, { copyInto: async (tmp) => { await writeFile(join(tmp, 'half'), 'x'); throw new Error('boom-mid-copy'); } });
+    } catch (e) { threw = String((e && e.message) || e); }
+    check(/boom-mid-copy/.test(String(threw)), '拷贝中途失败 ⇒ 原样上抛（不吞）', String(threw));
+    check((await readFile(join(aDst, 'agent.cordis.yml'), 'utf8')) === 'ORIGINAL\n', '失败后**原目标逐字节未变**（没有半成品覆盖上去）');
+    const outLeft = await readdir(join(atomicRoot, 'out'));
+    check(outLeft.filter((n) => n.startsWith(PL.LAY_TMP_PREFIX)).length === 0, '失败后**没有**我们前缀的临时残留', JSON.stringify(outLeft));
+  }
+
+  // ⑩.4 preset 路径：foreign-complete / partial / 显式重铺 / ours-stale
+  if (typeof _live.layInstalledAsset !== 'function' || typeof _live.layFactsFor !== 'function') {
+    check(false, '_live 导出 layInstalledAsset / layFactsFor（旧代码上：断言失败）');
+  } else {
+    const src = _live.PRESET_DIR;
+    const srcNames = await readdir(src);
+    const statusOf = () => (typeof _live.presetLayStatus === 'function' ? _live.presetLayStatus() : null);
+
+    // (i) 身份明确不是我们的、且入口齐全 ⇒ **绝不覆盖**
+    await rm(presetDst, { recursive: true, force: true });
+    await mkdir(presetDst, { recursive: true });
+    for (const n of srcNames) await writeFile(join(presetDst, n), '# 用户自己写的\n');
+    await _live.layInstalledAsset('preset', src, presetDst);
+    check((await readFile(join(presetDst, 'agent.cordis.yml'), 'utf8')) === '# 用户自己写的\n', '(i) foreign-complete ⇒ 原样保留（用户的定制优先）');
+    const stUser = statusOf();
+    check(stUser && stUser.preset && stUser.preset.state === 'foreign-complete', '(i) 状态如实记为 foreign-complete（不是静默 warn）', JSON.stringify(stUser && stUser.preset && stUser.preset.state));
+    check(stUser && stUser.display && stUser.display.preset && stUser.display.preset.level === 'warn', '(i) 给界面的一句话是"让位给用户的定制"（可显示）', JSON.stringify(stUser && stUser.display && stUser.display.preset));
+
+    // (ii) 只有部分入口 ⇒ **不覆盖 + 显眼报告**（这正是"被打断留下的半成品"那种形态）
+    await rm(presetDst, { recursive: true, force: true });
+    await mkdir(presetDst, { recursive: true });
+    await writeFile(join(presetDst, 'preset.yml'), '# 半成品：只拷到这一个文件就被打断了\n');
+    await _live.layInstalledAsset('preset', src, presetDst);
+    check((await readFile(join(presetDst, 'preset.yml'), 'utf8')) === '# 半成品：只拷到这一个文件就被打断了\n', '(ii) partial-or-unknown ⇒ 不覆盖');
+    const stPart = statusOf();
+    check(stPart && stPart.preset && stPart.preset.state === 'partial-or-unknown', '(ii) 状态如实记为 partial-or-unknown', JSON.stringify(stPart && stPart.preset && stPart.preset.state));
+    check(stPart && stPart.preset && stPart.preset.missing.length > 0, '(ii) 并列出**缺哪些入口文件**（可操作）', JSON.stringify(stPart && stPart.preset && stPart.preset.missing));
+    check(stPart && stPart.display && stPart.display.preset && stPart.display.preset.level === 'bad', '(ii) 给界面的一句话是"未覆盖：内容不完整"（显眼，不是一行 warn）', JSON.stringify(stPart && stPart.display && stPart.display.preset));
+
+    // (iii) **用户显式**重铺 ⇒ 照铺，且**如实记录替换了什么**
+    const relayed = typeof _live.relayInstalledAssets === 'function' ? await _live.relayInstalledAssets('preset') : { ok: false, results: [] };
+    check(relayed && relayed.ok === true, '(iii) 显式重铺成功', JSON.stringify(relayed && relayed.ok));
+    check(await exists(join(presetDst, _live.INSTALL_STAMP)), '(iii) 重铺后带上了我们的版本戳');
+    check((await readFile(join(presetDst, _live.INSTALL_STAMP), 'utf8')).trim() === _live.PLUGIN_VERSION, '(iii) 版本戳 = 当前版本', _live.PLUGIN_VERSION);
+    const stAfter = statusOf();
+    check(stAfter && stAfter.preset && stAfter.preset.state === 'ours', '(iii) 状态转为 ours', JSON.stringify(stAfter && stAfter.preset && stAfter.preset.state));
+    check(stAfter && stAfter.preset && typeof stAfter.preset.replaced === 'string' && /partial-or-unknown/.test(stAfter.preset.replaced), '(iii) **如实记录被替换的是什么**（不静默覆盖）', JSON.stringify(stAfter && stAfter.preset && stAfter.preset.replaced));
+
+    // (iv) ours-stale（版本戳过期）⇒ 原子重铺，旧版本多余文件被清掉
+    await writeFile(join(presetDst, 'OLD-ONLY.md'), 'gone after relayout\n');
+    await writeFile(join(presetDst, _live.INSTALL_STAMP), '0.0.1-old\n');
+    await _live.layInstalledAsset('preset', src, presetDst);
+    check(!(await exists(join(presetDst, 'OLD-ONLY.md'))), '(iv) ours-stale ⇒ 整目录重铺（旧版多余文件被清掉）');
+    check((await readFile(join(presetDst, _live.INSTALL_STAMP), 'utf8')).trim() === _live.PLUGIN_VERSION, '(iv) 版本戳已更新');
+  }
+
+  // ⑩.5 skill 路径：同一条 fire-and-forget 路径 ⇒ **必须各自有测试**（派工方追加要求 3）
+  if (typeof _live.layInstalledAsset === 'function' && typeof _live.SKILL_DIR === 'string') {
+    const skillSrc = _live.SKILL_DIR;
+    const statusOf = () => (typeof _live.presetLayStatus === 'function' ? _live.presetLayStatus() : null);
+    // (i) 身份明确不是我们的（SKILL.md 的 name 不是 expert-team）+ 入口齐全 ⇒ 不覆盖
+    await rm(skillDst, { recursive: true, force: true });
+    await mkdir(skillDst, { recursive: true });
+    for (const n of await readdir(skillSrc)) {
+      const st0 = await stat(join(skillSrc, n));
+      if (st0.isDirectory()) await mkdir(join(skillDst, n), { recursive: true });
+      else await writeFile(join(skillDst, n), n === 'SKILL.md' ? '---\nname: my-own-skill\n---\n用户自己的\n' : 'x\n');
+    }
+    await _live.layInstalledAsset('skill', skillSrc, skillDst);
+    check(/my-own-skill/.test(await readFile(join(skillDst, 'SKILL.md'), 'utf8')), 'skill (i) 身份不符 + 齐全 ⇒ 原样保留（用户自己写的同名 skill 不被覆盖）');
+    check(statusOf()?.skill?.state === 'foreign-complete', 'skill (i) 状态如实记为 foreign-complete', JSON.stringify(statusOf()?.skill?.state));
+    // (ii) 半成品（只拷到 SKILL.md 就被打断）⇒ 不覆盖 + 显眼报告
+    await rm(skillDst, { recursive: true, force: true });
+    await mkdir(skillDst, { recursive: true });
+    await writeFile(join(skillDst, 'SKILL.md'), '---\nname: my-own-skill\n---\nZZHALF-MARKER\n');
+    await _live.layInstalledAsset('skill', skillSrc, skillDst);
+    check(/ZZHALF-MARKER/.test(await readFile(join(skillDst, 'SKILL.md'), 'utf8')), 'skill (ii) partial-or-unknown ⇒ 不覆盖');
+    check(statusOf()?.skill?.state === 'partial-or-unknown', 'skill (ii) 状态如实记为 partial-or-unknown', JSON.stringify(statusOf()?.skill?.state));
+    // (iii) 显式重铺 ⇒ 照铺并记录
+    const r2 = await _live.relayInstalledAssets('skill');
+    check(r2 && r2.ok === true, 'skill (iii) 显式重铺成功（或走运行时注册而跳过）', JSON.stringify(r2 && r2.results));
+    if (!(r2 && r2.results && r2.results[0] && r2.results[0].skipped)) {
+      check((await readFile(join(skillDst, _live.INSTALL_STAMP), 'utf8')).trim() === _live.PLUGIN_VERSION, 'skill (iii) 重铺后带上了当前版本戳');
+      check(statusOf()?.skill?.state === 'ours', 'skill (iii) 状态转为 ours', JSON.stringify(statusOf()?.skill?.state));
+    }
+    // (iii-b) skill 的**强制铺设**路径也要单独走一遍：运行时注册会让 relayInstalledAssets('skill')
+    // 直接跳过（这是**正确行为**，但也意味着"从半成品恢复到我们的副本"这条路没被覆盖）——
+    // 所以这里直接调 force 版，证明 skill 路径同样能"从 partial-or-unknown 恢复到 ours 并记录替换了什么"。
+    const forced = await _live.layInstalledAsset('skill', skillSrc, skillDst, { force: true, forceEvenFresh: true, replacedBy: 'test-force' });
+    check(forced === skillDst, 'skill (iii-b) 强制铺设返回目标路径', String(forced));
+    check((await readFile(join(skillDst, _live.INSTALL_STAMP), 'utf8')).trim() === _live.PLUGIN_VERSION, 'skill (iii-b) 强制铺设后带上了当前版本戳');
+    check(/ZZHALF-MARKER/.test(await readFile(join(skillDst, 'SKILL.md'), 'utf8')) === false, 'skill (iii-b) 半成品内容被整目录替换（不是逐个覆盖）');
+    check(statusOf()?.skill?.state === 'ours', 'skill (iii-b) 状态转为 ours', JSON.stringify(statusOf()?.skill?.state));
+    check(typeof statusOf()?.skill?.replaced === 'string' && /partial-or-unknown/.test(statusOf().skill.replaced), 'skill (iii-b) 同样**如实记录被替换的是什么**', JSON.stringify(statusOf()?.skill?.replaced));
+
+    // (iv) 运行时注册优先时，ensureSkillInstalled 仍直接指向包内目录（行为不能被这次改动破坏）
+    const t2 = await _live.ensureSkillInstalled();
+    check(t2 === _live.SKILL_DIR, 'skill (iv) 运行时注册生效时 ensureSkillInstalled 直接返回包内目录（一个文件都不写）', String(t2));
+  } else {
+    check(false, '_live 导出 layInstalledAsset / SKILL_DIR（旧代码上：断言失败）');
+  }
 }
 
 await rmFixture(root);

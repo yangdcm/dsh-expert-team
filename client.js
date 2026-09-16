@@ -1281,6 +1281,7 @@ window.__ModuleLoader__.load({
           : t('改动即保存并即时生效（上限 / 轮次 / 档位门 / 振荡检测开关在进程内重算）。', 'Saved on change and applied immediately (caps, rounds, the tier gate and the oscillation switch are recomputed in-process).'))),
         rows,
         h(SubagentOrderBlock),
+        h(PresetLayBlock),
         h(HindsightBlock),
         h('div', { className: 'exp-settings-msg' + (err ? ' bad' : '') }, esc(err ? '✗ ' + err : (msg || ''))))
     }
@@ -1324,6 +1325,81 @@ window.__ModuleLoader__.load({
         h('div', { className: 'exp-settings-ctl' },
           h('span', { className: st.effective ? 'exp-hs-ok' : (st.enabled ? 'exp-hs-bad' : '') }, esc(label))),
         h('div', { className: 'exp-settings-note' }, esc(st.note || '')))
+    }
+
+    /**
+     * 预设/技能铺设的**归属与状态**（只读 + 显式重铺）。
+     *
+     * 为什么必须有这一块：铺盘"没覆盖"的两种情形 —— 目录是**你自己的定制**、或目录**内容不完整**
+     * （很可能是上次铺设被打断）—— 旧实现只打一行 warn ⇒ 界面上完全看不出来，
+     * 而插件预设可能**再也铺不上**。本仓纪律：没铺上就必须说没铺上。
+     *
+     * 「重新铺设」要**再点一次确认**：它可能在用户明确要求下**覆盖掉自己的定制**，
+     * 所以第一次点击只武装并说清会覆盖什么（与「清除 token」同一套防误触）。
+     */
+    function PresetLayBlock() {
+      var sS = useState(null); var st = sS[0], setSt = sS[1]
+      var mS = useState(''); var msg = mS[0], setMsg = mS[1]
+      var eS = useState(''); var err = eS[0], setErr = eS[1]
+      var bS = useState(false); var busy = bS[0], setBusy = bS[1]
+      var aS = useState(false); var armed = aS[0], setArmed = aS[1]
+      function load() {
+        return fetch('/plugins/dsh-expert-team/preset-lay')
+          .then(function (r) { return r.json().catch(function () { return null }) })
+          .then(function (d) { setSt(d && d.ok ? d : null) })
+          .catch(function () { setSt(null) })
+      }
+      useEffect(function () { load() }, [])
+      if (!st) return null   // 读不到状态就不占位、也不假报
+      function relay() {
+        if (!armed) {
+          setArmed(true); setErr('')
+          setMsg(t('再点一次「确认重新铺设」才会真的覆盖当前目录。', 'Click “Confirm re-lay” once more to actually overwrite the current directory.'))
+          return
+        }
+        setArmed(false); setBusy(true); setErr(''); setMsg('')
+        fetch('/plugins/dsh-expert-team/preset-lay', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'relay' }),
+        })
+          .then(function (r) { return r.json().catch(function () { return null }) })
+          .then(function (d) {
+            setBusy(false)
+            if (!d || !d.ok) { setErr(t('重新铺设失败：', 're-lay failed: ') + String((d && (d.error || (d.results && d.results.map(function (x) { return x.kind + '=' + (x.ok ? 'ok' : 'fail') }).join(',')))) || 'unknown')); return }
+            // 如实回报**替换了什么**（不静默）——服务端把 before 一起回来了。
+            var parts = (d.results || []).map(function (r) {
+              if (r.skipped) return t(r.kind + '：走运行时注册，无需铺盘', r.kind + ': runtime registration, nothing laid')
+              var b = r.before ? t('（原 ' + r.before.state + '，' + (r.before.missing || []).length + ' 项缺失）', ' (was ' + r.before.state + ')') : ''
+              return r.kind + b
+            })
+            setMsg(t('已重新铺设 ', 're-laid ') + parts.join('；'))
+            load()
+          })
+          .catch(function (e) { setBusy(false); setErr(t('重新铺设失败：', 're-lay failed: ') + String(e && e.message ? e.message : e)) })
+      }
+      function lineFor(kindLabel, disp) {
+        if (!disp) return h('div', { className: 'exp-hs-kv' },
+          h('span', { className: 'exp-hs-k' }, esc(kindLabel)),
+          h('span', { className: 'exp-hs-v' }, esc(t('（尚无记录）', '(no record yet)'))))
+        var cls = disp.level === 'ok' ? 'exp-hs-ok' : (disp.level === 'bad' ? 'exp-hs-bad' : '')
+        return h('div', { className: 'exp-hs-kv' },
+          h('span', { className: 'exp-hs-k' }, esc(kindLabel)),
+          h('span', { className: 'exp-hs-v' }, h('span', { className: cls }, esc(t(disp.zh, disp.en)))))
+      }
+      var d = st.display || {}
+      return h('div', { className: 'exp-hs' },
+        h('div', { className: 'exp-settings-group' }, esc(t('预设铺设 · 归属与状态', 'Preset lay · ownership & state'))),
+        lineFor(t('专家团模式 preset', 'Expert-team preset'), d.preset),
+        lineFor(t('skill 副本', 'skill copy'), d.skill),
+        h('div', { className: 'exp-settings-note' }, esc(t(
+          '当前版本 ' + ((st.preset && st.preset.version) || '') + '。铺设用原子换名：先把整份内容写进临时目录，再整目录换名到位；所以被打断只会留下"目录不存在"或"我们自己的临时目录"，不会再留下"看起来像你的定制的半成品"。但删除旧目录与换名之间若被打断，目录会短暂不存在（下次自动重铺）—— 它消灭的是"假用户定制"，不是"任何时刻都存在一份完整副本"，所以它不是"完全原子"。',
+          'Current version ' + ((st.preset && st.preset.version) || '') + '. Laying is atomic by swapping a fully written temp directory into place, so an interruption leaves either no directory or our own temp dir — never a half copy that looks like your customization. If interrupted between removing the old directory and the swap, the directory can briefly be absent (it is re-laid next time); it removes the false-customization case, not the possibility of a momentary gap, so it is not fully atomic.'))),
+        h('div', { className: 'exp-hs-actions' },
+          h('button', { className: 'exp-hs-btn' + (armed ? ' danger' : ''), disabled: busy, onClick: relay },
+            esc(armed ? t('确认重新铺设', 'Confirm re-lay') : t('重新铺设', 'Re-lay')))),
+        msg ? h('div', { className: 'exp-hs-msg' }, esc(msg)) : null,
+        err ? h('div', { className: 'exp-hs-msg bad' }, esc('✗ ' + err)) : null)
     }
 
     function HindsightBlock() {

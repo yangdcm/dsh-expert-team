@@ -1968,6 +1968,32 @@
           "replace": "      if (true) {"
         }
       ]
+    },
+    {
+      "id": "M151-unknown-stamp-treated-as-ours",
+      "title": "归属判定把「版本戳读不到」当成「我们自己的」（危险方向）",
+      "why": "2026-09-16 新增（(b) 的**失败方向**护栏）。半成品目录的致命分支是\"被判成用户的定制而永不覆盖\"；但**反方向同样致命**：若把\"读不到戳\"（权限/IO 错误，`hasStamp=null`）当成 ours，就会**覆盖可能是用户自己写的东西**。判据必须\"不确定 ⇒ 不是 ours\"。把 `hasStamp === true` 放宽成 `hasStamp !== false` ⇒ 不确定的输入重新被当成本插件产物。 预期红：`方向①：**不确定**（戳读不到 + 身份判不出来）⇒ 是已知四态之一且不是 ours`、`方向①：不确定 ⇒ 落在 partial-or-unknown`（共 2 项）。",
+      "test": "bootstrap.test.mjs",
+      "edits": [
+        {
+          "file": "lib/preset-lay.js",
+          "find": "  if (hasStamp === true) {",
+          "replace": "  if (hasStamp !== false) {"
+        }
+      ]
+    },
+    {
+      "id": "M152-unknown-identity-treated-as-ours",
+      "title": "归属判定把「身份判不出来」当成「我们自己的」（危险方向）",
+      "why": "2026-09-16 新增（(b) 的**失败方向**护栏之二）。无戳时代码要看身份启发式；身份**判不出来**（`identityMatch=null`，例如身份文件读不动）时若当成 ours，同样会覆盖可能是用户的内容。把 `identityMatch === true` 放宽成 `identityMatch !== false` ⇒ 不确定的身份被当成 ours。 预期红：`方向①：**不确定**…不是 ours`、`方向①：不确定 ⇒ 落在 partial-or-unknown`（共 2 项）。",
+      "test": "bootstrap.test.mjs",
+      "edits": [
+        {
+          "file": "lib/preset-lay.js",
+          "find": "  if (identityMatch === true) {",
+          "replace": "  if (identityMatch !== false) {"
+        }
+      ]
     }
   ]
 }
