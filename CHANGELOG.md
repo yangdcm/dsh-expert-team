@@ -3,6 +3,75 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.3.30
+
+**主题：1.3.29 的画布在真机上"量得到坐标却看不见箭头、点头部却变成拖列宽"——四处只有装进宿主才暴露的缺陷，本版逐条修掉**。
+它们**不是**样式微调：① 与 ② 让依赖箭头在真机上一次都没画出来，③ 让「编队」的成员列表**每 3 秒被清空一次**，
+④ 让全屏画布的顶部被宿主的列宽手柄压住并**抢走点击**。四处都已在真机复核修后行为。
+
+### ① 箭头被裁在 `<svg>` 的默认尺寸里
+
+- 现象：`.etc-edges` 用 `position:absolute;inset:0`，但 **`<svg>` 是替换元素，`inset:0` 不会撑开它** ⇒ 真机算出的
+  `<svg>` 尺寸是浏览器默认的 **300×150**，而容器实际是 **962×297** ⇒ 即使每一条边的坐标都量对了，也**全被裁在
+  300×150 的画布之外**，一个箭头都看不见。
+- 修法：给 `.etc-edges` 补 `width:100%;height:100%`（源码现为 `.etc-edges{position:absolute;inset:0;width:100%;height:100%`）。
+- 修后实测：`.etc-edges` 尺寸 **962×297**。
+
+### ② 箭头测量的 effect 依赖不足：切页签后不再重跑
+
+- 现象：`useCanvasEdges` 旧签名的依赖只有 `[sig]`。首帧画布**不在 DOM**（面板默认停在「人」页签）⇒ `boxRef.current`
+  为空、提前 return（**连 ResizeObserver 都没挂上**）；等切到「事」页签时任务集合没变 ⇒ `sig` 未变 ⇒ effect
+  **不再重跑** ⇒ 真机 `.etc-edges` 的子节点数**恒为 0**。
+- 修法：签名加一个"激活/可见性"依赖——`useCanvasEdges(boxRef, eg, sig, active)`，不可见时 `if (!active) return undefined`
+  （不量、也不挂观察器）；并在挂载后补一次 `requestAnimationFrame` 测量（没有 rAF 的环境退回 `setTimeout 0`，cleanup 里取消）。
+- 修后实测：同一 run 画出 **6 条边**（真实依赖 `T1→T2/T3/T4`、`T2→T4`、`T4→T5/T6`）。
+
+### ③ 编队成员恒为空：每 3 秒一发的 summary 把 enrich 过的成员抹掉
+
+- 根因（已钉死）：host 的 `snapshotRun()` **永远返回 `members`**（summary 响应里是没有 enrich 的 `{}` 桩值），而
+  `members` **只在 `want('people')` 时才 enrich**；旧 `mergeStatePayload` 是"新键覆盖旧键" ⇒ **每 3 秒一发（`pollMs: 3000`）
+  的 summary 把刚 enrich 出来的 6 个成员抹成空**。而「人」页签读的是 `roles`（summary 永远带）⇒ 那里照旧列 6 人
+  ⇒「编队」一直显示「成员明细还在就绪中（未读出来 ≠ 没有人）」。
+- 修法：`mergeStatePayload` **提为模块级**并加**派生字段保护**——负载显式带 `sections`（分段负载）且该段不含 `people` 时，
+  `members`/`agents` 保留旧值；不含 `feed` 时 `feed` 保留（源码原文：
+  `if (scoped && secs.indexOf('people') < 0) keepDerived(['members', 'agents'])`、
+  `if (scoped && secs.indexOf('feed') < 0) keepDerived(['feed'])`）；`publishToLive` 走**同一条规则**
+  （`d = mergeStatePayload(liveStore.data, d)`）。`keepDerived` 的语义是"连桩值也不留"：`prev` 里没有这个键就 `delete`
+  ——**"没算过"不许冒充"是空的"**。
+- **没有**改成"从 `roles` 猜成员"：那是把一次真实的合并缺陷换成一次推断。
+- 修后实测：`.etc-member` **0 → 6**（Ivy / Sam / Zoe / Jack / Alex / Tina）；并做了**抗拍打采样**：连采 **24 次 ×600 ms**
+  （跨 ≥4 个 summary tick），恒为 **6/6**。
+
+### ④ 全屏视图被宿主的列宽拖拽手柄遮挡并抢点击
+
+- 现象：`.exp-panel.exp-canvas` 原本是 `position:static` ⇒ 它自己那个 `z-index:120` **完全不生效**（静态定位元素的
+  z-index 无效），而宿主的 `.wSkVaW_widthHandle`（`position:absolute;z-index:8`，**40px 宽**竖带，真机实测 **724px 高**、
+  `cursor:col-resize`）仍留在原地、压在视图之上。真机 `document.elementFromPoint` 打在「编队画布」chip 中心，
+  命中的是 `DIV.wSkVaW_widthHandle` ⇒ **既遮挡又劫持点击**（在那里按下会变成拖列宽）。
+- 修法：`.exp-canvas` 改 `position:relative;z-index:9`（源码：`.exp-canvas{position:relative;z-index:9;width:100%;height:100%;…}`）
+  ——全屏视图**取代**了对话列，其拖拽手柄在视图打开期间不该压在它上面；切回「对话」时本视图卸载、手柄自然恢复。
+  **不改宿主**。
+
+### 诚实口径：这四处只有真机暴露
+
+- 既有画布护栏（**24 条画布断言，已入库、可复现**）与变异实测全部通过；变异实测为一次性 harness、**未入库、不可复现**，故此处不记条数。
+- 但四处**全部逃过了**它们，也逃过了 `client-css-integrity` 与 **89 个文件 / 0 失败**的 `test:all`，以及离线预览器
+  （`preview:canvas`）——**只有把插件装进宿主、在真实布局与真实轮询下量 DOM 才暴露**。
+- 尤其 ③ 是一个"**每 3 秒把数据抹空一次**"的合并缺陷：断言看的是"某一刻的数据对不对"，而它错在**时间轴上**；
+  靠看图与读代码都不一定发现。
+- 同轮还改掉一处**注释撒谎**：`canvasFormation` 的 doc block 原写「`lead.label` 返回 `null`」，与实现不符——它实际返回
+  **ASCII 契约值 `'team-lead'`**（不是 `null`，也不是人名），来源语义由 `lead.badges`（`长` + `本会话`）如实标出。
+  本轮按真实行为改为如实描述（本仓纪律：注释不许撒谎）。
+
+### 工具与证据
+
+- `client.js` 本轮 **+114 / −34**，工作树 md5 `ed1ebd27bae71577d81f26cdb6084aad`。
+- `npm run test:all`（官方 runner `scripts/run-tests.mjs`）：**89 个文件 / 0 失败**；本轮新增 **20 条护栏**
+  （12 条覆盖 `mergeStatePayload` 的派生字段保护与 `useCanvasEdges` 接线、8 条覆盖两处 CSS）。**诚实边界**：
+  其中 `useCanvasEdges` 那 4 条是**源码文本棘轮**（只能证明"接线被改回去会红"，证明不了运行期行为）；
+  运行期那半的证据是真机实测（见上）。测试文件数**仍为 89**（未新增测试文件）。
+- 真机复现用的临时脚本放在 `/tmp`，**未入库、不可复现** ⇒ **不作为证据**（本仓规矩）。
+
 ## 1.3.29
 
 **主题：把「专家团 → 事 → 团队视图」的默认视图从「任务依赖图」换成一张新画布——「编队画布」**：

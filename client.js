@@ -272,7 +272,14 @@ window.__ModuleLoader__.load({
       '.et-tc-b{display:flex;gap:6px;margin-top:7px}' +
       '.et-tc-b button{font-size:11px;padding:2px 10px;border:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));border-radius:7px;background:var(--dsw-alias-bg-layer-3,var(--bg,#fff));cursor:pointer;color:var(--dsw-alias-state-business-primary,#0969da)}' +
       // ── N5 嵌入式画布视图（conversation.view）──
-      '.exp-canvas{position:static;width:100%;height:100%;border-left:none;box-shadow:none;border-radius:0}' +
+      // ⚠️ `position:relative;z-index:9` 不是装饰：完整页视图（conversation.view）**取代**了对话列，
+      // 而对话列的两个列宽拖拽手柄（宿主的 `.wSkVaW_widthHandle`：`position:absolute;z-index:8`，
+      // 40px 宽竖带 ×2）**仍然留在原地**。旧值是 `position:static` ⇒ `.exp-panel` 上那个 `z-index:120`
+      // **完全不生效**（静态定位元素的 z-index 无效）⇒ 手柄画在视图之上，既遮挡又**抢走点击**
+      // （真机实测：`document.elementFromPoint` 打在「编队画布」chip 中心命中的是
+      // `DIV.wSkVaW_widthHandle`，在那里按下会变成拖列宽）。`relative` + 9 让本视图在
+      // 同一层叠上下文里压过手柄（8）。视图切回「对话」时本视图卸载，手柄自然恢复 —— 不改宿主。
+      '.exp-canvas{position:relative;z-index:9;width:100%;height:100%;border-left:none;box-shadow:none;border-radius:0}' +
       '.exp-canvas .exp-head{border-radius:0}' +
       // ── N1 对话流团队动态胶囊 ──
       '.exp-cap{position:fixed;z-index:118;top:64px;left:50%;transform:translateX(-50%);max-width:76vw;font-size:12px}' +
@@ -370,7 +377,12 @@ window.__ModuleLoader__.load({
       + '.etc-chip.warn{border-color:var(--etc-edge-warn);color:var(--etc-warn)}'
       + '.etc-chip.more{border-style:dashed}'
       + '.etc-blocked{font-size:10.5px;line-height:1.35;color:var(--etc-warn);margin-top:4px}'
-      + '.etc-edges{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:0}'
+      // ⚠️ `width:100%;height:100%` **不是冗余**：`<svg>` 是**替换元素**（replaced element），
+      // `inset:0` 对替换元素只决定"放在哪"，**不会把它撑开** —— 没有 width/height 属性时浏览器
+      // 退回 SVG 的默认内在尺寸 **300×150**。真机实测：列容器 `.etc-cols` 是 962×297，而 `.etc-edges`
+      // 的计算尺寸恒为 300×150 ⇒ 即使量到了正确的卡片坐标，箭头也被裁在左上角那 300×150 里看不见
+      // （观感就是"一条依赖箭头都没有"）。
+      + '.etc-edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:0}'
       + '.etc-edge{fill:none;stroke:var(--etc-edge-warn);stroke-width:1.4;stroke-dasharray:5 4}'
       + '.etc-edge.ok{stroke:var(--etc-edge-ok);stroke-dasharray:none;opacity:.95}'
       + '.etc-edge.warn{stroke:var(--etc-edge-warn)}'
@@ -1446,8 +1458,10 @@ window.__ModuleLoader__.load({
     /**
      * 编队模型（队长 + 成员六态）。
      *
-     * ⚠️ **诚实前提（已核实，非推测）**：`/state` 负载里**没有 leader 记录**，面板现有队长位置是硬编码
-     * 标记。所以 `lead.label` 返回 `null`，由调用方渲染时打上「本会话」小字 —— 不许冒充真实队员。
+     * ⚠️ **诚实前提（已核实，非推测）**：`/state` 负载里**没有 leader 记录**，面板这个队长位置是硬编码
+     * 标记。`lead.label` 实际返回的是 **ASCII 契约值 `'team-lead'`**（不是 `null`，也不是人名），
+     * 来源语义由 `lead.badges` 如实标出：`长` + `本会话`（渲染成「team-lead 长 本会话」）——
+     * 不冒充真实队员，也不编一个人名。
      *
      * 六态优先级（必须可区分）：in_progress(执行 #id) > claimed(领取中 #id) > running(工作中) >
      *   有待命(待命) > membersUnresolved && !active(未解析, warn) > (未启动)。
@@ -1774,11 +1788,19 @@ window.__ModuleLoader__.load({
      * 会指向错误的卡片 —— 那时它比"没有箭头"更糟，因为它在**断言一个假的依赖关系**。
      * `typeof document === 'undefined'` 时整体跳过：本文件在测试里会被 `new Function` 求值，渲染期不许摸 document。
      * 依赖签名 `sig` 由调用方给（任务集合或状态变化才重量），避免每帧都测一遍。
+     *
+     * ⚠️ `active`（可见/激活）**必须进依赖**，否则切页签后永不重测（2026-09-16 真机根因）：
+     *   面板是**无条件**求值 `canvasView`（hook 数量不能随视图变），但画布元素只在
+     *   「事」页签 + 编队画布视图下**真的挂进 DOM**。首帧（面板默认在「人」页签）时
+     *   `boxRef.current` 是 `null` ⇒ 旧实现直接 `return`（**连 ResizeObserver 都没挂上**）；
+     *   切到「事」页签时 `sig` 不变（任务集合没变）⇒ effect 不再跑 ⇒ 真机 `.etc-edges`
+     *   子节点数**恒为 0**。"可见性变化"是一次真实的输入变化，必须让 effect 重跑。
      */
-    function useCanvasEdges(boxRef, eg, sig) {
+    function useCanvasEdges(boxRef, eg, sig, active) {
       var s = useState([]); var v = s[0], setV = s[1]
       useEffect(function () {
         if (typeof document === 'undefined') return undefined
+        if (!active) return undefined   // 画布此刻不在 DOM（别的页签/别的视图）⇒ 不量、也不挂观察器
         var box = boxRef && boxRef.current
         if (!box) return undefined
         function measure() {
@@ -1800,16 +1822,30 @@ window.__ModuleLoader__.load({
           } catch (err) { /* 测量失败就不画箭头：错位的箭头等于伪造依赖关系 */ }
         }
         measure()
+        // 首帧合并进 DOM 之后尺寸才算得准：effect 里那次 measure 可能跑在浏览器**布局之前**
+        // （卡片刚插入、字体/横向滚动条还没定），量出来的是 0 或旧值。补一次 rAF（没有 rAF 的
+        // 环境退回 setTimeout 0），并在 cleanup 里取消 —— 卸载后再量再 setState 纯属浪费。
+        var cancelTick = null
+        try {
+          if (typeof requestAnimationFrame === 'function') {
+            var raf = requestAnimationFrame(measure)
+            cancelTick = function () { cancelAnimationFrame(raf) }
+          } else {
+            var tid = setTimeout(measure, 0)
+            cancelTick = function () { clearTimeout(tid) }
+          }
+        } catch (e0) { cancelTick = null }
         var ro = null
         try { if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(measure); ro.observe(box) } } catch (e1) {}
         try { box.addEventListener('scroll', measure) } catch (e2) {}
         try { window.addEventListener('resize', measure) } catch (e3) {}
         return function () {
+          try { if (cancelTick) cancelTick() } catch (e7) {}
           try { if (ro) ro.disconnect() } catch (e4) {}
           try { box.removeEventListener('scroll', measure) } catch (e5) {}
           try { window.removeEventListener('resize', measure) } catch (e6) {}
         }
-      }, [sig])
+      }, [sig, active])
       return v
     }
 
@@ -1835,7 +1871,9 @@ window.__ModuleLoader__.load({
       var boxRef = useRef(null)
       // 任务集合或状态一变就得重量箭头；只看 `tasks.length` 会在"换了一个任务"时留旧箭头
       var sig = tasks.map(function (t) { return String(t.id) + ':' + String(t.status || '') }).join(',')
-      var edgeV = useCanvasEdges(boxRef, eg, sig)
+      // `p.active`：本画布此刻是否**真的在 DOM 里**（由 Panel 传：`tab === 'tasks' && viewV === 'canvas'`）。
+      // 缺省（老调用方/测试）按 `true` 处理 = 保持旧行为，避免"没传就永不测量"的静默降级。
+      var edgeV = useCanvasEdges(boxRef, eg, sig, p.active !== false)
       var edgeSvg = h('svg', { className: 'etc-edges' }, edgeV.map(function (e, i) {
         var mx = (e.x1 + e.x2) / 2
         return h('g', { key: i },
@@ -2386,6 +2424,61 @@ window.__ModuleLoader__.load({
       return 'people,feed' // team（默认）与人相关视图
     }
 
+    // ── 分节负载的合并（2026-09-15 性能修复 #3；2026-09-16 缺陷 C 修正）──────────────
+    // 为什么必须合并而不是替换：首屏只发 `?section=summary`（便宜：阶段/进度/计数），
+    // "人/料/事件流"晚一拍才到。若直接 `setData(d)`，摘要那一拍会把上一拍已知的成员/事件流
+    // **抹掉**（UI 闪空、通知误判"成员消失"）。规则：**新负载里有的键覆盖旧值，没有的键保留**
+    // —— 缺块 ≠ 空数据；`sections` 字段如实告诉 UI"这份负载包含哪些块"（两种零可区分）。
+    // 放在**模块级**（不再嵌在 Panel 里）：面板的 `onState` 与徽章/胶囊共用的
+    // `publishToLive`（liveStore）必须走**同一条**规则，否则徽章那一份仍会被 summary 拍掉成员。
+    //
+    // ⚠️ 但"新负载里**有**这个键"≠"这个键**算过**"（真机根因，2026-09-16 实测，非推断）：
+    //   `?section=summary`（以及 `?section=artifacts`）的响应里**照样带** `members`/`agents`/`feed`
+    //   三个键，而它们是**没算过的桩值** —— host 只在 `want('people')`/`want('feed')` 时才 enrich：
+    //     lib/command.js：`if (want('people')) sel.members = enrichMembers(...)`
+    //                     `sel.agents = want('people') ? subs.map(...) : []`
+    //                     `if (want('feed')) { ... }` 然后 `sel.feed = feed`
+    //   同一个 run 实测：`section=summary` ⇒ `members:{}`、`agents:[]`、`feed:{}`（`roles` 却永远有 6 条）；
+    //   `section=people,feed` ⇒ `members` 6 条 enriched（pm:Zoe / architect:Ivy / researcher:Alex …）。
+    //   ⇒ "新键覆盖旧键"就等于让**快的那一发**（summary，3 s）每 tick 把慢的那一发
+    //   （people,feed，≥6 s）刚 enrich 出来的成员抹回 `{}` ⇒ 真机 `.etc-member` 恒为 0，
+    //   而「人」页签仍能从 `roles` 列出 6 个角色 —— 这就是"有角色、没成员"的来源。
+    // 规则（上面 warming/scopeCaps 那条纪律的延伸）：**负载没声明 people/feed 分节 ⇒
+    //   `members`/`agents`/`feed` 是"没算"，不是"没有" ⇒ 保留旧值**。真的没有成员时，
+    //   people 那一发会带着 `sections:['summary','people',…]` 明确清空 —— 两种零仍然分得开。
+    function mergeStatePayload(prev, d) {
+      if (!d || typeof d !== 'object') return d
+      if (!prev || typeof prev !== 'object' || prev.ok !== true) return d
+      var out = {}, k
+      for (k in prev) { if (Object.prototype.hasOwnProperty.call(prev, k)) out[k] = prev[k] }
+      for (k in d) { if (Object.prototype.hasOwnProperty.call(d, k)) out[k] = d[k] }
+      var secs = Array.isArray(d.sections) ? d.sections : []
+      // 只有**显式声明了分节**的负载才谈得上"这一段算没算"；完整负载（不带 `sections`）照旧全量覆盖。
+      var scoped = secs.length > 0
+      var keepDerived = function (keys) {
+        keys.forEach(function (key) {
+          if (Object.prototype.hasOwnProperty.call(prev, key)) out[key] = prev[key]
+          else delete out[key]   // 连桩值也不留："没算过"不许冒充"是空的"
+        })
+      }
+      if (scoped && secs.indexOf('people') < 0) keepDerived(['members', 'agents'])
+      if (scoped && secs.indexOf('feed') < 0) keepDerived(['feed'])
+      // 标记类字段（`warming` / `scopeCaps`）**只在非空时下发**，而上面的合并"缺键 = 保留旧值"
+      // ⇒ 一旦出现过就**永久粘住**（"更新中"徽章再也消不掉 = 常亮的噪声，正是本轮要治的病）。
+      // `sections` 含 people 时（连续的 `people,feed` 重负载）这一发**重算过**这两个标记
+      // ⇒ 缺席即"现在真的没有"，必须清掉。
+      // 只认 people：summary 那一发**根本没算**它们，那时"缺键"只能表示"没算"，
+      // **不能**表示"没有"（否则等于拿"没算"覆盖"有" —— 缺块被当成空数据）。
+      // ⚠️ `degraded` **不**在这里清：它的条目跨分段产生（people 的 `subs:`/`wf:` 与 artifacts 的
+      // `artifacts:`/`files:`），而一次重分节只覆盖一个分段 ⇒ 一刀清掉会把另一分段的**真**告警
+      // 抹成"一切正常"。这条已如实记进 CHANGELOG 的未修边界。
+      if (secs.indexOf('people') >= 0) {
+        if (!d.warming) delete out.warming
+        if (!d.scopeCaps) delete out.scopeCaps
+      }
+      return out
+    }
+
     function Panel(props) {
       var sidProp = (props && props.sessionId) || ''
       var viewMode = (props && props.mode) === 'view'
@@ -2500,33 +2593,10 @@ window.__ModuleLoader__.load({
       // 画布另走 liveStore 的 setInterval ⇒ 画布一开就有 2–3 个轮询并发压同一个重端点
       // （实测 10 秒 7 发、6 次重叠、单发被拖到 5.9/8.3 s）。现在全部经 stateHub：
       // 同 URL 同刻只跑一次、全局单一时钟、统一退避（见 stateHub 的注释）。
-      // ── 分节负载的合并（2026-09-15 性能修复 #3）────────────────────────────────
-      // 为什么必须合并而不是替换：首屏只发 `?section=summary`（便宜：阶段/进度/计数），
-      // "人/料/事件流"晚一拍才到。若直接 `setData(d)`，摘要那一拍会把上一拍已知的成员/事件流
-      // **抹掉**（UI 闪空、通知误判"成员消失"）。规则：**新负载里有的键覆盖旧值，没有的键保留**
-      // —— 缺块 ≠ 空数据；`sections` 字段如实告诉 UI"这份负载包含哪些块"（两种零可区分）。
-      function mergeStatePayload(prev, d) {
-        if (!d || typeof d !== 'object') return d
-        if (!prev || typeof prev !== 'object' || prev.ok !== true) return d
-        var out = {}, k
-        for (k in prev) { if (Object.prototype.hasOwnProperty.call(prev, k)) out[k] = prev[k] }
-        for (k in d) { if (Object.prototype.hasOwnProperty.call(d, k)) out[k] = d[k] }
-        // 标记类字段（`warming` / `scopeCaps`）**只在非空时下发**，而上面的合并"缺键 = 保留旧值"
-        // ⇒ 一旦出现过就**永久粘住**（"更新中"徽章再也消不掉 = 常亮的噪声，正是本轮要治的病）。
-        // `sections` 含 people 时（连续的 `people,feed` 重负载）这一发**重算过**这两个标记
-        // ⇒ 缺席即"现在真的没有"，必须清掉。
-        // 只认 people：summary 那一发**根本没算**它们，那时"缺键"只能表示"没算"，
-        // **不能**表示"没有"（否则等于拿"没算"覆盖"有" —— 缺块被当成空数据）。
-        // ⚠️ `degraded` **不**在这里清：它的条目跨分段产生（people 的 `subs:`/`wf:` 与 artifacts 的
-        // `artifacts:`/`files:`），而一次重分节只覆盖一个分段 ⇒ 一刀清掉会把另一分段的**真**告警
-        // 抹成"一切正常"。这条已如实记进 CHANGELOG 的未修边界。
-        var secs = Array.isArray(d.sections) ? d.sections : []
-        if (secs.indexOf('people') >= 0) {
-          if (!d.warming) delete out.warming
-          if (!d.scopeCaps) delete out.scopeCaps
-        }
-        return out
-      }
+      // ── 分节负载的合并（2026-09-15 性能修复 #3；2026-09-16 缺陷 C 修正）─────────────
+      // 规则与根因说明见**模块级**的 `mergeStatePayload`（原始注释随函数一起搬过去了）：
+      // 它同时服务面板（`onState`）与徽章/胶囊的 `publishToLive`（liveStore），
+      // 两边必须用同一条规则 —— 否则徽章那一份仍会被 summary 的"桩值"拍掉 members/agents。
       function onState(d) {
           if (d && d.ok) {
             setData(function (prev) { return mergeStatePayload(prev, d) }); setErr(''); reschedule(d)
@@ -3472,8 +3542,12 @@ window.__ModuleLoader__.load({
 
         // 画布**无条件**求值一次（不是懒构造）：`canvasView` 内含 hook（箭头测量），
         // 放进 `viewV === 'canvas'` 的三元分支里条件调用会让 hook 数量随视图切换变化 ⇒ React 抛错。
+        // `active` 是**可见性**输入（缺陷 B）：这个元素真的挂进 DOM 的条件就是下面那个三元分支的条件
+        // ——「事」页签 + 编队画布视图。全屏视图（mode:'view'）也走同一分支，所以不需要再额外判 viewMode
+        // （也不该判 `isOpen`：全屏时 isOpen 可能为 false，判了会把可见的测量关掉）。
         var canvasEl = canvasView({
           tasks: tasks, members: members, agents: agentsLive, data: data,
+          active: tab === 'tasks' && viewV === 'canvas',
           selectedId: selTaskV && selTaskV.id,
           degrade: usingLiveTasks ? t('降级：TASKS.json 为空，下面是「实时子代理投影」——角色由 prompt 推断、依赖无从得知，因此不分层、不画依赖箭头。', 'degraded: TASKS.json is empty — this is a LIVE subagent projection (role inferred, no dependency data): no layers, no dependency arrows.') : '',
           onPick: function (tk) { var same = selTaskV && selTaskV.id === tk.id; setSelTask(same ? null : tk); if (!same) focusPanelRight() }
@@ -3800,6 +3874,12 @@ window.__ModuleLoader__.load({
       if (!d || typeof d !== 'object') return
       // 合并而不是替换：面板按标签只发一部分块（缺块 ≠ 空数据），合并后徽章不会因为
       // 收到一份只有 summary 的负载就把已知的成员/活动抹掉。
+      // ⚠️ 但浅合并**只做到"缺键保留"**：summary 那一发是**带着桩键**来的
+      // （实测 `members:{}` / `agents:[]`）⇒ 只写下面那行，徽章/胶囊已知的成员与 `agents`
+      // 活状态照样被抹空（`RoleToolView` 的实时状态、`teamBusy` 都读它 —— 与面板的
+      // 缺陷 C 同一个根因）。所以先把负载过一遍与面板**同一条**规则 `mergeStatePayload`
+      // （它会把"没算过"的派生字段还原成旧值），再照原样浅合并。
+      d = mergeStatePayload(liveStore.data, d)
       liveStore.data = Object.assign({}, liveStore.data || {}, d)
       try { harvestActivity(liveStore.data) } catch (e) {}
       try { harvestRoles(d) } catch (e) {}

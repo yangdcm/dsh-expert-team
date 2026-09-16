@@ -587,6 +587,132 @@ console.log('\n⑦ 新画布：分层按**最长路径**，环/未知依赖如�
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ⑧ 真机四处缺陷的护栏（2026-09-16，实现方已修 client.js；此处补"可红的测试"）
+//
+// ① C 的根因：`mergeStatePayload` 的**派生字段保护**。host 的 `snapshotRun` **永远返回**
+//    `members`/`agents`/`feed`（`?section=summary` 时是没算过的桩值 `{}`/`[]`），只有
+//    `want('people')` 才 enrich。旧的"新键覆盖旧键"⇒ 每 3 s 一发 summary 把刚 enrich 出来的
+//    6 个成员抹回 `{}` ⇒ 真机 `.etc-member` 恒为 0，而「人」页签还能从 `roles` 列出 6 个角色
+//    （"有角色、没成员"的真相）。
+// ③ B 的接线：`useCanvasEdges` 必须带第 4 个形参 `active` 且 `useEffect` 依赖含 `active` ——
+//    首帧画布不在 DOM 时 `boxRef.current===null`、连 ResizeObserver 都没挂；`[sig]` 在切页签时
+//    **不变化** ⇒ effect 永不重跑 ⇒ 真机边子节点恒 0。
+//    ⚠️ ③ 是**源码文本棘轮**（不是运行期断言）：它在"接线被改回 `[sig]`"时变红，但证明不了运行期
+//    行为——运行期那半要靠 ② 的 CSS 与真机截图。这里如实标注，不冒充功能测试。
+console.log('\n⑧ 真机缺陷护栏：合并派生字段保护（①）/ 画布边测量接线（③，文本棘轮）');
+{
+  /** 本节自己的 safeCheck（⑦ 块里那份是块作用域，跨不出来）。 */
+  const safeCheck = (name, fn) => {
+    try { const r = fn(); check(r.ok, name, r.detail); }
+    catch (e) { check(false, name, `抛错：${e && e.message}`); }
+  };
+  // ── ① `mergeStatePayload`：按名抽源码 + new Function（本仓范式）──
+  let merge = null, mixWhy = '';
+  {
+    const at = src.indexOf('function mergeStatePayload(');
+    if (at < 0) mixWhy = 'client.js 里找不到 function mergeStatePayload(';
+    else {
+      let i = src.indexOf('{', at), depth = 0, end = -1;
+      for (let j = i; j < src.length; j += 1) {
+        if (src[j] === '{') depth += 1;
+        else if (src[j] === '}') { depth -= 1; if (depth === 0) { end = j + 1; break; } }
+      }
+      if (end < 0) mixWhy = 'mergeStatePayload 花括号不平衡';
+      else {
+        try {
+          const P = new Proxy({}, { has: () => true, get: (t, k) => (k === Symbol.unscopables ? undefined : globalThis[k]) });
+          merge = new Function('S', 'with (S) {\n' + src.slice(at, end) + '\nreturn mergeStatePayload;\n}')(P);
+        } catch (e) { mixWhy = `求值失败：${e && e.message}`; }
+      }
+    }
+  }
+  check(typeof merge === 'function', '能按名抽取并求值 mergeStatePayload（① 的前提）', mixWhy || 'ok');
+  if (typeof merge !== 'function') {
+    console.log('\n✗ 全景图分层测试失败（mergeStatePayload 未落盘 ⇒ ① 无法运行）');
+    process.exit(1);
+  }
+  /** 真值比对：用 JSON 逐字比，避免引用相等掩盖"值被换成同形新对象"。 */
+  const j = (v) => JSON.stringify(v);
+  const PREV = {
+    ok: true,
+    sections: ['summary', 'people', 'feed'],
+    members: { pm: { name: 'Zoe', color: '#c04f4f', initial: 'Z' }, backend: { name: 'Sam' } },
+    agents: [{ id: 'a1', role: 'pm' }],
+    feed: { a1: ['ev1', 'ev2'] },
+    roles: ['pm', 'backend'],
+  };
+  console.log('  ── ① 派生字段保护：summary 那一发不得抹掉 people 刚 enrich 出来的真值 ──');
+  safeCheck('正向：先喂 people 真值，再喂「只声明 summary」的桩值 ⇒ members/agents/feed 保持上一发真值', () => {
+    const out = merge(PREV, { ok: true, sections: ['summary'], members: {}, agents: [], feed: {} });
+    return {
+      ok: j(out.members) === j(PREV.members) && j(out.agents) === j(PREV.agents) && j(out.feed) === j(PREV.feed),
+      detail: `members=${j(out.members)} agents=${j(out.agents)} feed=${j(out.feed)}`,
+    };
+  });
+  safeCheck('NEGATIVE（防过度保护）：**含 people 的**负载必须真的更新 members/agents（不许保护成永久陈旧）', () => {
+    const next = { ok: true, sections: ['summary', 'people', 'feed'], members: { qa: { name: 'Jack' } }, agents: [{ id: 'b2' }], feed: { b2: ['ev9'] } };
+    const out = merge(PREV, next);
+    return {
+      ok: j(out.members) === j(next.members) && j(out.agents) === j(next.agents) && j(out.feed) === j(next.feed),
+      detail: `members=${j(out.members)} agents=${j(out.agents)} feed=${j(out.feed)}`,
+    };
+  });
+  safeCheck('NEGATIVE（两种"零"必须分得开）：带 people 的一发里成员真的是空 ⇒ 必须**清空**而不是保留旧值', () => {
+    const out = merge(PREV, { ok: true, sections: ['summary', 'people'], members: {}, agents: [] });
+    return {
+      ok: out.members && Object.keys(out.members).length === 0 && Array.isArray(out.agents) && out.agents.length === 0,
+      detail: `members=${j(out.members)} agents=${j(out.agents)}`,
+    };
+  });
+  safeCheck('NEGATIVE（老 host / section=all）：**不带 sections** 的负载按旧语义整体覆盖（保护规则不得误伤）', () => {
+    const full = { ok: true, members: { only: { name: 'X' } }, agents: [], feed: {} };
+    const out = merge(PREV, full);
+    return {
+      ok: j(out.members) === j(full.members) && j(out.agents) === j(full.agents) && j(out.feed) === j(full.feed),
+      detail: `members=${j(out.members)} agents=${j(out.agents)} feed=${j(out.feed)}`,
+    };
+  });
+  safeCheck('NEGATIVE：旧负载里**没有**该键时，桩值也不许留下（"没算过"≠"是空的"）', () => {
+    const prev = { ok: true, sections: ['summary', 'people'], roles: ['pm'] };   // 无 members/agents
+    const out = merge(prev, { ok: true, sections: ['summary'], members: {}, agents: [], feed: {} });
+    return {
+      ok: !Object.prototype.hasOwnProperty.call(out, 'members') && !Object.prototype.hasOwnProperty.call(out, 'agents'),
+      detail: `keys=${Object.keys(out).join(',')}`,
+    };
+  });
+  safeCheck('边界：prev 不是已加载负载（ok!==true）或 d 非法 ⇒ 直接返回 d（不合并）', () => {
+    const d = { ok: true, sections: ['summary'], members: {} };
+    const a = merge({ members: { pm: {} } }, d);          // prev 缺 ok:true
+    const b = merge(PREV, null);
+    return { ok: a === d && b === null, detail: `a===d:${a === d} b===null:${b === null}` };
+  });
+
+  console.log('  ── ③ useCanvasEdges 接线（**文本棘轮**，不是运行期断言）──');
+  const uceAt = src.indexOf('function useCanvasEdges(');
+  let uce = '';
+  if (uceAt >= 0) {
+    let i = src.indexOf('{', uceAt), depth = 0;
+    for (let k = i; k < src.length; k += 1) {
+      if (src[k] === '{') depth += 1;
+      else if (src[k] === '}') { depth -= 1; if (depth === 0) { uce = src.slice(uceAt, k + 1); break; } }
+    }
+  }
+  check(!!uce, '能抽到 `function useCanvasEdges(...)` 源码（③ 的前提）', uce ? `${uce.length} 字符` : '抽不到');
+  if (uce) {
+    const sigM = /function useCanvasEdges\s*\(([^)]*)\)/.exec(uce);
+    const params = sigM ? sigM[1].split(',').map((s) => s.trim()).filter(Boolean) : [];
+    check(params.length === 4 && params[3] === 'active', '形参表有第 4 个参数 active（首帧不在 DOM 时要靠它触发重量）', `(${params.join(', ')})`);
+    const depsM = /\}\s*,\s*\[([^\]]*)\]\s*\)/.exec(uce);
+    const deps = depsM ? depsM[1].split(',').map((s) => s.trim()).filter(Boolean) : [];
+    check(deps.includes('sig') && deps.includes('active'), 'useEffect 依赖同时含 sig 与 active（改回 [sig] ⇒ 切页签时 effect 永不重跑、边恒 0）', `[${deps.join(', ')}]`);
+    const callOk = /useCanvasEdges\(boxRef,\s*eg,\s*sig,\s*p\.active !== false\)/.test(src);
+    check(callOk, 'canvasView 调用处传 `p.active !== false`（默认开启，不悄悄关掉）', callOk ? 'ok' : '未匹配到该调用形态');
+    const panelOk = /active:\s*tab === 'tasks' && viewV === 'canvas'/.test(src);
+    check(panelOk, 'Panel 侧传 `active: tab === \'tasks\' && viewV === \'canvas\'`（只有画布真的可见时才算 active）', panelOk ? 'ok' : '未匹配到该传参');
+  }
+}
+
 console.log('');
 if (fail > 0) {
   console.log(`✗ 全景图分层测试失败：${fail} 项`);

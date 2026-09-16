@@ -96,5 +96,51 @@ check(stillMissing.length === 0, '10 条曾静默丢失的规则全部在场', s
 // ── 5. 拼接污染：多余的一元加会把相邻片段变成 NaN ──
 check(!css.includes('NaN'), '拼接结果无 NaN 污染（无多余/缺失的连接符）');
 
+// ── 6. 真机两处 CSS 缺陷的护栏（2026-09-16，见 §7/§8）──────────────────────────
+// 两条都来自真机实测（不是推断），且都属于"规则在场、但**声明的属性**不够"这一类——
+// §3 的"片段是否进了样式表"查不出来（片段在、子串在，规则却是坏的）。
+
+console.log('\n⑥ 真机两处 CSS 缺陷：替换元素必须显式给宽高；吸满画布的浮层必须可层叠');
+
+/** 取出所有选择器列表里含 `sel` 的规则的**声明合并**（含 @media 内的嵌套规则）。 */
+function declsOf(sel) {
+  const out = [];
+  const re = /([^{}]+)\{([^{}]*)\}/g;
+  let m;
+  while ((m = re.exec(css))) {
+    const sels = m[1].split(',').map((s) => s.trim());
+    if (sels.indexOf(sel) >= 0) out.push(m[2]);
+  }
+  return out.join(';').replace(/\s+/g, '');
+}
+const hasDecl = (sel, decl) => declsOf(sel).split(';').indexOf(decl) >= 0;
+
+// ⑥-A：`.etc-edges` 是绝对定位铺满画布的 **SVG 覆盖层**。SVG 是**替换元素**，不随 `inset:0`
+//   拉伸 —— 只写 `position:absolute;inset:0` 时它的计算尺寸仍是 SVG 默认 **300×150**
+//   （真机实测容器 962×297，于是箭头被挤在左上角一小块里）。
+//   ⇒ 必须**显式**给 `width:100%` 与 `height:100%`。
+{
+  const sel = '.etc-edges';
+  const d = declsOf(sel);
+  check(d.length > 0, `找到 ${sel} 规则（反空转：规则本身必须在）`, d ? d.slice(0, 80) : '未找到');
+  for (const decl of ['position:absolute', 'inset:0', 'width:100%', 'height:100%']) {
+    check(hasDecl(sel, decl), `${sel} 声明了 ${decl}`, hasDecl(sel, decl) ? '' : `实际声明：${d}`);
+  }
+}
+
+// ⑥-B：`.exp-canvas` 是吸满整个面板的浮层（画布视图）。`z-index` **只对定位元素有效**：
+//   `position:static` 时它自己的 `z-index:120` 完全不生效，宿主的
+//   `.wSkVaW_widthHandle`（absolute / z-index:8 / 40px 宽）就压在视图上 ——
+//   真机 `elementFromPoint` 在「编队画布」chip 中心命中手柄 ⇒ 遮挡 + 抢点击。
+//   ⇒ 必须 `position:relative`（建立层叠上下文）且 `z-index` 高于 8。
+{
+  const sel = '.exp-canvas';
+  const d = declsOf(sel);
+  check(d.length > 0, `找到 ${sel} 规则（反空转：规则本身必须在）`, d ? d.slice(0, 80) : '未找到');
+  check(hasDecl(sel, 'position:relative'), `${sel} 声明了 position:relative（static 下 z-index 无效）`, hasDecl(sel, 'position:relative') ? '' : `实际声明：${d}`);
+  const zi = /(?:^|;)z-index:(\d+)/.exec(d);
+  check(!!zi && Number(zi[1]) > 8, `${sel} 的 z-index 大于宿主手柄的 8（真机手柄是 z-index:8）`, zi ? `z-index=${zi[1]}` : `实际声明：${d}`);
+}
+
 if (fail) { console.error(`\n✗ client-css-integrity：${fail} 项失败`); process.exit(1); }
 console.log('\n✓ client-css-integrity：全部通过');
