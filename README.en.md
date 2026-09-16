@@ -144,9 +144,9 @@ expand a member for its tasks and artifacts. Models are configurable per role; h
 <sub>Figure 7: **phases and artifacts**. Look at the phase bar and the preview pane — the current phase, the phases
 already passed, and the actual body of the artifact written in that phase (artifacts are the single source of truth; the overlay is just a view of them).</sub>
 
-![The expert-team section inside the official DeepSeek Harness settings page: 18 settings, Chinese labels, applied on change](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
+![The expert-team section inside the official DeepSeek Harness settings page: 19 settings, Chinese labels, applied on change](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
 
-<sub>Figure 8: **settings**. Look at the official `Settings → Expert team` page — 18 settings, Chinese labels,
+<sub>Figure 8: **settings**. Look at the official `Settings → Expert team` page — 19 settings, Chinese labels,
 **saved on change and applied immediately** (caps, rounds, the tier gate and the oscillation detector are recomputed
 in-process). Values live in the host namespace `expert-team`, so they travel with the plugin market's backup/restore.</sub>
 
@@ -388,7 +388,7 @@ Full command list (`/team codeindex` code index, `/team limit` quotas, `/team se
 
 ```
 cordis.patch.yml       the only composition contribution: a host-plane /team command line
-lib/command.js         /team command: parse + create workspace + install skill + launch team + 11 overlay routes
+lib/command.js         /team command: parse + create workspace + install skill + launch team + all overlay routes
 lib/validate.js        pure-function validators for the state machine / quality gates / capacity caps
 lib/interception.js    moves the ledger contract and spec boundary onto tools/post-execute (gates in code)
 lib/tier.js            single source for the process-tier vocabulary

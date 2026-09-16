@@ -130,9 +130,9 @@ $ /team 做一个带登录的支付模块
 
 <sub>图 7：**阶段与工件**。看阶段条与预览区 —— 当前阶段、已过阶段、以及该阶段真正写下的工件正文（工件是唯一真源，浮层只是它的视图）。</sub>
 
-![DeepSeek Harness 官方设置页里的「专家团」分节：18 个设置项、中文标签、改动即时生效](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
+![DeepSeek Harness 官方设置页里的「专家团」分节：19 个设置项、中文标签、改动即时生效](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
 
-<sub>图 8：**设置**。看官方 `设置 →「专家团」` 这一页 —— 18 个设置项、中文标签、**改动即保存并即时生效**（上限/轮次/档位门/振荡检测在进程内重算）；值存在宿主命名空间 `expert-team`，随插件市场的备份/恢复一起走。</sub>
+<sub>图 8：**设置**。看官方 `设置 →「专家团」` 这一页 —— 19 个设置项、中文标签、**改动即保存并即时生效**（上限/轮次/档位门/振荡检测在进程内重算）；值存在宿主命名空间 `expert-team`，随插件市场的备份/恢复一起走。</sub>
 
 **输入框正上方还有一条常驻状态条**（client 槽 `conversation.input.dock`，id `expert-team-subagents`，order 200）—— 有子代理在跑时是琥珀色横幅「N 个子代理运行中」+ 最多 3 个角色名 + 一个跳动圆点，点击它直接打开团队面板；没有在跑时只剩一行暗灰字「无子代理在运行」，会话或状态尚未就绪时则完全不渲染（判据与页头徽章同一条：`/state` 的 `agents[].activity === 'running'`）。
 
@@ -344,7 +344,7 @@ dsh plugin --profile web add dshmarket
 
 ```
 cordis.patch.yml       唯一的组合贡献：一个 host 面的 /team 命令行
-lib/command.js         /team 命令：解析 + 建工作区 + 装 skill + 触发团队 + 11 条浮层路由
+lib/command.js         /team 命令：解析 + 建工作区 + 装 skill + 触发团队 + 全部浮层路由
 lib/validate.js        状态机/质量门禁/容量上限的纯函数校验器
 lib/interception.js    把「台账契约」「规格边界」搬到宿主 tools/post-execute 瀑布上（硬门在代码里）
 lib/tier.js            流程档位词表的唯一真源
