@@ -144,9 +144,9 @@ expand a member for its tasks and artifacts. Models are configurable per role; h
 <sub>Figure 7: **phases and artifacts**. Look at the phase bar and the preview pane — the current phase, the phases
 already passed, and the actual body of the artifact written in that phase (artifacts are the single source of truth; the overlay is just a view of them).</sub>
 
-![The expert-team section inside the official DeepSeek Harness settings page: 19 settings, Chinese labels, applied on change](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
+![The expert-team section inside the official DeepSeek Harness settings page: all settings, Chinese labels, applied on change](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
 
-<sub>Figure 8: **settings**. Look at the official `Settings → Expert team` page — 19 settings, Chinese labels,
+<sub>Figure 8: **settings**. Look at the official `Settings → Expert team` page — all settings, Chinese labels,
 **saved on change and applied immediately** (caps, rounds, the tier gate and the oscillation detector are recomputed
 in-process). Values live in the host namespace `expert-team`, so they travel with the plugin market's backup/restore.</sub>
 
@@ -407,7 +407,7 @@ evolve with the skill, without shipping a new package.
 
 ```sh
 npm run test:all        # 89 test files, zero dependencies, no install needed (this is what CI runs)
-npm run rename <name>   # after forking: syncs 4 package-name spellings across 13 files
+npm run rename <name>   # after forking: full-tree scan, syncs every package-name spelling (dry run lists them)
 npm run check:name      # check for leftover placeholder package names
 ```
 

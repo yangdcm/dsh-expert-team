@@ -130,9 +130,9 @@ $ /team 做一个带登录的支付模块
 
 <sub>图 7：**阶段与工件**。看阶段条与预览区 —— 当前阶段、已过阶段、以及该阶段真正写下的工件正文（工件是唯一真源，浮层只是它的视图）。</sub>
 
-![DeepSeek Harness 官方设置页里的「专家团」分节：19 个设置项、中文标签、改动即时生效](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
+![DeepSeek Harness 官方设置页里的「专家团」分节：全部设置项、中文标签、改动即时生效](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
 
-<sub>图 8：**设置**。看官方 `设置 →「专家团」` 这一页 —— 19 个设置项、中文标签、**改动即保存并即时生效**（上限/轮次/档位门/振荡检测在进程内重算）；值存在宿主命名空间 `expert-team`，随插件市场的备份/恢复一起走。</sub>
+<sub>图 8：**设置**。看官方 `设置 →「专家团」` 这一页 —— 全部设置项、中文标签、**改动即保存并即时生效**（上限/轮次/档位门/振荡检测在进程内重算）；值存在宿主命名空间 `expert-team`，随插件市场的备份/恢复一起走。</sub>
 
 **输入框正上方还有一条常驻状态条**（client 槽 `conversation.input.dock`，id `expert-team-subagents`，order 200）—— 有子代理在跑时是琥珀色横幅「N 个子代理运行中」+ 最多 3 个角色名 + 一个跳动圆点，点击它直接打开团队面板；没有在跑时只剩一行暗灰字「无子代理在运行」，会话或状态尚未就绪时则完全不渲染（判据与页头徽章同一条：`/state` 的 `agents[].activity === 'running'`）。
 
@@ -362,7 +362,7 @@ presets/expert-team/   「专家团模式」preset：12 个角色 subagent 工�
 
 ```sh
 npm run test:all        # 89 个测试文件，零依赖、无需 install（CI 跑的就是它）
-npm run rename <新包名>  # fork 后改名：自动同步 13 个文件里 4 种包名写法
+npm run rename <新包名>  # fork 后改名：全树扫描并同步所有包名写法（预演会列出命中文件与写法）
 npm run check:name      # 检查占位包名残留
 ```
 
