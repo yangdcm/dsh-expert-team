@@ -8,19 +8,33 @@ English | [中文](README.md)
 
 ![dsh expert-team plugin banner: a 12-role multi-agent team, a 9-phase gated pipeline, zero runtime dependencies](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/hero.svg)
 
-> **One sentence in, a gated team delivery out.** `/team build a payments module with login`
-> assembles a 12-role expert team and runs
+> **One sentence in, a gated team delivery out.** `/team build a payments module with login` gives
+> **small teams and solo builders** a complete engineering department: it assembles a 12-role expert team
+> (product, architecture, research, UI/UX, backend, frontend, data, security, review, QA, devops, docs) and runs
 > clarify → research → design → spec-review → plan-approval → implement → review → test → deliver,
-> with implementers editing your workspace directly and every hand-off persisted as a reviewable artifact.
+> with implementers editing your workspace directly and **every hand-off persisted as a reviewable artifact**.
 
 A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh):
 **zero runtime dependencies, no build step, no install hooks.**
 
 | 12 roles | 9 phases | 89 test files | 0 runtime deps | 0 build steps |
 |---|---|---|---|---|
-| own persona / `toolFilter` / `maxDepth: 1` | 1 hard gate + 1 approval gate | incl. a 156-entry mutation catalog and several ratchets | `dependencies: {}` | no bundler, no `prepare` hook |
+| own persona / `toolFilter` / `maxDepth: 1` | 1 hard gate + 1 approval gate | CI runs the full suite on every push | `dependencies: {}` | no bundler, no `prepare` hook |
 
 > Zero runtime dependencies. Recommended: also install **Hindsight** (cross-project memory) — see [Dependencies and recommended plugins](#dependencies-and-recommended-plugins).
+
+## Get started in three steps
+
+```sh
+dsh plugin --profile web add @yangdcm/dsh-expert-team   # 1) install
+# 2) restart dsh web once — the plugin lays the "Expert team mode" preset for you
+```
+
+3) Open a new session, switch it to **"Expert team mode"**, then run `/team build a payments module with login`.
+
+Watch it: the **status bar above the input box** (who is running) → click it for the **team overlay**
+(phases / roster / artifacts), or run `/team canvas` for the full-screen canvas. Artifacts land in
+`<your workspace>/team/<run-id>/`. Full command list: [Quick start](#quick-start).
 
 ## Who it is for
 
@@ -50,7 +64,7 @@ codebase directly, and everything is logged as reviewable artifacts.
 **Typical uses**: internal tools and product iteration in small companies · freelance and outsourced delivery ·
 solo developers shipping a complete project · any long task where "someone independent must verify" matters.
 
-<sub>One honest boundary: this is **not** a human team — product-level and scope-level decisions remain yours.</sub>
+<sub>**Fit and scope**: the team drives and verifies the work; **product-level and scope-level decisions remain yours** — clear boundaries are what make it safe to delegate.</sub>
 
 ![The expert-team 9-phase gated pipeline: clarify → research → design → spec-review (hard gate) → plan approval → implement (DAG parallel) → review → test → deliver](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/pipeline.svg)
 
@@ -114,7 +128,7 @@ answer them:
 |---|---|
 | **Role separation** | 12 roles, each with its own persona, tool boundary (`toolFilter`) and delegation depth (`maxDepth: 1`); product/architecture roles only read and write planning artifacts, review/security are read-only, only implementers touch code |
 | **Phase gates** | 9 phases; every hand-off travels two channels — a structured return value **and** an artifact file. State never rides on chat history |
-| **Quality gates** | State-machine consistency is **enforced by plugin code**, not requested in a prompt: a task cannot be marked completed while unfinished, quality issues must be adjudicated by qa/reviewer, coverage gaps and over-budget rework are caught — violations show up **live** in the overlay and in `/team status`; **write-side ownership gate**: overwriting an artifact owned by another role is **rejected outright** on the `write`/`edit` channel (mounted on `tools/pre-execute`; creating is allowed; a role holding `bash` could still bypass — see the honest boundary in `lib/artifact-ownership.js`) |
+| **Quality gates** | State-machine consistency is **enforced by plugin code**, not requested in a prompt: a task cannot be marked completed while unfinished, quality issues must be adjudicated by qa/reviewer, coverage gaps and over-budget rework are caught — violations show up **live** in the overlay and in `/team status`; **write-side ownership gate**: overwriting an artifact owned by another role is **rejected outright** (creating is allowed; the residual bypass is listed under [Fit and boundaries](#fit-and-boundaries)) |
 | **Convergence & accounting** | Every run records tokens, elapsed time, time-to-first-artifact and a closing budget; `/team learn` distills cross-run experience and feeds it back before the next run starts |
 
 ## What it looks like in action
@@ -152,39 +166,36 @@ in-process). Values live in the host namespace `expert-team`, so they travel wit
 
 A persistent status bar also sits directly above the chat input box (client slot `conversation.input.dock`, id `expert-team-subagents`, order 200): while at least one subagent is running it shows an amber banner ("N subagents running") with up to three role names and a pulsing dot, and clicking it opens the team panel; when none are running it shows a single dim gray line ("No subagents running"), and it renders nothing at all before a session or status is available (the same predicate as the header badge: `agents[].activity === 'running'` from `/state`).
 
-## Why it is dependable
+## Why it is worth installing
 
-- **The state machine is enforced by plugin code, not requested by prompt.** `lib/interception.js` moves the
-  "task-ledger contract" and the "spec boundary" rules onto the host's `tools/post-execute` waterfall:
-  duplicate ids / cycles / self-dependencies are rejected on the spot (`HARD_GRAPH_CODES`), and an empty SPEC
-  boundary section cannot enter `implement` (`SPEC_COMPLETE_PHASES`). **Silence in the spec means permission —
-  that is the number-one source of rework.**
-- **Zero runtime dependencies, zero devDependencies, no build step, no `prepare`/`postinstall` hooks.**
-  What you install is exactly what runs; there is no "unknown script at install time" layer.
-- **89 test files plus a 156-entry mutation catalog.** `npm run test:all` needs no `install` (it is what CI runs).
-  ⚠️ **What the catalog actually guarantees (honest version)**: in CI, `mutation-catalog.test.mjs` validates the catalog SHAPE —
-  unique ids, each mutant `find` string matching exactly once in its target file, the target test file existing, and the entry count
-  matching the constant. **Mutants themselves must be injected by hand** (swap `find` for `replace` and run the target test to see if it
-  turns red); **CI does not execute mutants today**. So it is a guard against drift and typos, not an automatic proof that the suite
-  catches errors — please do not read it as the latter.
-- **Several ratchet tests** pin down rules that were already thought through, so they cannot quietly regress:
-  `vocab-consistency` (one source for vocabulary and role labels), `scan-single-source` (no fact with two homes),
-  `write-bypass-ratchet` (no write path may bypass interception), `settings-consumers`
-  (**every setting must have a consumer**; the allow-list is compared as a set, so it can only shrink),
-  `state-perf-guard` (sub-session timing must perform **zero** log reads — a performance regression fails the suite).
-- **Two kinds of zero, kept apart.** "I don't know what exists" must not look like "there is nothing":
-  a failed tool-face narrowing distinguishes `no-known-names` from `nothing-to-deny`; when `/state` cannot obtain
-  a timestamp it returns `hasTimestamp: false` instead of passing `0` off as a measurement.
-- **Failures must be loud.** Out-of-bounds writes, artifact divergence and over-budget rework always raise an
-  explicit error; nothing is truncated silently — silent failure is the most expensive bug class in this repo.
-- **Performance is measured and guarded.** `/state` used to read every sub-session log in full: measured at
-  7.1–9.8 s warm and 283.6 s cold (75 sub-sessions), and it blocked the whole `dsh web` event loop. 1.3.5
-  replaced that with a table lookup (measured at 0.0026 ms per call, zero `readSession` calls).
-  **The end-to-end numbers have since been re-measured on a machine with real data** (1.3.20, 95 sub-agents,
-  13 `STATE.members`, 104 tasks): `?section=summary` median **3.5–5.8 ms**; `?section=people,feed` went from
-  **~280 ms per call** on 1.3.19 to a steady **4–13 ms** (about 70×), and the speed-up did not come from
-  dropping members (`agents`/`stateMembers` counts unchanged).
-  `state-perf-guard.test.mjs` keeps it from coming back.
+- **One sentence in, delivered into your codebase.** `/team <one-sentence goal>` spins up a 12-role team through
+  the nine-phase gate sequence, and **implementers edit your workspace directly**. What you end up with is
+  **reviewable files** (`SPEC / PLAN / TASKS / REVIEW / TEST / SUMMARY`), not a chat transcript.
+- **Quality gates are code, not prompts.** An unfinished task cannot be marked `completed`; quality issues must be
+  adjudicated by `qa` / `reviewer`; the SPEC's "boundaries and prohibitions" section **cannot be empty when the run
+  enters `implement`** (hard gate); coverage gaps and over-budget rework are detected on the spot and shown live in
+  the overlay and in `/team status` — see [Figure 5](#what-it-looks-like-in-action) for what a real block looks like.
+- **You can see it working.** A live overlay (phases / roster with per-role models / artifact preview / decision
+  buttons) plus a full-screen canvas (people / tasks / artifacts / board), a task dependency graph with the rework
+  loop, and a persistent status bar above the input box.
+- **Clean to install, calm to run.** Zero runtime dependencies (`dependencies: {}`), no build step, no
+  `prepare` / `postinstall` hooks; the skill is **registered at runtime** and never copied to disk, and the preset
+  carries a **version stamp** so upgrades re-lay the whole directory instead of silently staying behind.
+- **It accumulates.** Persistent-team mode can be re-tasked and resumes across sessions; `/team learn` distills
+  cross-run experience and feeds it back **before the next run starts**; with Hindsight it also recalls across
+  projects ([recommended, not required](#dependencies-and-recommended-plugins)).
+
+## Measured numbers (with sources and conditions)
+
+| Metric | Measured | Conditions |
+|---|---|---|
+| `?section=summary` response | median **3.5–5.8 ms** | real machine (1.3.20+); 95 sub-agents / 13 `STATE.members` / 104 tasks |
+| `?section=people,feed` response | **4–13 ms** (was ~280 ms/call on 1.3.19, about **70×**) | same; the speed-up did **not** come from dropping members (`agents`/`stateMembers` counts unchanged) |
+| Worst historical (fixed in 1.3.5) | 7.1–9.8 s warm, **283.6 s** cold | before 1.3.5: `/state` read 75 sub-session logs in full and blocked the `dsh web` event loop |
+| Tests | **89 test files** | `npm run test:all`, zero dependencies, no `install` needed (this is what CI runs) |
+
+All figures are real-machine measurements; absolute values depend on machine load, so **numbers taken under different
+load are not directly comparable**. `state-perf-guard.test.mjs` keeps performance from regressing.
 
 ## Install
 
@@ -203,7 +214,7 @@ dsh plugin --profile web add @yangdcm/dsh-expert-team
 # then restart dsh web so the new bundle joins the composition
 ```
 
-**Option 2: plugin market** (listing not submitted yet ⇒ it may not be searchable today)
+**Option 2: plugin market** (listing **submitted**, pending the upstream merge; searchable once merged — until then use option 1)
 
 Once listed: `dsh web` → **Settings → Plugin market** → search "expert team" → install → refresh the page.
 
@@ -403,6 +414,15 @@ presets/expert-team/   the "Expert team mode" preset: 12 role subagent tool inst
 Almost all of the orchestration protocol lives in the skill rather than in code — so the team protocol can
 evolve with the skill, without shipping a new package.
 
+### Internals and what they actually guarantee (for contributors and the curious)
+
+- **Two rules are moved onto the host's `tools/post-execute` waterfall** (`lib/interception.js`): the "task-ledger contract" — duplicate ids / cycles / self-dependencies are rejected on the spot (`HARD_GRAPH_CODES`) — and the "spec boundary" — an empty SPEC boundary section cannot enter `implement` (`SPEC_COMPLETE_PHASES`). **Silence in the spec means permission, and that is the number-one source of rework.**
+- **The write-side ownership gate** sits on `tools/pre-execute` (`lib/artifact-ownership.js`): creating is allowed, overwriting another role's artifact is rejected outright; **a role holding `bash` can still bypass it** (listed under [Fit and boundaries](#fit-and-boundaries)).
+- **89 test files plus a 156-entry mutation catalog**: `npm run test:all` needs no `install` (it is what CI runs). In CI the catalog validates its **shape** (unique ids, each mutant `find` string matching exactly once in its target file, entry count matching the constant); **mutants must be injected by hand** and **CI does not execute them today** ⇒ it guards against drift and typos, it is **not** an automatic proof that the suite catches errors.
+- **Several ratchet tests**: `vocab-consistency` (one source for vocabulary and role labels), `scan-single-source` (no fact with two homes), `write-bypass-ratchet` (no write path may bypass interception), `settings-consumers` (every setting must have a consumer; the allow-list is compared as a set, so it can only shrink), `state-perf-guard` (sub-session timing must perform **zero** log reads).
+- **Two kinds of zero, kept apart**: "I don't know what exists" must not look like "there is nothing" — a failed tool-face narrowing distinguishes `no-known-names` from `nothing-to-deny`, and when `/state` cannot obtain a timestamp it returns `hasTimestamp: false` instead of passing `0` off as a measurement.
+- **Failures must be loud**: out-of-bounds writes, artifact divergence and over-budget rework always raise an explicit error; nothing is truncated silently — silent failure is the most expensive bug class in this repo.
+
 ## Development
 
 ```sh
@@ -448,7 +468,7 @@ Then **restart `dsh web`** (the preset roster is read at startup; refreshing the
 - A newly created preset may only appear in the picker **after a restart of `dsh web`** (the host reads its
   roster at startup).
 
-## Honest boundaries
+## Fit and boundaries
 
 - **The local-origin guard is in place, but it is not authentication.** All overlay routes validate the Host
   header (against DNS rebinding), the Origin of mutating methods (against cross-site writes) and the client
@@ -458,8 +478,12 @@ Then **restart `dsh web`** (the preset roster is read at startup; refreshing the
   **Residual risk, stated plainly**: any local non-browser process can forge arbitrary request headers, and dsh
   plugins have no authentication model — so do not expose `dsh web` to an untrusted network (with the host
   configured as `host: 0.0.0.0`, the guard only blocks clients that are not on loopback).
-- **Web profile only**: the overlay and routes depend on `webServer`; without an overlay the command and the
-  artifacts still work.
+- **The overlay needs the `web` profile**: the overlay and routes depend on `webServer`; under other profiles, or
+  without an overlay, the `/team` command and the artifact protocol **work exactly the same** — you only lose the
+  visual layer.
+- **Residual bypass on the write gate**: the artifact-ownership gate sits on the `write` / `edit` channels
+  (creating is allowed, overwriting another role's artifact is rejected outright); **a role holding `bash` can
+  still bypass it** — that is the known boundary of this mechanism, see `lib/artifact-ownership.js`.
 - **Preset drift**: the shipped "Expert team mode" is a copy of the official `standard` preset plus the role tools;
   if the host changes its built-in preset structure, this needs a sync. Upgrades re-lay the whole directory by
   version stamp; `/team uninstall` reclaims it (a user-authored preset with the same name is never touched).
@@ -481,7 +505,14 @@ Then **restart `dsh web`** (the preset roster is read at startup; refreshing the
 - `engines.dsh: >=0.1.5-rc.1`, declared in `package.json` under `dsh.compatibility` (`dshReleases` marks it
   release by release); the plugin market uses it to decide whether this plugin fits your host.
 - Node.js ≥ 20.
-- Profile: `web` (see "Honest boundaries" above).
+- Profile: `web` (see "Fit and boundaries" above).
+
+## Try it now
+
+- **Install**: `dsh plugin --profile web add @yangdcm/dsh-expert-team`, then restart `dsh web` once
+- **Run**: open a new session, switch to "Expert team mode", then `/team build a payments module with login`
+- **Feedback / Star**: <https://github.com/yangdcm/dsh-expert-team> (issues and stars are both welcome)
+- **Talk to me**: see "Author & contact" below — questions, feedback, or just how you plan to use it
 
 ## Author & contact
 
