@@ -835,6 +835,20 @@ window.__ModuleLoader__.load({
       var key = String(tier == null ? '' : tier).trim().toLowerCase()
       return Object.prototype.hasOwnProperty.call(TIER_LABELS_ZH, key) ? ('🎚' + TIER_LABELS_ZH[key]) : ''
     }
+    /**
+     * 损坏 run 的徽标文案（**唯一出口**）：`health === 'broken'` 时给出显式标记，
+     * 否则返回空串（正常 run 由 phase/status 渲染，不在此处插手）。
+     * 为什么缺 STATE.json 的 run 必须**显式**标出来：`/state` 的 `runs[]` 里这类目录的
+     * `phase`/`status` 都是空串 ⇒ 面板会渲染成 `/ · 0/0`、下拉渲染成 `2026-09-17-160412 ()`，
+     * 用户看不出这是"坏了"，只会以为面板自己出了故障。文案与 host 侧 `lib/command.js` 的
+     * `⛔ 损坏：` 逐字对齐，避免同一个事实在两侧两套词表。
+     */
+    function runHealthBadge(r) {
+      var h = (r && r.health) || ''
+      if (h !== 'broken') return ''
+      var why = (r && r.healthReason) || t('缺 STATE.json（或不可解析）', 'missing STATE.json')
+      return t('⛔ 损坏 · ' + why, '⛔ broken · ' + why)
+    }
     function roleFromText(text) {
       var hay = String(text || '')
       if (!hay) return ''
@@ -3343,7 +3357,8 @@ window.__ModuleLoader__.load({
       var artifactBar = ARTIFACT.map(function (a) { return h('span', { className: 'exp-art', key: a, onClick: function () { openArtifact(a, runId, workspace) } }, esc(a)) })
       var runsAll = (data && data.runs) || runsMeta
       // 归属标记（多会话协作）：别的会话创建的 run 在下拉里标 👥，本/未知会话不加（避免噪音）
-      var runSelector = runsAll.map(function (r) { var v = r.workspace + '\u0001' + r.runId; var ownerTag = (r.ownerSession && r.ownerSession !== sessionId) ? ' 👥' : ''; return h('option', { key: v, value: v }, esc(r.runId) + ownerTag + ' (' + esc(phaseLabel(r.phase)) + (r.workspace ? ' · ' + esc(basename(r.workspace) || r.workspace) : '') + ')') })
+      // 损坏 run 的下拉只写徽标（`<option>` 不支持富 DOM ⇒ 纯文本前缀），否则退回原来的阶段文案。
+      var runSelector = runsAll.map(function (r) { var v = r.workspace + '\u0001' + r.runId; var ownerTag = (r.ownerSession && r.ownerSession !== sessionId) ? ' 👥' : ''; return h('option', { key: v, value: v }, esc(r.runId) + ownerTag + ' (' + esc(runHealthBadge(r) || phaseLabel(r.phase)) + (r.workspace ? ' · ' + esc(basename(r.workspace) || r.workspace) : '') + ')') })
       var curSel = (workspace && runId) ? workspace + '\u0001' + runId : ''
       var selNode = runSelector.length ? h('select', { className: 'exp-art', value: curSel, onChange: function (e) { var p = e.target.value.split('\u0001'); setSelTask(null); setSelArt(null); setSelRun({ workspace: p[0], runId: p[1] }) } },
         (!curSel ? h('option', { key: '_', value: '', disabled: true }, t('选择 run…', 'Pick a run…')) : null), runSelector) : null
@@ -3623,10 +3638,14 @@ window.__ModuleLoader__.load({
           h('div', { className: 'exp-sec' }, t('全部 run（跨工作区，按更新时间排序）', 'All runs (updated first)')),
           (runsAll.length ? runsAll.slice().sort(function (a, b) { return (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0) }).map(function (ri, i) {
             var tot = ri.total || 0, dn = ri.done || 0
-            return h('div', { className: 'exp-board-row', key: i, onClick: function () { setSelRun({ workspace: ri.workspace, runId: ri.runId }) }, title: ri.workspace },
+            return h('div', { className: 'exp-board-row', key: i, onClick: function () { setSelRun({ workspace: ri.workspace, runId: ri.runId }) }, title: (ri.health === 'broken' && ri.healthReason) ? ri.healthReason : ri.workspace },
               h('span', { className: 'exp-board-t' }, esc(String(ri.updatedAt || '').replace('T', ' ').slice(5, 16))),
               h('span', { className: 'exp-board-n' }, esc(String(ri.runId).slice(0, 22))),
-              h('span', { className: 'exp-muted' }, esc(phaseLabel(ri.phase) + '/' + statusLabel(ri.status) + ' · ' + dn + '/' + tot + (ri.members ? ' · ' + ri.members + '人' : '') + (ri.violations ? ' · ⚠' + ri.violations : ''))),
+              h('span', { className: 'exp-muted' }, esc(
+                runHealthBadge(ri)
+                  ? runHealthBadge(ri) + ' · ' + dn + '/' + tot + (ri.violations ? ' · ⚠' + ri.violations : '')
+                  : phaseLabel(ri.phase) + '/' + statusLabel(ri.status) + ' · ' + dn + '/' + tot + (ri.members ? ' · ' + ri.members + '人' : '') + (ri.violations ? ' · ⚠' + ri.violations : '')
+              )),
               h('span', { className: 'exp-role' }, esc(basename(ri.workspace) || ri.workspace)))
           }) : h('div', { className: 'exp-empty' }, t('（暂无 run）', '(no runs)')))
         )
@@ -4149,7 +4168,7 @@ window.__ModuleLoader__.load({
 
     // Test hook (same convention as the host half's `_live`): lets the regression
     // suite assert text safety without booting the overlay in a browser.
-    exports._live = { esc: esc, tierBadge: tierBadge, TIER_LABELS_ZH: TIER_LABELS_ZH, settingsFormModel: settingsFormModel }
+    exports._live = { esc: esc, tierBadge: tierBadge, TIER_LABELS_ZH: TIER_LABELS_ZH, settingsFormModel: settingsFormModel, runHealthBadge: runHealthBadge }
     // 测试钩子（沿用 `_live` 的约定）：状态条的纯函数可脱离浏览器直接断言。
     exports._subagentBar = { subagentBarModel: subagentBarModel, runningSubagentIds: runningSubagentIds }
     exports.inject = ['slots', 'sessions', 'remote', 'uiSession', 'uiConversation', 'locale']

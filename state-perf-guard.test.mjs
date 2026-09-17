@@ -118,8 +118,8 @@ console.log('\n③ 假 sessionId 不落盘（sessionExists 守卫）');
   check(sessionExists(noSess, 'fake-1') === false, '查不到的 id ⇒ false（当只读）', '');
   check(sessionExists(withSess, 'real-1') === true, '真实存在的 id ⇒ true', '');
   check(sessionExists(withSess, '') === false, '空 id ⇒ false', '');
-  check(/if \(sel && sessionExists\(ctx, sid\)\) rememberSessionRun\(sid, wsParam, runParam, 'view'\)/.test(cmdSrc),
-    '唯一那处外部 sid 的 rememberSessionRun 已被 sessionExists 守卫', '');
+  check(/if \(sel && sessionExists\(ctx, sid\) && sessionOwnsWorkspace\(ctx, sid, wsParam\)\) rememberSessionRun\(sid, wsParam, runParam, 'view'\)/.test(cmdSrc),
+    '唯一那处外部 sid 的 rememberSessionRun 已被 sessionExists + sessionOwnsWorkspace 守卫', '');
 }
 
 console.log('\n④ 反向参数 --one-shot / --code（三态：true 要 / false 显式不要 / null 未表态）');

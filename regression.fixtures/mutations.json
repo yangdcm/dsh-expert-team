@@ -905,7 +905,7 @@
       "edits": [
         {
           "file": "lib/command.js",
-          "find": "    if (wf) {\n      // ① 会话级 label 必须用 runId 收窄到本 run\n      if (runId && String(wf.runId || '') === runId) picked.push({ sub, at: Number(wf.startedAt) > 0 ? Number(wf.startedAt) : Number.MAX_SAFE_INTEGER });\n      else reject(id);\n      continue;\n    }",
+          "find": "    if (wf) {\n      // ① 会话级 label 必须收窄到本 run：`runId`（宿主 UUID，恒不等于目录名）**或** `runDir`（workflow 脚本里的 `team/<slug>`）。\n      //    取不到 runDir ⇒ 行为与从前逐字一致（拒），故外 run 仍被拒、不放松 R12 的串号防线。\n      const sameRun = String(wf.runId || '') === runId || (String(wf.runDir || '') !== '' && String(wf.runDir) === runId);\n      if (runId && sameRun) picked.push({ sub, at: Number(wf.startedAt) > 0 ? Number(wf.startedAt) : Number.MAX_SAFE_INTEGER });\n      else reject(id);\n      continue;\n    }",
           "replace": "    if (wf) {\n      picked.push({ sub, at: Number(wf.startedAt) > 0 ? Number(wf.startedAt) : Number.MAX_SAFE_INTEGER }); // MUTANT: 去掉第①道 runId 过滤 ⇒ 会话级 label 直接采纳（F-1 串号复发）\n      continue;\n    }"
         }
       ]
@@ -2135,6 +2135,32 @@
           "file": "skills/expert-team/scripts/scan-authority.mjs",
           "find": "    if (/^事实类别$/.test(cells[0]) || (cells[1] === '唯一权威文件' && cells[2] === '唯一写者')) continue;",
           "replace": "    if (/^事实类别$/.test(cells[0])) continue; // MUTANT: 只认旧表头 ⇒ 表头被当成幻影事实"
+        }
+      ]
+    },
+    {
+      "id": "M164-session-run-create-overwritten-by-view",
+      "title": "`rememberSessionRun` 缺「view 不得改写 create」守卫 ⇒ 一条 view 记录对**另一个 run** 自称 create（假归属且被标成可信）",
+      "why": "2026-09-17 新增（本轮守卫① 的判别变异）。守卫① 拦的是「一个已经有 create 归属的会话，再用一次 view 去看**别的** run/工作区」：`runOwnerSession` 只把 `via==='create'` 的记录当可信归属，所以只要一次 view 能覆盖 `runId`/`workspace`，那条记录就会对**另一个 run** 自称 `create` ⇒ 面板把别处的 run 算成这个会话建的 —— **假归属且被当成可信**。这正是旧缺陷的成因：旧实现**只保 `via` 却覆盖 `runId`/`workspace`**。变异把守卫① 改成恒不成立（`if (false)`）。 预期红：`D1（判别守卫①）：同工作区的 view 不得把 create 的 runId/via 改写掉`、`D1：被拦下的 view 不构成归属（run-D1y 无 create ⇒ sid 仍为空）`（共 2 项）。 **必须仍然绿**：`D2（判别守卫②）：prev=view（非 create）+ 跨工作区 ⇒ 记录仍属 wsA（跨工作区不写；守卫①不适用）`（守卫② 仍在，D2 不受影响）。",
+      "test": "member-registry.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "  if (prev && prev.via === 'create' && via !== 'create' && (prev.runId !== runId || prev.workspace !== ws)) return;",
+          "replace": "  if (false) { return; } // MUTANT: 去掉「view 不得改写 create」守卫"
+        }
+      ]
+    },
+    {
+      "id": "M165-session-run-cross-workspace-write",
+      "title": "`rememberSessionRun` 缺「跨工作区不写」守卫 ⇒ 跨工作区的查看能改写归属表（把别的工作区的人/run 记成这个会话的）",
+      "why": "2026-09-17 新增（本轮守卫② 的判别变异）。一条会话记录只属于一个工作区：面板在会话里选看**别的工作区**的 run 是合法操作，但**不该改写归属表** —— 否则那个工作区的人/run 会被记成这个会话的，正是 R12 跨会话串号的**输入侧**（人取自归属会话、run 元信息来自别处 ⇒ 两个 run 的人被混在一起）。守卫① 只拦 `prev.via==='create' && via!=='create'`，所以 `prev=view` 的跨工作区写入**只有守卫②**能拦。变异把守卫② 改成恒不成立（`if (false)`）。 预期红：`D2（判别守卫②）：prev=view（非 create）+ 跨工作区 ⇒ 记录仍属 wsA（跨工作区不写；守卫①不适用）`（1 项）。 **必须仍然绿**：`D1（判别守卫①）…`、`D1：被拦下的 view 不构成归属…`（守卫① 仍在，D1 不受影响）。",
+      "test": "member-registry.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "  if (prev && prev.workspace && prev.workspace !== ws) return;",
+          "replace": "  if (false) { return; } // MUTANT: 去掉「跨工作区不写」守卫"
         }
       ]
     }

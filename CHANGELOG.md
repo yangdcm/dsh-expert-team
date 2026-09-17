@@ -3,6 +3,90 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.3.33
+
+**主题：把「归属」的真源收口到可核实的事实上**。三批改动一条主线 —— **宁可空归属，不要错归属**：
+会话→run 的归属表只认 `create`、只写本工作区；workflow 子代理的归域判据补上「run 目录名」这一真源；
+运行副本的漂移检测面改从 `package.json.files` 派生，不再手写第二份清单。**本版不新增测试文件**
+（本仓测试文件数是棘轮），新断言全部落进既有文件；变异目录 163 → **165** 条（新增 `M164`/`M165`），
+`gate:mutation` **165/165 被抓住**，`test:all` **89 文件 / 0 失败**。
+
+### G1：会话→run 归属 —— 删掉「最早一条」兜底，补两道写入守卫
+
+- **旧行为（会造出假归属）**：`runOwnerSession()` 找不到 `via==='create'` 的记录时，会把该 run
+  **最早的一条记录**当归属（只标 `ownerResolved:false`）。实测它能用一条纯 `view` 记录造出归属 ⇒
+  面板把**别的会话/工作区**的人算成这个 run 的人（人取自"归属会话"、run 元信息来自别处 ⇒
+  两个 run 的人被混在一起）。
+- **新口径**：只认 `via==='create'`；**无 create ⇒ 返回 `{sid:'', ownerResolved:false}`**，不猜。
+  「该 run 最早一条记录」的兜底**已删除**。函数注释同时如实写明残留边界：同一 `runId` 理论上可跨工作区
+  重名，而本函数只收 `runId`、**无法比对 workspace** ⇒ 取的是最早的 create 记录，调用点若需更强归属须另传 workspace。
+- **守卫①（view 不得改写 create）**：`rememberSessionRun()` 在已有 `via==='create'` 归属、且本次是 view
+  又指向**别的 `runId`/工作区**时直接 return —— 旧实现只保 `via` 却覆盖 `runId`/`workspace`，
+  于是一条记录会对**另一个 run** 自称 `create`（正是假归属的成因）。真正的 `create`
+  （同一会话建第二个 run，正常业务流）**仍放行**，否则 `/team tier`、`/team task` 这类不带 `--run`
+  的子命令会退回"工作区最新的 run"。
+- **守卫②（跨工作区不写）**：一条会话记录只属于一个工作区；面板选看别的工作区的 run 是合法操作，
+  但**不得改写归属表**。`prev=view` 的跨工作区写入**只有守卫②**能拦（守卫① 不适用）。
+- **新增 `sessionOwnsWorkspace(ctx, sid, ws)`**：`/state` 里那处 `view` 记忆在 `sessionExists` 之外再加一道
+  "会话的 cwd 就是该工作区"才落盘；取不到 cwd ⇒ `false`（宁可少写一条，也不要把别的 run 记成自己的）。
+  取 cwd 复用本仓既有唯一取法 `cwdFromSession`（宿主 `Session` 只暴露 `id` getter，cwd 住在 `session.header`；
+  若按"逐字版本"取 `ctx?...get(sid).cwd` 则本函数恒 false ⇒ 静默变成假守卫）。该函数已从 `_live` 导出。
+- **调用点收口**：`filterRunScopedSubs` 的 `ownerSession` 由 `peopleSid`（= 归属会话**或退回请求会话**）
+  改为**解析出来的归属** `owner.sid` —— 拿"请求者"去比 `parentId` 会在别的会话里看这个 run 时恒不成立、
+  `members` 静默为空。
+- **如实披露（新增第③支）**：归属解析不出（`owner.sid === ''`）时人员会被 `|| sid` 静默替换成
+  **请求会话**的人。面板新增提示「该 run 没有可核实的归属会话，人员取自当前会话（可能不是这个 run 的人）」
+  —— 删掉旧兜底后 ①② 恒不成立，这一条是唯一的披露出口。
+
+### G2：workflow 子代理归域 —— 补上「run 目录名」这一真源
+
+- **为何要改**：`tool-workflow/run-start` 只带宿主 UUID（`randomUUID`），与 `team/<slug>` 目录名
+  **恒不相等**，所以 `filterRunScopedSubs()` 第①道原先的 `wfLabels[id].runId === runId` 在真实宿主形状下
+  **从不命中**（本 run 的腿也被拒）。
+- `workflowEventIndex()` 现在按调用顺序处理 `tool/call`（`name === 'workflow'`，它在 `run-start` **之前**出现），
+  从 `arguments.script` 里抽 `/team/<slug>`，并**只认确实是 `team/` 下目录名**的那些（惰性读一次的目录名集合
+  做噪声过滤，判据"只要目录"与 `listRunsInWorkspace` 同源）；抽不到／核不上 ⇒ 保持空 ⇒ 下游第①道一律拒
+  （**行为与从前逐字一致**，宁可拒）。
+- `filterRunScopedSubs()` 第①道判据改为 `wf.runId === runId` **或**（非空且相等的）`wf.runDir === runId`
+  —— 别的 run 的 label 仍被拒，不放松 R12 的串号防线；`regression.fixtures/mutations.json` 里对应变异体的
+  `find` 串同步更新为新的代码原文。
+
+### G3：`check-sync` 的检测面改从 `package.json.files` 派生（补上被永久漏检的三个文件）
+
+- **旧缺陷**：运行副本**顶层单文件**的比对名单是**手写**的 `['client.js','cordis.patch.yml','package.json']`，
+  与 `only` 字段分叉 ⇒ `README.en.md` / `CHANGELOG.md` / `LICENSE` 会被 `--fix` 覆盖、却**从不被检测**，
+  形成"报了却永不修 / 修了却从不报"的死角（与脚本 `:60-61` 明写的纪律"检测范围与修复范围必须一致"相悖）。
+- **`only` 从 `files` 派生**：`PUBLISHED = [...package.json.files, 'package.json', 'README.md']`
+  （后两项是 npm 必然包含的），与 `docs-integrity.test.mjs` 里"待发布文件"的口径**同源**，
+  不在别处再写第二份清单。
+- **顶层单文件比对也从 `only` 派生**（排除 `lib` 与 `m.nested` 的顶层目录 —— 二者另有专门循环；
+  若对目录走 `sha1()`，在"源存在、目标缺失"时会误报 `onlySrc`）。往 `only` 加条目即自动进入检测。
+- `sync-gate.test.mjs` 的夹具同步补齐检测面（原先缺 `LICENSE`/`README.en.md`/`CHANGELOG.md`，
+  测的是"夹具缺文件"而不是门禁语义）。
+
+### G4：损坏 run 的显式徽标 + 文档定量断言保守化 + 数字同步
+
+- **`client.js` 新增 `runHealthBadge()`**：`health === 'broken'` 时给出显式 `⛔ 损坏 · <原因>`，
+  否则返回空串（正常 run 仍由 phase/status 渲染，不插手）。为什么必须显式：缺 `STATE.json` 的 run
+  其 `phase`/`status` 都是空串，面板会渲染成 `/ · 0/0`、下拉渲染成 `2026-09-17-160412 ()` ——
+  用户看不出这是"坏了"，只会以为面板自己故障。文案与 host 侧 `lib/command.js` 的 `⛔ 损坏：` 逐字对齐
+  （同一事实不在两侧两套词表）；run 下拉（纯文本前缀，`<option>` 不支持富 DOM）与「全部 run」列表
+  都已接上，`_live` 导出以便脱离浏览器断言。
+- **措辞保守化（不改行为）**：把"真实 run"改为"**样本**"，并删掉 `全程 9h54m / 58 任务 / 74 次派工`
+  这类在 `docs/专家团-开发计划.md` 里核不上的具体数字（`SKILL.md` 第 32 条的
+  "该 run 全程 9h54m / 58 任务 / 29 个 repair" 改为"该 run 任务数与时长都创了纪录 / 其中 repair 占很大比例"）；
+  `22:21:03 → 次日 08:15:30` 这一**可测事实本身保留**（裸减得负数是本模块要修的真实成因）。
+  涉及 `lib/tier.js`（注释）、`lib/metrics/timing.js`（注释）、`skills/expert-team/SKILL.md`（1.1 节与第 32 条）、
+  `tier.test.mjs`（测试头注释）、`first-runnable.test.mjs`（测试头注释）。
+- **变异目录 163 → 165**：新增 `M164-session-run-create-overwritten-by-view`（守卫① 的判别变异，
+  预期红 2 项）、`M165-session-run-cross-workspace-write`（守卫② 的判别变异，预期红 1 项），
+  两者各自写明"必须仍然绿"的正对照；`mutation-catalog.test.mjs` 的 `EXPECTED_CATALOG_SIZE` 同步改 165。
+- **数字同步**：`README.md` / `README.en.md` / `llms.txt` / `docs/images/hero.svg` 的"163 条变异"→"165 条"。
+- **测试**：`member-registry.test.mjs` 新增 `⑨d`（真实宿主形状：runId 是 UUID、run 目录只出现在 `tool/call`
+  脚本里 ⇒ 本 run 的腿仍须归回来）与 `⑪`（create 不被"查看"改写／跨工作区不写／无 create 不给归属）；
+  `run-ownership.test.mjs` ② 改为"无 create 记录 ⇒ 空 sid"；`state-perf-guard.test.mjs` 的守卫正则
+  加上 `sessionOwnsWorkspace`。
+
 ## 1.3.32
 
 **主题：把三道门禁的"绿"变成可信的绿**。三批改动一条主线 —— **没有失败信号的规则视为未定义**：

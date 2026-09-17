@@ -15,7 +15,7 @@
 import { _live } from './lib/command.js';
 import { rmFixture } from './test-helpers.mjs';
 
-const { deriveMemberEntries, membersFromState } = _live;
+const { deriveMemberEntries, membersFromState, rememberSessionRun, sessionRunFor, runOwnerSession, sessionOwnsWorkspace, SESSION_RUNS } = _live;
 
 let fail = 0;
 const check = (ok, name, detail) => {
@@ -183,6 +183,26 @@ console.log('\n⑧ R12+R17 纯函数：两道过滤 + **过滤发生在角色映
   check(!!r7 && Array.isArray(r7.list) && r7.list.length === 0 && r7.rejected === 0, '畸形输入安全降级（面板轮询路径上不得抛）');
   const r8 = filterRunScopedSubs([{ id: '' }, null, { noId: 1 }], { wfLabels: new Map(), runId: 'D', ownerSession: 's', runCreatedAt: 1 });
   check(r8.list.length === 0 && r8.rejected === 0, '无 id 的候选被跳过（不计入 rejected，也不进映射）');
+
+  // ── ⑧b 真实 host 形状的对照（2026-09-17 修「one-shot run 成员归域」）──
+  // 真实 host 的 `tool-workflow/run-start.runId` 是 `randomUUID()`，**恒不等于** `team/<slug>` 目录名
+  // （实测会话 session-89fd2b7b：10/10 run-start 都是 UUID）；run 目录只出现在 workflow `tool/call`
+  // 的脚本里。上面的夹具把 `wfLabel.runId` **直接写成了目录名** —— 那正是本缺陷长期全绿的原因。
+  // 两条例对照把真实形状钉死：`runId` 对不上时，`runDir` 必须能独立把本 run 的腿认回来。
+  const HOST_UUID = '9d9aaec8-1151-4587-be13-84eb58970354';
+  const hostPos = filterRunScopedSubs([{ id: 'HP1' }], {
+    wfLabels: new Map([['HP1', { label: '[pm] 本 run 的 pm', runId: HOST_UUID, runDir: 'runE', startedAt: 700 }]]),
+    runId: 'runE', ownerSession: 's', runCreatedAt: 1, timingOf: new Map(),
+  });
+  check(JSON.stringify(ids(hostPos)) === JSON.stringify(['HP1']), '真实形状·正对照：runId 是 UUID（≠ 本 run 目录名）但 runDir=本 run ⇒ 必须被采纳', JSON.stringify(ids(hostPos)));
+  const hostNeg = filterRunScopedSubs([{ id: 'HN1' }, { id: 'HN2' }], {
+    wfLabels: new Map([
+      ['HN1', { label: '[pm] 别的 run 的 pm', runId: HOST_UUID, runDir: 'run-older', startedAt: 800 }],
+      ['HN2', { label: '[qa] 没有 runDir 的 qa', runId: HOST_UUID, startedAt: 900 }],
+    ]),
+    runId: 'runE', ownerSession: 's', runCreatedAt: 1, timingOf: new Map(),
+  });
+  check(hostNeg.list.length === 0 && hostNeg.rejected === 2, '真实形状·负对照：runId 是 UUID 且 runDir 属别的 run / 缺失 ⇒ 仍必须被拒（rejected 计数增加）', `rejected=${hostNeg.rejected}`);
 }
 
 console.log('\n⑨ R12 接线：/state 只把**本 run** 的成员写进 STATE.json（真实路由复现）');
@@ -308,6 +328,95 @@ console.log('\n⑨ R12 接线：/state 只把**本 run** 的成员写进 STATE.j
   const actD = stD.members || {};
   check(!!actD.backend && actD.backend.active === true && actD.backend.id === 'agent-b-backend', '③ 已登记成员照常显示 active（精确路径不进过滤 ⇒ 不丢）', JSON.stringify(actD.backend && { id: actD.backend.id, active: actD.backend.active }));
 
+  // ── ⑨d 真实 host 形状的端到端对照（2026-09-17 修「one-shot run 成员归域」）──
+  // 与 ⑨ 的差别只有一处，但正是本缺陷的关键：这里的事件流是**真实 host 形状** ——
+  //   · `tool-workflow/run-start.runId` 是 `randomUUID()`（≠ `team/<slug>` 目录名）；
+  //   · run 目录只出现在**它之前**的 workflow `tool/call`（`data.arguments` 是 JSON 字符串，
+  //     `script` 里逐字写着 `const RUN = ROOT + '/team/<slug>'`）。
+  // ⑨ 的夹具把 `wfLabel.runId` 直接写成目录名 —— 那正是本缺陷长期全绿的原因（伪造了真实形状）。
+  console.log('\n⑨d 真实 host 形状：runId 是 UUID、run 目录只在 tool/call 脚本里 ⇒ 本 run 的腿仍须归回来');
+  {
+    const { workflowEventIndex } = _live;
+    const ws2 = join(root, 'proj-host');
+    const sid2 = 'sess-host-shape-89fd2b7b';
+    const UUID1 = '9d9aaec8-1151-4587-be13-84eb58970354';
+    const UUID2 = 'fab10968-05cf-46c7-a170-dd0b473e191f';
+    const RUN1 = '做竞品分析-分析dsh官方的te-145629';       // 非 ASCII slug（真实会话 session-89fd2b7b 里的那个）
+    const MISSING = '不存在的run-000000';                   // 噪声：脚本里出现，但不是 team/ 下的目录
+    const mkRun2 = async (name, members) => {
+      const d = join(ws2, 'team', name);
+      await mkdir(d, { recursive: true });
+      await writeFile(join(d, 'ROSTER.json'), JSON.stringify({ runId: name, roles: ['pm', 'qa'], members: {}, createdAt: iso }));
+      await writeFile(join(d, 'STATE.json'), JSON.stringify({ runId: name, phase: 'implement', status: 'running', mode: 'one-shot', deliverable: 'code+artifacts', coverage: [], members, ownerSession: sid2, updatedAt: iso }));
+      await writeFile(join(d, 'TASK.md'), '> 目标：真实 host 形状归域\n');
+      await writeFile(join(d, 'RUN.log.md'), '- [10:00:00] run:started — 目标=真实 host 形状归域\n');
+      await writeFile(join(d, 'TASKS.json'), JSON.stringify({ tasks: [] }));
+      return d;
+    };
+    const d1 = await mkRun2(RUN1, []);
+    const dOther = await mkRun2('other-run-999999', []);
+    const hostSubs = [
+      { id: 'H-pm', label: '[pm] 本 run 的 pm', activity: 'running', mode: 'continuable' },
+      { id: 'H-nodir', label: '[qa] 抽不出目录的 qa', activity: 'running', mode: 'continuable' },
+    ];
+    const wfEvents2 = [
+      { type: 'tool/call', time: 1, data: { name: 'workflow', arguments: JSON.stringify({ script: `const ROOT = '/x';\nconst RUN = ROOT + '/team/${RUN1}';\n` }) } },
+      { type: 'tool-workflow/run-start', time: 2, data: { runId: UUID1, name: 'expert-team-competitive-analysis' } },
+      { type: 'tool-workflow/agent-start', time: 3, data: { childId: 'H-pm', label: '[pm] 本 run 的 pm', runId: UUID1, seq: 1 } },
+      // 噪声反例：脚本里出现一个**核不上**的 `/team/<slug>` ⇒ 该 run 的 runDir 必须保持 ''（继续拒，不放松）
+      { type: 'tool/call', time: 4, data: { name: 'workflow', arguments: JSON.stringify({ script: `// 参考 ROOT + '/team/${MISSING}'\n` }) } },
+      { type: 'tool-workflow/run-start', time: 5, data: { runId: UUID2, name: 'expert-team-roi-review' } },
+      { type: 'tool-workflow/agent-start', time: 6, data: { childId: 'H-nodir', label: '[qa] 抽不出目录的 qa', runId: UUID2, seq: 2 } },
+    ];
+    // `sessions.get(sid2)` 给 cwd（抽取 run 目录要拿 workspace）；子代理**只**经 `list()` 暴露成
+    // live 行 —— 子会话 header 一律不给，第②道就只能靠 wfLabels 的 `startedAt`（3/6 ms）作证，
+    // 而它们远早于 run 创建时刻 ⇒ 负对照不会被第②道意外放行。
+    const get2 = (k) => {
+      if (k === 'subagents') return { listChildren: async () => hostSubs };
+      if (k === 'sessionQuery') return { readSession: async () => ({ events: wfEvents2 }) };
+      if (k === 'sessions') {
+        return {
+          get: (id) => (String(id) === sid2 ? { header: { id: sid2, meta: { cwd: ws2 } } } : undefined),
+          list: () => hostSubs.map((s) => ({ header: { id: s.id, parentSession: sid2, origin: 'subagent', delegationDepth: 1, createdAt: 1 } })),
+        };
+      }
+      return undefined;
+    };
+    // ① 抽取本身：label 上必须**同时**有 UUID（runId）与目录名（runDir）
+    const idx2 = await workflowEventIndex({ get: get2 }, sid2, { force: true });
+    const lab1 = idx2.labels.get('H-pm') || {};
+    check(lab1.runId === UUID1 && lab1.runDir === RUN1, '抽取：tool/call 脚本里的 /team/<slug> 被核到并记进 label.runDir（runId 仍是 UUID）', JSON.stringify({ runId: lab1.runId, runDir: lab1.runDir }));
+    const lab2 = idx2.labels.get('H-nodir') || {};
+    check(lab2.runId === UUID2 && lab2.runDir === '', '噪声过滤：抽出的 slug 不是 team/ 下的目录 ⇒ runDir 保持 ""（继续拒，不放松 R12 串号防线）', JSON.stringify({ runId: lab2.runId, runDir: lab2.runDir }));
+
+    // ② 真实路由：正对照（本 run）必须登记；负对照（别的 run）必须逐字不动 STATE.json
+    let stateHandler2 = null;
+    apply({
+      commands: { register: () => {} },
+      on: () => {},
+      get: get2,
+      inject: (deps, f) => {
+        if (String(deps) !== 'webServer') return;
+        f({ effect: (fn) => { fn(); }, webServer: { register: (c) => { if (String(c.path).endsWith('/state')) stateHandler2 = c.handler; return () => {}; } } });
+      },
+    });
+    const callState2 = (runId) => new Promise((resolve) => {
+      stateHandler2({ method: 'GET', url: '/plugins/dsh-expert-team/state?cwd=' + encodeURIComponent(ws2) + '&sessionId=' + encodeURIComponent(sid2) + '&workspace=' + encodeURIComponent(ws2) + '&run=' + encodeURIComponent(runId) }, { writeHead() {}, end: (b) => resolve(JSON.parse(b)) });
+    });
+    const st1 = await callState2(RUN1);
+    const state1 = JSON.parse(await readFile(join(d1, 'STATE.json'), 'utf8'));
+    check(st1.ok === true, '⑨d 前置：/state 成功（否则下面的断言是空转）');
+    check(state1.members.some((x) => String(x) === 'H-pm:pm'), '正对照：runId=UUID + runDir=本 run ⇒ 本 run 的腿被登记（one-shot 成员归域已修）', JSON.stringify(state1.members));
+    check(!state1.members.some((x) => String(x).includes('H-nodir')), '正对照：抽不出目录的那条腿不得混进本 run', JSON.stringify(state1.members));
+    const beforeOther = await readFile(join(dOther, 'STATE.json'), 'utf8');
+    const stOther = await callState2('other-run-999999');
+    const afterOther = await readFile(join(dOther, 'STATE.json'), 'utf8');
+    check(afterOther === beforeOther, '负对照：runId 是 UUID 且 runDir 属别的 run（或缺失）⇒ 全部被拒、STATE.json **逐字不变**');
+    check(stOther.membersUnresolved === true, '负对照：有候选被拒 ⇒ membersUnresolved=true（rejected 计数 > 0，如实告知）');
+    const actOther = stOther.members || {};
+    check(Object.values(actOther).every((m) => !m || !m.active), '负对照：显示路径也不得把别的 run 的活人标成本 run 成员', JSON.stringify(Object.fromEntries(Object.entries(actOther).map(([k, v]) => [k, !!(v && v.active)]))));
+  }
+
   // 拆除 fixture：容忍"插件异步写在飞"造成的瞬时 ENOTEMPTY（见 test-helpers.mjs 的说明）
   await rmFixture(root);
 }
@@ -324,7 +433,8 @@ console.log('\n⑩ R12+R13+R17 接线检查：过滤真的接在**角色映射�
   check(/filterRunScopedSubs\(subs, \{/.test(block), 'R17：过滤的输入是**候选 subs 列表**（不是已做角色映射的 Map）');
   check(!/filterRunScopedSubs\(roleSubAll/.test(src), 'R17：不再有"先映射后过滤"的旧调用');
   check(/runId: sel\.runId/.test(block), '过滤用**本 run** 的 runId');
-  check(/ownerSession: sel\.stateOwnerSession \|\| peopleSid/.test(block), '归属会话优先 STATE.ownerSession，缺失退 peopleSid');
+  check(/ownerSession: sel\.stateOwnerSession \|\| owner\.sid/.test(block), '归属会话优先 STATE.ownerSession，缺失则传**解析出来的归属** owner.sid（解析失败即空 ⇒ 第②道如实拒，不拿请求会话冒充）');
+  check(!/ownerSession: sel\.stateOwnerSession \|\| peopleSid/.test(block), '不得把 peopleSid（owner.sid || sid，会退成请求会话）当作归属传入');
   check(/runCreatedAt: await runCreatedAtMs\(/.test(block), '带本 run 创建时刻（第②道过滤的证据）');
   check(/sel\.membersUnresolved = true/.test(block), '被拒时置 membersUnresolved');
   check(/subById = mapRoleToSub\(scoped\.list, wfLabels\)/.test(block), 'R17：角色归一映射吃的是**过滤后**的列表');
@@ -334,6 +444,82 @@ console.log('\n⑩ R12+R13+R17 接线检查：过滤真的接在**角色映射�
   // R13：显示路径也吃过滤结果（R12 那版传的是未过滤的 map ⇒ 面板照样串号）
   check(/enrichMembers\(sel\.runId, sel\.roles, sel\.members, subById/.test(src), 'R13：enrichMembers 吃**过滤后**的 subById');
   check(!/enrichMembers\(sel\.runId, sel\.roles, sel\.members, roleSubAll/.test(src), 'R13：显示路径不再吃未过滤的 map');
+}
+
+console.log('\n⑪ session→run 归属：create 不被"查看"改写 / 跨工作区不写 / 无 create 不给归属');
+{
+  // 三处缺陷（2026-09-17 复现）：
+  //   · rememberSessionRun 在 `prev.via==='create'` 时只保 via、却覆盖 workspace/runId
+  //     ⇒ 那条记录对**另一个 run** 自称 create ⇒ runOwnerSession 把它当**可信**归属；
+  //   · runOwnerSession 的"最早一条"兜底 ⇒ 纯 `view` 记录也能产出归属（假归属被标可信）；
+  //   · /state 的写入点不校验会话真实 cwd ⇒ 在 dsh 会话里选别的工作区的 run 也写进归属表。
+  // 用**独立** sid/runId，不碰本文件其它夹具的 id。
+  const wsOwnA = '/w/ownership-A';
+  const wsOwnB = '/w/ownership-B';
+  const runOwnX = 'own-run-X';
+  const runOwnY = 'own-run-Y';
+  const runOwnZ = 'own-run-Z';
+  SESSION_RUNS.clear();
+
+  // 正对照：create 是可靠归属
+  rememberSessionRun('own-sX', wsOwnA, runOwnX, 'create');
+  const oOwnX = runOwnerSession(runOwnX);
+  check(oOwnX.sid === 'own-sX' && oOwnX.ownerResolved === true, '正对照：create 记录 → 归属成立且 ownerResolved=true', JSON.stringify(oOwnX));
+
+  // 负对照 A：已有 create 归属不得被"查看"改写（旧实现的假归属来源）
+  rememberSessionRun('own-sX', wsOwnB, runOwnY, 'view');
+  const oOwnX2 = runOwnerSession(runOwnX);
+  check(oOwnX2.sid === 'own-sX' && oOwnX2.ownerResolved === true, '负对照 A：别的工作区的 view 之后，run-X 的归属**仍是** own-sX（没被改写）', JSON.stringify(oOwnX2));
+  const oOwnY = runOwnerSession(runOwnY);
+  check(oOwnY.sid !== 'own-sX', '负对照 A：run-Y **不得**被判给 own-sX（旧实现会产出 {sid:own-sX,ownerResolved:true} 假归属）', JSON.stringify(oOwnY));
+
+  // 负对照 B：跨工作区不写（会话记录仍属原工作区）
+  rememberSessionRun('own-sX', wsOwnA, runOwnX, 'create');
+  rememberSessionRun('own-sX', wsOwnB, runOwnZ, 'view');
+  check(sessionRunFor('own-sX').workspace === wsOwnA, '负对照 B：跨工作区的 view 不改写 workspace（仍是 wsOwnA）', String(sessionRunFor('own-sX').workspace));
+
+  // 负对照 C：只有 view、没有 create ⇒ 如实"未解析"，不拿最早一条兜底
+  SESSION_RUNS.clear();
+  rememberSessionRun('own-sB1', wsOwnA, runOwnZ, 'view');
+  rememberSessionRun('own-sB2', wsOwnA, runOwnZ, 'view');
+  const oOwnZ = runOwnerSession(runOwnZ);
+  check(oOwnZ.sid === '' && oOwnZ.ownerResolved === false, '负对照 C：两条 view（无 create）→ {sid:"", ownerResolved:false}（去掉"最早一条"兜底）', JSON.stringify(oOwnZ));
+
+  // ── 判别用例（2026-09-17 补）：既有负对照 A/B 都是"两条守卫**同时**命中"，
+  //    分不出是哪条在起作用（单独删守卫① 或 守卫② ⇒ 全套 89 文件仍全绿）。
+  //    D1 只让**守卫①**成为唯一拦截者（同工作区 ⇒ 守卫② 放行）；D2 只让**守卫②**成为唯一拦截者
+  //    （prev 是 `view` ⇒ 守卫① 不适用）。
+  // D1（判别守卫①：`prev.via==='create' && via!=='create' && …`）：同工作区，view 不得改写 create
+  SESSION_RUNS.clear();
+  rememberSessionRun('own-d1', wsOwnA, 'run-D1x', 'create');
+  rememberSessionRun('own-d1', wsOwnA, 'run-D1y', 'view');
+  const rD1 = sessionRunFor('own-d1');
+  check(rD1.runId === 'run-D1x' && rD1.via === 'create', 'D1（判别守卫①）：同工作区的 view 不得把 create 的 runId/via 改写掉', JSON.stringify(rD1));
+  check(runOwnerSession('run-D1y').sid === '', 'D1：被拦下的 view 不构成归属（run-D1y 无 create ⇒ sid 仍为空）', JSON.stringify(runOwnerSession('run-D1y')));
+
+  // D2（判别守卫②：`prev.workspace !== ws` 早退）：prev=view（非 create）+ 跨工作区
+  SESSION_RUNS.clear();
+  rememberSessionRun('own-d2', wsOwnA, 'run-D2', 'view');
+  rememberSessionRun('own-d2', wsOwnB, 'run-D2', 'view');
+  check(sessionRunFor('own-d2').workspace === wsOwnA, 'D2（判别守卫②）：prev=view（非 create）+ 跨工作区 ⇒ 记录仍属 wsA（跨工作区不写；守卫①不适用）', String(sessionRunFor('own-d2').workspace));
+
+  // 守卫③：`sessionOwnsWorkspace` **直调**（它此前不在 `_live` 里 ⇒ 改成恒 false 也全绿）。
+  //   构造 ctx 用**真实宿主形状**：cwd 住在 `session.header.cwd`（宿主 `Session` 只暴露 `id` getter）。
+  //   ⚠️ 不照抄本文件 :379 那处 `{ header: { id, meta: { cwd } } }` —— 那是宿主从不产出的形状。
+  const ctxOwn = {
+    get: (k) => (k === 'sessions' ? {
+      get: (id) => ({
+        'own-cwd-ok': { header: { id: 'own-cwd-ok', cwd: wsOwnA } },
+        'own-cwd-other': { header: { id: 'own-cwd-other', cwd: wsOwnB } },
+        'own-cwd-none': { header: { id: 'own-cwd-none' } },
+      })[String(id)] } : undefined),
+  };
+  check(sessionOwnsWorkspace(ctxOwn, 'own-cwd-ok', wsOwnA) === true, '守卫③ 正对照：会话 cwd === ws ⇒ true（守卫真的能生效，不是纸面守卫）');
+  check(sessionOwnsWorkspace(ctxOwn, 'own-cwd-other', wsOwnA) === false, '守卫③ 负 1：cwd ≠ ws ⇒ false');
+  check(sessionOwnsWorkspace(ctxOwn, 'own-cwd-none', wsOwnA) === false, '守卫③ 负 2：会话取不到 cwd ⇒ false（宁可少写一条）');
+  check(sessionOwnsWorkspace(ctxOwn, 'own-nope', wsOwnA) === false, '守卫③ 负 3：不存在的 sid ⇒ false（不写假 id）');
+
+  SESSION_RUNS.clear();
 }
 
 console.log('');

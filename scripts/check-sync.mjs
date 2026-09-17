@@ -28,6 +28,15 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(HERE, '..');
 const DSH_HOME = process.env.DSH_HOME || join(process.env.HOME || '', '.dsh');
 
+/** 包自身的 package.json（`files` 是**发布面的唯一真源**，`only` 必须从它派生而不是手写）。 */
+const PKG = JSON.parse(readFileSync(join(PKG_ROOT, 'package.json'), 'utf8'));
+/**
+ * 运行副本**应当**与源一致的全部顶层条目 = `files` + npm 必然包含的 `package.json` 与 `README.md`。
+ * 同一表达式在 `docs-integrity.test.mjs:176` 已被用作"待发布文件"口径 —— 这里与它**同源**，
+ * 不要在别处再写第二份清单（历史事故：`only` 与 `files` 分叉，导致两个真漂移文件被永久漏检）。
+ */
+const PUBLISHED = [...(Array.isArray(PKG.files) ? PKG.files : []), 'package.json', 'README.md'];
+
 /** 源 → 目标 的映射：只比对真正会被自举安装的那部分资产。 */
 const MAPPINGS = [
   {
@@ -59,7 +68,8 @@ const MAPPINGS = [
     dst: join(DSH_HOME, 'profiles', 'web', 'node_modules', '@yangdcm', 'dsh-expert-team'),
     // 运行副本的顶层资产 = package.json 的 `files` 字段 + npm 必然包含的 package.json/README
     // （检测范围与修复范围**必须一致**，否则会出现"报漂移但永不修复"的死角）
-    only: ['lib', 'client.js', 'cordis.patch.yml', 'skills', 'presets', 'package.json', 'README.md'],
+    // **从 `files` 派生，见上方 `PUBLISHED` 定义** —— 不要再手写第二份清单。
+    only: PUBLISHED,
     nested: [
       { src: 'skills/expert-team', dst: 'skills/expert-team' },
       { src: 'presets/expert-team', dst: 'presets/expert-team' },
@@ -188,8 +198,15 @@ function main() {
           agg.differ.push(...r.differ);
           agg.same.push(...r.same);
         }
-        // 运行副本的顶层单文件也要比（client.js / cordis.patch.yml / package.json）
-        for (const f of ['client.js', 'cordis.patch.yml', 'package.json']) {
+        // 运行副本的顶层单文件也要比 —— **名单从 `only` 派生**，不再手写：
+        // 手写清单漏过 `README.md`（它在 `only` 里、会被 `--fix` 覆盖，却从不被检测），
+        // 而 :60-61 的纪律明写"检测范围与修复范围必须一致"。派生后，往 `only` 加条目即
+        // 自动进入检测，结构上不会再长出"报了却永不修 / 修了却从不报"的死角。
+        // 排除项：`lib` 由下面的 compareTree 单独比；`m.nested` 的顶层目录（skills/presets）
+        // 由上面的 nested 循环比 —— 若把它们当文件走 sha1()，对目录 readFileSync 会抛错，
+        // 在"源存在、目标缺失"时会误报成 onlySrc。
+        const nestedTops = new Set((m.nested || []).map((n) => String(n.src).split('/')[0]));
+        for (const f of (m.only || []).filter((t) => t !== 'lib' && !nestedTops.has(t))) {
           const s = join(m.src, f);
           const d = join(m.dst, f);
           if (!existsSync(s)) continue;

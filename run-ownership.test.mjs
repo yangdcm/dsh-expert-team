@@ -45,15 +45,15 @@ console.log('① 归属优先于「查看」：create 记录赢');
   check(o.ownerResolved === true, '来源可靠 → ownerResolved=true');
 }
 
-console.log('\n② 旧数据（无 via）：取最早一条，并**如实标注是推断**');
+console.log('\n② 无 create 记录 ⇒ 不给归属（去掉「最早一条」兜底）');
 {
   SESSION_RUNS.clear();
   rememberSessionRun('session-jiu', WS, RUN, 'view');
   await new Promise((r) => setTimeout(r, 2));
   rememberSessionRun('session-me', WS, RUN, 'view');
   const o = runOwnerSession(RUN);
-  check(o.sid === 'session-jiu', '取最早记录（创建者通常最早）', o.sid);
-  check(o.ownerResolved === false, '推断 → ownerResolved=false（面板必须据此提示）');
+  check(o.sid === '', '只有 view 记录 ⇒ 空 sid（不许用 view 记录造归属）', o.sid);
+  check(o.ownerResolved === false, '未解析 → ownerResolved=false（面板必须据此提示）');
 }
 
 console.log('\n③ 「查看」不得把已记录的归属降级或改写');

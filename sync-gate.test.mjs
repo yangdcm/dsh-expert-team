@@ -54,7 +54,10 @@ await mkdir(join(home, 'profiles', 'web', 'node_modules', '@yangdcm'), { recursi
 await cp(join(here, 'skills', 'expert-team'), skillDst, { recursive: true });
 await cp(join(here, 'presets', 'expert-team'), presetDst, { recursive: true });
 await mkdir(runtimeDst, { recursive: true });
-for (const x of ['lib', 'client.js', 'cordis.patch.yml', 'skills', 'presets', 'package.json', 'README.md']) {
+// 夹具必须覆盖**检测面**（= package.json 的 `files` + package.json/README.md），否则测的是
+// "夹具缺文件"而不是门禁语义。历史事故：这里少铺 LICENSE/README.en.md/CHANGELOG.md，而 `only`
+// 又手写漏了同三项，两个真漂移文件（README.en.md、CHANGELOG.md）被永久漏检、门禁假绿。
+for (const x of ['lib', 'client.js', 'cordis.patch.yml', 'skills', 'presets', 'package.json', 'README.md', 'LICENSE', 'README.en.md', 'CHANGELOG.md']) {
   try { await cp(join(here, x), join(runtimeDst, x), { recursive: true }); } catch { /* 可缺 */ }
 }
 
