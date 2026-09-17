@@ -713,6 +713,196 @@ console.log('\n⑧ 真机缺陷护栏：合并派生字段保护（①）/ 画�
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ⑨ Panel 的 hook 顺序（React #310 棘轮）—— 2026-09-17
+//
+// 报障形态（真机）：面板一开/一关，整块区域变成 `PANEL ERR: …` 文本框 —— 那行字是 Panel 自己
+//   的 `catch (e)` 渲染出来的（"渲染期抛错"被当成错误卡画在面板里，看起来像"面板坏了"）。
+// 根因：`canvasView` 的子树里有 3 个 hook（`useRef` → `useCanvasEdges` 的 `useState`/`useEffect`）。
+//   旧实现把 `if (!isOpen && !viewMode) return null` 放在调用它**之前** ⇒「面板关着」的渲染只跑到
+//   前面那些 hook 就返回，「打开/全屏」的渲染跑满全部 ⇒ **两次渲染的 hook 数不同** ⇒ React 抛
+//   #310（Rendered more hooks than during the previous render）。
+// 修法（只挪位置，不改逻辑）：`canvasView(...)` 无条件求值一次，且是 `try {` 的**第一条语句**；
+//   早退紧随其后仍在同一个 try/catch 里 ⇒ 关着时的快路径保住（下面几百行 DOM 构造照样跳过），
+//   而 hook 数在关/开/全屏三种情形下都恒定。
+// 本节钉四件事：① 调用在早退**之前**；② 调用不在三元/条件分支里、且是 `try` 的第一条语句
+//   （"try 内先抛错"同样会少 3 个 hook ⇒ 同样 #310）；③ 用**计数桩 hook** 真跑关/开两次渲染，
+//   hook 数必须相等（核心）；④ 反空转：把两段按旧（错误）顺序跑，两次 hook 数**必须不同** ——
+//   否则说明这条断言抓不住 #310，那才是真正危险的情况。
+console.log('\n⑨ Panel 的 hook 顺序：`canvasView` 必须在早退之前，且是 `try` 的第一条语句（React #310）');
+{
+  /** 本节自己的 safeCheck（⑦⑧ 块里那两份都是块作用域，跨不出来）。 */
+  const safeCheck = (name, fn) => {
+    try { const r = fn(); check(r.ok, name, r.detail); }
+    catch (e) { check(false, name, `抛错：${e && e.message}`); }
+  };
+  // ── 前提：按花括号抽 `function Panel(props) { … }`（抽不到 = **红**，不静默跳过）──
+  let panelSrc = '', panelWhy = '';
+  {
+    const at = src.indexOf('function Panel(props) {');
+    if (at < 0) panelWhy = 'client.js 里找不到 `function Panel(props) {`';
+    else {
+      let i = src.indexOf('{', at), depth = 0, end = -1;
+      for (let k = i; k < src.length; k += 1) {
+        if (src[k] === '{') depth += 1;
+        else if (src[k] === '}') { depth -= 1; if (depth === 0) { end = k + 1; break; } }
+      }
+      if (end < 0) panelWhy = 'Panel 花括号不平衡';
+      else panelSrc = src.slice(at, end);
+    }
+  }
+  check(!!panelSrc, '能按花括号抽取 `function Panel(props) { … }`（本节全部断言的前提）', panelWhy || `${panelSrc.length} 字符`);
+  if (!panelSrc) {
+    console.log('\n✗ 全景图分层测试失败：Panel 抽不出来 ⇒ ⑨ 的 hook 顺序断言全部无法运行');
+    process.exit(1);
+  }
+  // ── ①② 两个语句各出现**恰好一次**（本节靠唯一匹配定位；注释里抄了语句原文也会让这条变红）──
+  const CALL = 'var canvasEl = canvasView(';
+  const RET = 'if (!isOpen && !viewMode) return null';
+  const occ = (h, n) => h.split(n).length - 1;
+  const nCall = occ(panelSrc, CALL), nRet = occ(panelSrc, RET);
+  check(nCall === 1, `Panel 里 \`${CALL}\` 恰好出现一次`, `实际 ${nCall} 次`);
+  check(nRet === 1, `Panel 里 \`${RET}\` 恰好出现一次`, `实际 ${nRet} 次`);
+  const wholeCall = occ(src, CALL), wholeRet = occ(src, RET);
+  check(wholeCall === 1 && wholeRet === 1, '这两个语句在整个 client.js 里也各只有一处（别处再抄一份 ⇒ 本节会定位错）', `全文件 ${wholeCall} / ${wholeRet} 次`);
+  if (nCall !== 1 || nRet !== 1 || wholeCall !== 1 || wholeRet !== 1) {
+    console.log('  ↳ 提示：本节靠**唯一文本匹配**定位语句。若只是注释里抄了语句原文，请改写注释措辞（注释别抄语句原文）。');
+  }
+  const callAt = panelSrc.indexOf(CALL);
+  const retAt = panelSrc.indexOf(RET);
+  console.log('  ── ①③④⑤ 源码顺序：唯一匹配 + 偏移量比较 + 不在条件分支 + `try` 首句 ──');
+  check(callAt >= 0 && retAt >= 0 && callAt < retAt,
+    '`canvasView(...)` 在早退**之前**（顺序反了 ⇒「关着」的那次渲染提前短路、少跑 3 个 hook ⇒ 关/开两次渲染 hook 数不同 ⇒ React #310）',
+    `canvasView@${callAt} / 早退@${retAt}`);
+  // ── ④ 调用不是条件/三元分支里的内联表达式 ──
+  const lineStart = panelSrc.lastIndexOf('\n', callAt) + 1;
+  const indent = panelSrc.slice(lineStart, callAt);
+  check(/^[ \t]*$/.test(indent), '`var canvasEl = canvasView(` 独占一行（不是 `? :` 三元分支里的内联调用 —— 条件调用 = 同一类 hook 顺序错误）', `行首缩进=${JSON.stringify(indent)}`);
+  // 前一个"代码字符"（去掉行尾/整行注释的启发式）：`?` / `:` / `&&` 都意味着条件调用
+  const codeBefore = panelSrc.slice(0, lineStart).split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n').trimEnd();
+  const prevCh = codeBefore.slice(-1);
+  check(prevCh !== '?' && prevCh !== ':' && !codeBefore.endsWith('&&'),
+    '调用前最近的代码字符不是 `?` / `:` / `&&`（正例是 `try {`）', `前一个代码字符=${JSON.stringify(prevCh)}`);
+  // ── ⑤ 调用是 `try {` 的第一条语句：中间只许有空白与 `//` 注释（"try 内先抛错"也不许少 3 个 hook）──
+  const tryAt = panelSrc.lastIndexOf('try {', callAt);
+  const between = tryAt >= 0 ? panelSrc.slice(tryAt + 'try {'.length, callAt) : null;
+  const onlyComments = between !== null
+    && between.split('\n').map((l) => l.replace(/\/\/.*$/, '').trim()).join('') === '';
+  check(onlyComments, '`canvasView(...)` 是 `try {` 的**第一条语句**（其前只有空白与 `//` 注释；此后 try 内任何 throw 都发生在 3 个 hook 之后）',
+    onlyComments ? `中间只有 ${between.length} 字符的空白与注释` : (between === null ? '前面找不到 `try {`' : `中间还有语句：${JSON.stringify(between.replace(/\s+/g, ' ').trim().slice(0, 120))}`));
+
+  // ── ⑥ 核心：计数桩 hook，关/开两次渲染的 hook 调用数必须相等 ──
+  console.log('  ── ⑥ 计数桩 hook：真跑 canvasView，数「关着」与「打开」两次的 hook 数 ──');
+  const hookLog = [];   // 桩 hook 的调用流水（每个元素 = 一次 hook 调用）
+  let hookRuns = null, hooksWhy = '';
+  try {
+    // canvasView + 它闭包里的全部函数（都按名从 client.js 抽 ⇒ 跑的是真源码）
+    const NEED2 = ['etcHslHex', 'arrOf', 'canvasLayers', 'canvasBlockedBy', 'canvasLayerTitle', 'canvasColumns',
+      'canvasEdges', 'canvasFormation', 'roleAvatarColor', 'roleAvatarSvg',
+      'phaseLabel', 'statusLabel', 'stLabel', 'stBadgeCls', 'canvasBarCls',
+      'canvasMemberNode', 'canvasCardNode', 'canvasColNode', 'useCanvasEdges', 'canvasView'];
+    let miss = '';
+    const fnSrc = {};
+    const sliceFn2 = (name) => {
+      const at = src.indexOf(`function ${name}(`);
+      if (at < 0) { miss = miss || name; return ''; }
+      let i = src.indexOf('{', at), depth = 0;
+      for (let j = i; j < src.length; j += 1) {
+        if (src[j] === '{') depth += 1;
+        else if (src[j] === '}') { depth -= 1; if (depth === 0) { fnSrc[name] = src.slice(at, j + 1); return fnSrc[name]; } }
+      }
+      miss = miss || `${name}(花括号不平衡)`;
+      return '';
+    };
+    const parts2 = NEED2.map(sliceFn2).filter(Boolean);
+    // 静态 hook 数 = canvasView 子树（canvasView + useCanvasEdges）里**写着的** hook 调用数
+    const staticHookNames = ((fnSrc.canvasView || '') + '\n' + (fnSrc.useCanvasEdges || ''))
+      .match(/\buse(?:Ref|State|Effect|Memo|Callback|Reducer|LayoutEffect)\s*\(/g) || [];
+    if (miss) hooksWhy = `缺 function ${miss}`;
+    else {
+      const S2 = {
+        h: (tag, props, ...kids) => ({ tag, props: props || {}, kids: kids.flat(Infinity).filter((x) => x != null && x !== false) }),
+        t: (zh) => zh, langNow: 'zh',
+        esc: (s) => String(s == null ? '' : s),
+        own: (o, k) => Object.prototype.hasOwnProperty.call(o || {}, k),
+        roleLabel: (r) => r,
+        clipText: (v, maxUnits) => { const x = String(v == null ? '' : v); return x.length > maxUnits ? x.slice(0, Math.max(0, maxUnits - 1)) + '…' : x; },
+        kindLabel: (k) => k,
+        // **计数**桩 hook：每调一次记一笔。`useEffect` 不执行 ⇒ 不碰 DOM。
+        useRef: (v) => { hookLog.push('useRef'); return { current: v === undefined ? null : v }; },
+        useState: (v) => { hookLog.push('useState'); return [v, () => {}]; },
+        useEffect: () => { hookLog.push('useEffect'); },
+        useMemo: (fn) => fn(),   // canvasView 不用 useMemo，保持既有桩语义
+      };
+      const P2 = new Proxy(S2, {
+        has: () => true,
+        get: (t, k) => (k === Symbol.unscopables ? undefined
+          : (k in t ? t[k] : (typeof globalThis[k] !== 'undefined' ? globalThis[k] : undefined))),
+      });
+      const varSlice2 = (name) => {
+        const at = src.indexOf(`var ${name} = `);
+        if (at < 0) return '';
+        let i = src.indexOf('=', at) + 1, d = 0;
+        for (; i < src.length; i += 1) {
+          const c = src[i];
+          if (c === '{' || c === '[') d += 1;
+          else if (c === '}' || c === ']') { d -= 1; if (d === 0) return src.slice(at, i + 1); }
+          else if (c === '\n' && d === 0) return src.slice(at, i);
+        }
+        return src.slice(at, i);
+      };
+      const consts2 = ['ETC_ROLE_SHAPE', 'ETC_ROLE_HUES', 'PHASE_ZH', 'STATUS_ZH'].map(varSlice2).filter(Boolean).join('\n');
+      const mod2 = new Function('S', 'with (S) {\n' + consts2 + '\n' + parts2.join('\n')
+        + '\nreturn { canvasView: canvasView };\n}')(P2);
+      // 两个渲染片段：源码里真实存在的两段，**按真实源码偏移量排序**后依次执行。
+      const canvasProps = {
+        tasks: [{ id: 'T1', title: '起点', status: 'completed', owner: 'backend', dependsOn: [] }],
+        members: { backend: { name: 'Sam', color: '#8a7a3c', initial: 'S', activity: '', active: false, id: '' } },
+        agents: [], data: { phase: 'deliver', status: 'complete' }, selectedId: null, onPick: null,
+      };
+      const frags = [
+        { at: callAt, label: 'var canvasEl = canvasView(...)', run: () => { mod2.canvasView(canvasProps); } },
+        { at: retAt, label: RET, run: (closed) => (closed ? 'RETURN_NULL' : null) },
+      ].sort((a, b) => a.at - b.at);   // 真源码顺序：改回 bug ⇒ 早退排到前面
+      const runOrder = (list, closed) => {
+        hookLog.length = 0;
+        let shorted = false;
+        for (const f of list) {
+          if (shorted) break;                       // 提前 return ⇒ 后面的片段不再执行
+          if (f.run(closed) === 'RETURN_NULL') shorted = true;
+        }
+        return { count: hookLog.length, order: hookLog.slice() };
+      };
+      const closedRun = runOrder(frags, true);
+      const openRun = runOrder(frags, false);
+      const badFrags = frags.slice().reverse();      // 反空转对照：旧（错误）顺序
+      const badClosed = runOrder(badFrags, true).count;
+      const badOpen = runOrder(badFrags, false).count;
+      hookRuns = { closedRun, openRun, staticCount: staticHookNames.length, staticNames: staticHookNames, badClosed, badOpen, fragOrder: frags.map((f) => f.label) };
+    }
+  } catch (e) { hooksWhy = `计数沙箱求值失败：${e && e.message}`; }
+  check(!!hookRuns, '能抽取 canvasView 子树并用**计数桩 hook** 求值（⑥ 的前提）', hooksWhy || 'ok');
+  if (hookRuns) {
+    const { closedRun, openRun } = hookRuns;
+    check(closedRun.count === openRun.count,
+      '「面板关着」与「打开/全屏」两次渲染的 hook 调用数**必须相等**（不等 ⇒ React #310）',
+      `closed=${closedRun.count} open=${openRun.count}${closedRun.count === openRun.count ? '' : '（关着那次提前短路、少跑了 hook ⇒ 早退跑在 canvasView 之前）'}`);
+    check(openRun.count === hookRuns.staticCount,
+      `「打开」时运行时跑到的 hook 数 == canvasView 子树里**静态写着**的 hook 数（${hookRuns.staticCount}）`,
+      `运行时 ${openRun.count} / 静态 ${hookRuns.staticCount}；${hookRuns.staticNames.join(' + ')}；实际顺序=${openRun.order.join(' → ')}`);
+    check(hookRuns.staticCount === 3,
+      'canvasView 子树恰好 3 个 hook（`useRef` → `useState` → `useEffect`）—— **若 canvasView 合法地新增/删除了 hook，请同步改这一节的常数 3 与这段说明**（要改的是数字和理由，不是把棘轮改松）',
+      `静态数出 ${hookRuns.staticCount} 个`);
+    check(openRun.order.join(' → ') === 'useRef → useState → useEffect',
+      'hook 调用顺序 = useRef → useState → useEffect（顺序变了同样是 #310 的成因）', openRun.order.join(' → ') || '(空)');
+    check(hookRuns.badClosed !== hookRuns.badOpen,
+      '反空转：两段按**旧（错误）顺序**（早退在前）跑，关/开两次的 hook 数**必须不同** —— 相同就说明这条断言抓不住 #310',
+      `旧序 closed=${hookRuns.badClosed} open=${hookRuns.badOpen}；执行的片段顺序=${hookRuns.fragOrder.join(' ⇒ ')}`);
+  } else {
+    check(false, '「关着」vs「打开」的 hook 数相等（React #310 的核心断言）', `沙箱不可用：${hooksWhy}`);
+  }
+}
+
 console.log('');
 if (fail > 0) {
   console.log(`✗ 全景图分层测试失败：${fail} 项`);

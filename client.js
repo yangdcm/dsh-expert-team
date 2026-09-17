@@ -3348,7 +3348,6 @@ window.__ModuleLoader__.load({
       var selNode = runSelector.length ? h('select', { className: 'exp-art', value: curSel, onChange: function (e) { var p = e.target.value.split('\u0001'); setSelTask(null); setSelArt(null); setSelRun({ workspace: p[0], runId: p[1] }) } },
         (!curSel ? h('option', { key: '_', value: '', disabled: true }, t('选择 run…', 'Pick a run…')) : null), runSelector) : null
 
-      if (!isOpen && !viewMode) return null
       var panelCls = viewMode ? 'exp-panel exp-canvas' : ('exp-panel' + (docked ? '' : ' exp-float'))
       var panelStyle = viewMode ? null : (docked ? { width: pw + 'px' } : { left: pos.x, top: pos.y, width: pw + 'px' })
       var headCls = 'exp-head' + (docked || viewMode ? '' : ' exp-grab')
@@ -3378,6 +3377,27 @@ window.__ModuleLoader__.load({
       var capTitle = capKeys.map(function (k) { var c = scopeCaps[k]; return (capName[k] || k) + ' ' + c.over + '/' + c.total + t('（上限 ' + c.limit + '）', ' (limit ' + c.limit + ')') + '：' + (capWhy[k] || '') }).join('；')
 
       try {
+        // ── hook 顺序必须与「面板开/关」无关（React #310）────────────────────────────
+        // `canvasView` 内含 3 个 hook（useRef → useCanvasEdges 的 useState/useEffect）。它必须
+        // **每次渲染都无条件求值一次**：旧实现把这个早退（`!isOpen && !viewMode` → `return null`）放在它
+        // 前面 ⇒「关着」54 个 hook、「打开/全屏」57 个 ⇒ React 抛 #310，而下面的 catch 又把这条
+        // React 错误渲染成 `PANEL ERR: …` 文本框（真机上看起来是"面板坏了"）。
+        // 放在 `try` 的**第一条语句**是刻意的第二道保险：此后 try 内任何 throw 都发生在 3 个
+        // hook **之后**，hook 数不会因为"这次算到一半抛了"而少 3 个（那条路径同样触发 #310）。
+        // 放进 `viewV === 'canvas'` 的三元分支里条件调用也属同一类错误（旧注释的理由已并入本段）。
+        // `active` 是**可见性**输入：这个元素真的挂进 DOM 的条件就是下面那个三元分支的条件 ——
+        // 「事」页签 + 编队画布视图。全屏视图（mode:'view'）也走同一分支，所以不需要再额外判
+        // viewMode（也不该判 `isOpen`：全屏时 isOpen 可能为 false，判了会把可见的测量关掉）。
+        var canvasEl = canvasView({
+          tasks: tasks, members: members, agents: agentsLive, data: data,
+          active: tab === 'tasks' && viewV === 'canvas',
+          selectedId: selTaskV && selTaskV.id,
+          degrade: usingLiveTasks ? t('降级：TASKS.json 为空，下面是「实时子代理投影」——角色由 prompt 推断、依赖无从得知，因此不分层、不画依赖箭头。', 'degraded: TASKS.json is empty — this is a LIVE subagent projection (role inferred, no dependency data): no layers, no dependency arrows.') : '',
+          onPick: function (tk) { var same = selTaskV && selTaskV.id === tk.id; setSelTask(same ? null : tk); if (!same) focusPanelRight() }
+        })
+        // 早退**必须在 hook 之后**（见上）；语义与原来的 3351 行完全相同：面板既没开着、也不在
+        // 全屏视图 ⇒ 不渲染任何 DOM。关着时的快路径也因此保住：下面那几百行 DOM 构造仍然被跳过。
+        if (!isOpen && !viewMode) return null
         // 「设」页签已移除：设置页搬进**官方「设置」菜单**（`settings.section` 槽，见 apply()）。
         // 为什么改：浮层页签是一个只有打开浮层才够得着的第二入口，且它依赖一个「读取设置」的
         // 自建请求路径 —— 一旦宿主路由没注册就永远停在「正在读取设置…」。搬进官方菜单后与
@@ -3539,19 +3559,6 @@ window.__ModuleLoader__.load({
           planEditor = h('div', { className: 'exp-plan-discarded' },
             t('🗑 计划已丢弃，禁止自动重建（如需重来请明确要求）', '🗑 Plan discarded — auto-recreate blocked'))
         }
-
-        // 画布**无条件**求值一次（不是懒构造）：`canvasView` 内含 hook（箭头测量），
-        // 放进 `viewV === 'canvas'` 的三元分支里条件调用会让 hook 数量随视图切换变化 ⇒ React 抛错。
-        // `active` 是**可见性**输入（缺陷 B）：这个元素真的挂进 DOM 的条件就是下面那个三元分支的条件
-        // ——「事」页签 + 编队画布视图。全屏视图（mode:'view'）也走同一分支，所以不需要再额外判 viewMode
-        // （也不该判 `isOpen`：全屏时 isOpen 可能为 false，判了会把可见的测量关掉）。
-        var canvasEl = canvasView({
-          tasks: tasks, members: members, agents: agentsLive, data: data,
-          active: tab === 'tasks' && viewV === 'canvas',
-          selectedId: selTaskV && selTaskV.id,
-          degrade: usingLiveTasks ? t('降级：TASKS.json 为空，下面是「实时子代理投影」——角色由 prompt 推断、依赖无从得知，因此不分层、不画依赖箭头。', 'degraded: TASKS.json is empty — this is a LIVE subagent projection (role inferred, no dependency data): no layers, no dependency arrows.') : '',
-          onPick: function (tk) { var same = selTaskV && selTaskV.id === tk.id; setSelTask(same ? null : tk); if (!same) focusPanelRight() }
-        })
 
         var tasksTab = h('div', null,
           planEditor,
