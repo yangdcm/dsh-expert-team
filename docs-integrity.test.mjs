@@ -194,11 +194,61 @@ console.log('\n⑤ 可发布产物的文件权限（`files` 覆盖到的文件�
     bad.length ? `${bad.length} 个不可读：${bad.slice(0, 12).join('、')}${bad.length > 12 ? ' …' : ''}` : `${scanned} 个均 OK`);
 }
 
+// ── J：README 里那几张 SVG **插图**里的数字（图不在任何棘轮范围内，漂了没人管） ────
+// 真实事故（2026-09-16 看 GitHub 渲染效果时发现）：README **第一屏**的 hero.svg 写着
+// 「80 个测试文件」，而真值是 89 —— 活文档有 E/G/H 盯着，**SVG 一张都没盯**，
+// 于是它在最显眼的位置静静漂了好几版。规矩同本仓：
+// **要么别写数字（措辞不会漂），要么由测试盯着** ⇒ 写了就必须对。
+// **一张都不写也允许**，所以这里刻意**没有**"必须命中"的反空转：
+// "没写数字"不是缺陷，把检查装成通过才是。
+console.log('\n⑥ README 插图（SVG）里的数字必须与真源一致');
+{
+  const dir = join(here, 'docs/images');
+  let svgs = [];
+  try { svgs = readdirSync(dir).filter((n) => n.endsWith('.svg')).sort(); } catch { /* 下面会红 */ }
+  check(svgs.length > 0, 'docs/images 下能找到 SVG（反空转：路径写错不许静默通过）', `${svgs.length} 张`);
+  let inlineHits = 0;
+  let pairHits = 0;
+  for (const name of svgs) {
+    const src = readFileSync(join(dir, name), 'utf8');
+    const lineOf = (i) => src.slice(0, i).split('\n').length;
+    // ① 数字与"测试文件/变异"写在**同一段文本**里（句子、aria-label）
+    for (const [re, real, what] of [
+      [/(\d+)\s*个?测试文件/g, realCount, '测试文件'],
+      [/(\d+)\s+test files?/gi, realCount, '测试文件'],
+      [/(\d+)\s*条?变异/g, realMutations, '变异'],
+      [/(\d+)-entry mutation/gi, realMutations, '变异'],
+    ]) {
+      for (const m of src.matchAll(re)) {
+        inlineHits += 1;
+        const n = Number(m[1]);
+        check(n === real, `docs/images/${name}:${lineOf(m.index)} 写的「${n}（${what}）」== 实数 ${real}`,
+          n === real ? '' : `过期数字：应改为 ${real}（或干脆别写数字）`);
+      }
+    }
+    // ② 指标块：**大号数字**与紧随其后的图注被拆成两个 `<text>`（hero.svg 那三个指标就是这形状）。
+    //    不查这一路的话，只改裸数字、不动 aria-label 就能绕过 ①。
+    for (const m of src.matchAll(/>(\d+)<\/text>\s*<text[^>]*>([^<]*)</g)) {
+      const n = Number(m[1]);
+      const label = m[2];
+      const real = /测试文件|test files?/i.test(label) ? realCount
+        : /变异|mutation/i.test(label) ? realMutations
+          : null;
+      if (real === null) continue;
+      pairHits += 1;
+      check(n === real, `docs/images/${name}:${lineOf(m.index)} 指标「${n}」+ 图注「${label}」== 实数 ${real}`,
+        n === real ? '' : `过期数字：应改为 ${real}`);
+    }
+  }
+  console.log(`  · 命中：同段文本 ${inlineHits} 处 / 指标块 ${pairHits} 处（**0 也允许**：不写数字的措辞不会漂）`);
+}
+
 if (fail) {
   console.log('\n提示：CHANGELOG 约定是**最新在上**（新节插在第一个 `## x.y.z` 之前）；');
   console.log('      活文档（含 llms.txt）里的测试文件数/变异条数/包名/宿主下限/角色/阶段请与仓库实况一致（或干脆别写数字）。');
   console.log('      待发布文件的权限：`files` 覆盖到的文件必须对组/其他可读（0600 会让别的用户装上读不了）。');
+  console.log('      README 插图（docs/images/*.svg）里若写了测试文件数/变异条数，也必须与真源一致（或不写数字）。');
   console.error(`\n✗ docs-integrity：${fail} 项失败`);
   process.exit(1);
 }
-console.log('\n✓ docs-integrity：全部通过（CHANGELOG 首节=包版本 / 严格降序 / 无重复 / 活文档数字与实数一致 / llms.txt 可引用事实一致 / 待发布文件权限对组与其他可读 / 反空转）');
+console.log('\n✓ docs-integrity：全部通过（CHANGELOG 首节=包版本 / 严格降序 / 无重复 / 活文档与插图数字和实数一致 / llms.txt 可引用事实一致 / 待发布文件权限对组与其他可读 / 反空转）');
