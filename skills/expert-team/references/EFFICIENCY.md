@@ -25,13 +25,13 @@
 |---|---|---|
 | pm / architect | 读、写自己工件、ask_user_question | 改代码、跑实现命令 |
 | backend / frontend | 写/编辑代码、bash 自检、读契约 | 改 SPEC/PLAN 契约、评审他人 |
-| qa | 读、跑测试/构建、写 REVIEW/TEST | 改业务代码 |
+| qa | 读、跑测试/构建、写 `TEST.md`（`REVIEW.md` 归 `reviewer`，真源见 `lib/artifact-ownership.js` 的 `ARTIFACT_OWNERS`） | 改业务代码 |
 
 守界既是质量保证，也是效率：防止角色做超范围的事、产生返工与上下文浪费。
 
 ## 5. 限深
 
-- 委派深度 ≤ 2（团队不递归组建子团队）。**`maxDepth` 是子代理深度的绝对上限**（`childDepth = parentDepth + 1 ≤ maxDepth`）：角色工具写 `1`（lead 第 0 层 → 角色第 1 层，且角色不能再派）；**写 `0` 会让所有角色工具报 `subagent depth 1 exceeds maxDepth 0`**。通用 `subagent` 保持平台默认 `3`，但协议上不递归组建子团队。
+- 委派深度 ≤ 1（团队不递归组建子团队；与 SKILL §7.7「限深」同一口径，preset 里每个角色工具都写 `maxDepth: 1`）。**`maxDepth` 是子代理深度的绝对上限**（`childDepth = parentDepth + 1 ≤ maxDepth`）：角色工具写 `1`（lead 第 0 层 → 角色第 1 层，且角色不能再派）；**写 `0` 会让所有角色工具报 `subagent depth 1 exceeds maxDepth 0`**。通用 `subagent` 保持平台默认 `3`，但协议上不递归组建子团队。
 - 需要更大规模时，先问用户。
 
 ## 6. 稳定前缀
@@ -56,7 +56,7 @@
 - **派工与结算即时回写 `TASKS.json`**（头号纪律，日志分析实证）：派工→任务 `claimed/in_progress`；成员完成→`status=completed` + `changedPaths` + `verify`。只更新看板/聊天 ≠ 更新状态；阶段进入 implement 后「依赖已就绪却仍 pending」= 状态冻结违规（host 门禁 + 浮层红条）。
 - **契约冻结再并行（签名级）**：implement 前 architect 先产出签名级契约（字段/接口/DDL/状态机含豁免与边界），backend/frontend 只读它实现——并行角色在边界上的分歧必须在契约里前置冻结（历史 run：DDL 15 项分歧、MASK_KEYS 子串误伤导致返工）。
 - **大工件不走 workflow 聚合返回**：超大内容（schema 全文/设计长文）塞进聚合返回值会被截断并丢失后段角色；用子角色 `send_message` 单发、拆分小 workflow，或只回位置引用由 lead 读盘。
-- **依赖只认 completed**：派工前用 `unsatisfiedDependencies()` 校验；上游仍 `pending/claimed/in_progress` 的任务一律不派；`failed/cancelled` 永不解锁下游。
+- **依赖只认 completed**：派工前按依赖门校验（真源：`lib/validate.js` 的 `checkTasks` —— 依赖门处即注释 `// dependency gate:` @ :467）；上游仍 `pending/claimed/in_progress` 的任务一律不派；`failed/cancelled` 永不解锁下游。
 - **一个成员一次一个未完成任务**：别让同一个成员同时持有两个在办任务。
 - **空闲自动领题**：persist 模式下，成员 idle（`list_agents` 为空闲 / 收到结算）后自动领下一个依赖已满足的 `pending` 任务，别等到 lead 显式点名。
 - **attempt/attemptId**：每次派工/转派 `attempt+1`、设新 `attemptId`；成员回报必须带当前 `attemptId`，**旧 attemptId 的迟到写入一律拒绝**；转派/接管先使旧 attempt 失效并等待旧成员安静。
@@ -71,9 +71,9 @@
 
 ## 11. 安全与守界（工具纪律 + 越界审计）
 
-> 说明：dsh 0.1.2-rc.1 无 PreToolUse/PostToolUse 这类插件级拦截 hook（仅 `fs/observed`/`tools/result` 事后事件）；成员的真正工具边界由 **expert-team preset 的 toolFilter** 保证，越界由**完成时 `changedPaths` 审计**兜底。本协议在编排层再加固。
+> 说明：dsh **有**插件级拦截 hook —— `write`/`edit` 通道挂在宿主 `tools/pre-execute`（**写盘之前**拦，见 `lib/artifact-ownership.js` 的 `createOwnershipGate`），派工自动记账挂在 `tools/post-execute`（见 `lib/artifact-redirect-watch.js` 的 `createArtifactRedirectWatcher`）；另有 `fs/observed`/`tools/result` 事后事件。成员的**执行面**边界由 **expert-team preset 的 toolFilter** 保证，越界由**完成时 `changedPaths` 审计**兜底。本协议在编排层再加固。
 
-- **工具守界**：非实现角色（pm/architect/researcher/ui/reviewer/sec/docs）在 preset toolFilter 里不得有写业务代码/改文件工具，只读；qa/devops 只跑测试/构建/部署命令，dba 只做只读查询。越权工具已从 preset 移除；若遇通用 subagent 回退，写进 prompt 的 ROLES.md 守界条款同样适用。
+- **工具守界（如实说，别把「约束在别处」说成「工具不存在」）**：非实现角色（pm/architect/researcher/ui/reviewer/sec/docs）在 preset 里被 `toolFilter.deny` 移掉的是 `bash` 这类**执行**工具，**`write`/`edit` 并未被 toolFilter 移除** ⇒ 写侧约束**不来自工具面缺失**，而来自 `lib/artifact-ownership.js` 的 `ARTIFACT_OWNERS` 归属门禁（挂在 `tools/pre-execute`：**创建放行 / 覆写别人的工件当场拒绝**）；qa/devops 只跑测试/构建/部署命令，dba 只做只读查询。若遇通用 subagent 回退，写进 prompt 的 ROLES.md 守界条款同样适用。
 - **实现者只动 `inScope`**：每条实现/修复任务的 `inScope` 写清合法改动范围；实现者不得改 `outOfScope` 文件；完成时回报 `changedPaths`，lead 对照 `inScope` 审计，越界不得 `completed`。
 - **高危命令**：成员（尤其实现者）禁止执行 `rm -rf`、`sudo`、`chmod 777`、`git push --force` 等破坏性/生产命令；这些只由 lead 在**沙箱/受控终端**里跑（dsh sandbox 已启用时），且需用户确认。
 - **审计**：lead 把关键工具/文件变更链路记入 `RUN.log`（`tool:bash <cmd>`、`fs:write <path>`）——§2 口径：lead 无 `write`，内容由 lead 口述、指派的有 `write` 角色落盘——形成可追溯审计；`/team learn` 会聚合高频错误/越界。

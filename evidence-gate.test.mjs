@@ -14,7 +14,7 @@
 //
 // 运行：node evidence-gate.test.mjs
 
-import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -503,9 +503,150 @@ check(
 );
 check(/弱证据仍 fail-closed，豁免类只告警/.test(r21.out), '缺失提示里写明这条取舍');
 
+console.log('\n㉒ G2（BL-6 / BL-9）：默认扫描面含 references/ · 覆盖必须可机判 · 「已忽略 N 条未归因警示」不得沉默');
+{
+  /** 不带任何 target 跑默认扫描面（与 `npm run gate:evidence` 同形态）。 */
+  const runDefault = async (extra = []) => {
+    try {
+      const { stdout } = await run('node', [join(here, 'scripts', 'check-evidence.mjs'), ...extra], { cwd: here, env: { ...process.env } });
+      return { code: 0, out: stdout };
+    } catch (e) {
+      return { code: e.code ?? 1, out: String(e.stdout || '') + String(e.stderr || '') };
+    }
+  };
+  const parseOrNull = (s) => { try { return JSON.parse(s); } catch { return null; } };
+
+  // ⑰-1 默认扫描面可跑（**不带 target**）：先钉住"不是 exit 2" ——
+  // 默认面里某个目录不存在**不该**被当成用法错误（否则门禁换布局就直接崩）。
+  const djRaw = await runDefault(['--json']);
+  check(djRaw.code !== 2 && djRaw.out.trim().startsWith('{'), '默认扫描面（无 target）不是用法错误、且 --json 可解析', `exit=${djRaw.code}`);
+  const dj = parseOrNull(djRaw.out);
+  check(!!dj, '默认扫描面 --json 可解析');
+  if (dj) {
+    // 冻结契约的 `scope` 形状（**逐字**）：`team {covered, docs}`（**不带 reason**）、
+    // `references {covered, docs, reason}`（`reason` **必填**：covered 时 null，否则非空串）。
+    check(dj.scope.references.covered === true && dj.scope.references.docs >= 1, '**默认扫描面含 references/**（covered:true 且 docs ≥ 1）', JSON.stringify(dj.scope.references));
+    check(dj.scope.references.reason === null, '`covered:true` 时 `scope.references.reason === null`（键**必须存在**，值可空 ⇒ 不是"沉默"）', JSON.stringify(dj.scope.references.reason));
+    check(
+      Object.keys(dj.scope.team).sort().join(',') === 'covered,docs' && typeof dj.scope.team.covered === 'boolean',
+      '`scope.team` 只含 `{covered, docs}`（冻结契约 `additionalProperties:false` ⇒ 不许塞 reason）',
+      JSON.stringify(dj.scope.team).slice(0, 100),
+    );
+    check(
+      Object.keys(dj.scope.references).sort().join(',') === 'covered,docs,reason',
+      '`scope.references` 含 `{covered, docs, reason}` 三键（reason 必填）',
+      Object.keys(dj.scope.references).sort().join(','),
+    );
+    check(
+      typeof dj.ignoredUnattributedWarnings === 'number' && dj.ignoredUnattributedWarnings === dj.summary.ignoredUnattributedWarnings,
+      '--json 的 `ignoredUnattributedWarnings` 与 summary 里是**同一份值**',
+      `${dj.ignoredUnattributedWarnings} vs ${dj.summary.ignoredUnattributedWarnings}`,
+    );
+    // 冻结公式：**六项原值相加**，且**不含** `fragmentOnly`（它有独立 enforced 棘轮）
+    const S = dj.summary;
+    const formula = S.driftWarnings + S.loneLineRefs + S.emptyAnchors + S.leanAnchors + S.exemptPlaceholder + S.exemptFenced;
+    check(dj.ignoredUnattributedWarnings === formula, '`ignoredUnattributedWarnings` = drift + lone + empty + lean + 两类豁免（**逐项相加核对**）', `${dj.ignoredUnattributedWarnings} vs ${formula}`);
+    // ⚠️ 这条**必须带 0 桶豁免**：当某个 fragmentOnly 桶恰好为 0 时，"N 里有没有含它"在数值上
+    // **不可观测**（formula + 0 === formula）⇒ 那时不做负向断言，否则是拿一个恒假的判据去测。
+    const excludesFrag = (S.fragmentOnly === 0 || dj.ignoredUnattributedWarnings !== formula + S.fragmentOnly)
+      && (S.fragmentOnlyReferences === 0 || dj.ignoredUnattributedWarnings !== formula + S.fragmentOnlyReferences);
+    check(
+      excludesFrag,
+      '公式**不得**含任何一面的 `fragmentOnly`（enforced 的量不许被并进"忽略"通道；桶为 0 时该差异不可观测，故豁免）',
+      `fragmentOnly=${S.fragmentOnly} · refs=${S.fragmentOnlyReferences}`,
+    );
+    // G2 新基线 key：references 面弱证据是**独立桶**
+    check(typeof S.fragmentOnlyReferences === 'number' && typeof S.fragmentOnlyReferencesBaseline === 'number', '`--json` 有 `fragmentOnlyReferences` 与它的基线（独立桶）', `${S.fragmentOnlyReferences} / ${S.fragmentOnlyReferencesBaseline}`);
+  }
+
+  // ⑰-2 显式指定 target ⇒ 未覆盖的扫描面必须**带理由**（"没提"不是合法形态）。
+  // 用一个**小的**专属目录：共用 `root`（几十份夹具）会让 `--json` 输出超过 execFile 的
+  // 默认 maxBuffer（1MB），拿到的就是被截断的 JSON —— 那是测试脚手架的问题，不是被测行为。
+  const scopeDir = join(root, 'scope-explicit-only');
+  await mkdir(scopeDir, { recursive: true });
+  await writeFile(join(scopeDir, 'one.md'), `# 显式扫描面\n\n- 真锚点：\`lib/command.js · ${REAL_ANCHOR} @ 1\`\n`);
+  const exDoc = parseOrNull((await gate(scopeDir, ['--json'])).out);
+  check(
+    !!exDoc && exDoc.scope.references.covered === false && typeof exDoc.scope.references.reason === 'string' && exDoc.scope.references.reason.length > 0,
+    '显式指定扫描面时 `scope.references.covered:false` **且带 reason**',
+    exDoc ? JSON.stringify(exDoc.scope.references).slice(0, 120) : '(不可解析)',
+  );
+
+  // ⑰-3 **能红证据**：在**真实的** `skills/expert-team/references/` 下人造一个坏锚点 ⇒
+  // 默认扫描面必须把它抓成 MISSING（扩面之前，这个目录对门禁**完全失明**）。验后**删除复原**。
+  // 判据用**增量**（恰好多 1 条 MISSING + 点名该文件），因此不依赖工作区当时是否已有别的 MISSING。
+  const probeName = 'QTMP-bad-anchor-probe.md';
+  const probe = join(here, 'skills', 'expert-team', 'references', probeName);
+  const baseline = parseOrNull((await runDefault(['--json'])).out);
+  const baseMissing = baseline ? baseline.summary.anchorsMissing : -1;
+  const baseDocs = baseline ? baseline.summary.docs : -1;
+  let withProbe = null;
+  let probeExit = null;
+  try {
+    await writeFile(
+      probe,
+      '# 临时坏锚点探针（`evidence-gate.test.mjs` 用例㉒ 结束时删除）\n\n'
+      + '- 真锚点：`lib/validate.js · export const ROUND_LIMIT_OF_KIND = {`\n'
+      + '- 编造锚点：`lib/validate.js · totallyMadeUpAnchorXYZ_9f3a`\n',
+    );
+    probeExit = await runDefault();
+    withProbe = parseOrNull((await runDefault(['--json'])).out);
+  } finally {
+    await rm(probe, { force: true }); // 无论如何都删掉，绝不留痕
+  }
+  check(probeExit !== null && probeExit.code === 1, 'references/ 下的编造锚点 ⇒ 默认门禁 **exit 1**', `exit=${probeExit && probeExit.code}`);
+  check(
+    !!withProbe && withProbe.missing.some((m) => String(m.doc).includes(probeName)),
+    'MISSING 明细**点名** references/ 下那个探针文件',
+    withProbe ? ((withProbe.missing.find((m) => String(m.doc).includes(probeName)) || {}).reason || '(未点名)') : '(不可解析)',
+  );
+  check(
+    !!withProbe && withProbe.summary.anchorsMissing === baseMissing + 1 && withProbe.summary.docs === baseDocs + 1,
+    '恰好多出 1 条 MISSING、多扫 1 份文档（增量判据，不受工作区既有 MISSING 影响）',
+    withProbe ? `${baseMissing}→${withProbe.summary.anchorsMissing} · docs ${baseDocs}→${withProbe.summary.docs}` : '(不可解析)',
+  );
+  const restored = parseOrNull((await runDefault(['--json'])).out);
+  check(restored && restored.summary.anchorsMissing === baseMissing && restored.summary.docs === baseDocs, '**删除探针后完全复原**（MISSING 与文档数回到基线）', restored ? `${restored.summary.anchorsMissing} / ${restored.summary.docs}` : '(不可解析)');
+  const restoredRun = await runDefault();
+  check(restoredRun.code === (baseMissing > 0 ? 1 : 0), '复原后退出码回到基线状态', `exit=${restoredRun.code}`);
+
+  // ⑰-5 **确定性的**警示通道夹具（`N` 必须 > 0）：这是变异体 `M158`（把通道消音成恒 0）
+  // 唯一能稳定抓住的地方 —— 默认扫描面在**变异运行器的副本目录**里可能一个警示都没有（那里没有
+  // `team/`），于是"公式 = 0 且 N = 0"两边同时为 0，负向断言**恒真**、什么都抓不住（空转绿）。
+  // 夹具刻意各放一条**确定**会进计数桶的写法：裸行号（`lone`）+ 路径侧占位符模板行（`exemptPlaceholder`）。
+  const warnDir = join(root, 'warn-channel');
+  await mkdir(warnDir, { recursive: true });
+  await writeFile(
+    join(warnDir, 'warn.md'),
+    '# 警示通道夹具\n\n'
+    + '- 裸行号引用（指向不存在的文件 ⇒ lone）：`no-such-file-xyz.js:12`\n'
+    + '- 模板占位行（路径侧占位符 ⇒ exemptPlaceholder）：`team/<runId>/TASKS.json · <锚点>`\n',
+  );
+  const warnRun = await gate(warnDir);
+  const warnJson = parseOrNull((await gate(warnDir, ['--json'])).out);
+  check(warnRun.code === 0, '警示通道夹具本身 exit 0（这些量**都不进退出码**）', `exit=${warnRun.code}`);
+  check(!!warnJson && warnJson.ignoredUnattributedWarnings > 0, '夹具下 `ignoredUnattributedWarnings` **必须 > 0**（否则下面每条断言都恒真）', warnJson ? String(warnJson.ignoredUnattributedWarnings) : '(不可解析)');
+  if (warnJson) {
+    const WS = warnJson.summary;
+    const wf = WS.driftWarnings + WS.loneLineRefs + WS.emptyAnchors + WS.leanAnchors + WS.exemptPlaceholder + WS.exemptFenced;
+    check(warnJson.ignoredUnattributedWarnings === wf, '夹具下 N = 六项之和（逐项相加核对，非平凡值）', `${warnJson.ignoredUnattributedWarnings} vs ${wf}`);
+    check(WS.loneLineRefs >= 1 && WS.exemptPlaceholder >= 1, '夹具确实产出 lone ≥ 1 且 exemptPlaceholder ≥ 1（两条通道都被喂到）', `lone=${WS.loneLineRefs} · exemptPlaceholder=${WS.exemptPlaceholder}`);
+    const wm = warnRun.out.match(/已忽略 (\d+) 条未归因警示/);
+    check(!!wm && Number(wm[1]) === warnJson.ignoredUnattributedWarnings, '夹具下渲染值 = `--json` 值（且 > 0）', wm ? `${wm[1]} vs ${warnJson.ignoredUnattributedWarnings}` : '(缺行)');
+  }
+
+  // ⑰-4 汇总区**必然**打印「已忽略 N 条未归因警示」，且 N 与 `--json` 同值
+  const human = await runDefault();
+  const m = human.out.match(/已忽略 (\d+) 条未归因警示/);
+  check(!!m, '汇总区**必然**打印「已忽略 N 条未归因警示」一行（N=0 也打，通道本身可见）', m ? m[0] : '(缺这一行)');
+  const jj = parseOrNull((await runDefault(['--json'])).out);
+  check(!!m && !!jj && Number(m[1]) === jj.ignoredUnattributedWarnings, '渲染出来的 N 与 `--json` 的 `ignoredUnattributedWarnings` **同值**', m && jj ? `${m[1]} vs ${jj.ignoredUnattributedWarnings}` : '(不可解析)');
+  check(/扫描面：team\/[^\n]*references\//.test(human.out), '人类可读输出也**每轮**列出扫描面（没覆盖要说得出来）', (human.out.match(/扫描面：[^\n]*/) || [''])[0].slice(0, 80));
+}
+
 console.log('');
 if (fail > 0) {
   console.log(`✗ 证据门禁元测试失败：${fail} 项`);
   process.exit(1);
 }
-console.log('✔ 证据门禁元测试通过（能抓编造锚点与不存在的文件，且不误报真引用）');
+console.log('✔ 证据门禁元测试通过（能抓编造锚点与不存在的文件，且不误报真引用；G2：references 已纳入默认面 / 覆盖可机判 / 未归因警示不沉默）');

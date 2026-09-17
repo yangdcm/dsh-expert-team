@@ -812,7 +812,7 @@ window.__ModuleLoader__.load({
     ]
     /**
      * 规范中文角色标签 → 角色 id（2026-09-11 起 prompt 与派工 label 用中文标签）。
-     * **必须与 host 侧 `lib/command.js` 的 `ROLE_LABELS_ZH` 保持同步**：两边解析同一批
+     * **必须与 host 侧 `lib/vocab.js` 的 `ROLE_LABELS_ZH`（@ :82）保持同步**：两边解析同一批
      * `【产品经理】…` / `[测试员] 任务` 文本，任一侧漏掉就会让浮层把成员列成「未匹配到角色」。
      * 取值 = 浮层显示名（本文件 `ROLE_TOOL` 的 nm），避免同一角色两套叫法。
      */

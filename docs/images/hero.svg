@@ -32,7 +32,7 @@
     <text x="826" y="158" font-size="28" font-weight="650" fill="#f8fafc">9</text>
     <text x="826" y="184" font-size="11.5" fill="#cbd5e1">阶段门控（规格评审为硬门）</text>
     <text x="1006" y="158" font-size="28" font-weight="650" fill="#f8fafc">89</text>
-    <text x="1006" y="184" font-size="11.5" fill="#cbd5e1">测试文件（另有 156 条变异）</text>
+    <text x="1006" y="184" font-size="11.5" fill="#cbd5e1">测试文件（另有 163 条变异）</text>
 
     <!-- B5 进度条：9 段对应 9 阶段（前 4 段已完成/进行中示意） -->
     <rect x="64" y="212" width="72" height="8" rx="4" fill="#2563eb"/>

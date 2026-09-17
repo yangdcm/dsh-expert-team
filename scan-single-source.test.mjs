@@ -147,6 +147,23 @@ console.log('\n⑨ 中文事实名（2026-09-13 修：`\\b` 对汉字不成立 �
   check(definitionKind('参见变现体系的说明', '变现体系') === null, '**普通引用不算定义**（否则分叉检测会满屏假阳性）');
   check(definitionKind('export const X = 1', 'X') === 'decl' && definitionKind('X = 1', 'X') === 'assign', 'ASCII 的代码式定义语法不受影响');
 
+  // (d′) D1（`BL-12`：台账/清单类表格行被算成「定义」⇒ 假命中压掉 EXIT=3）+ 第二道闸（指针行）
+  //      + D2（`BL-13`：引用语境 ⇒ 只算引用）。**每条都是"只收紧"**：既有 `:142-148` 逐字未改。
+  check(definitionKind('| 变现体系 | 值A | 说明A |', '变现体系') === null, '**3 列台账行不算定义**（BL-12 负对照：`| 事实名 | 值A | 说明A |` ⇒ 不是定义）');
+  check(definitionKind('| 变现体系 | 说明 |', '变现体系') === 'zh-table', '**2 列定义行仍算定义**（BL-12 正对照，与上面那条同形对照）');
+  check(definitionKind('| 变现体系 | SPEC.md |', '变现体系') === null, '**2 列指针行不算定义**（D1 第二道闸：指针不是定义正文）');
+  check(definitionKind('| 变现体系 | 待定 |', '变现体系') === null, '2 列 + 状态词（`待定`）⇒ 不算定义（`TABLE_STATUS_WORDS` 第二道闸）');
+  check(definitionKind('| 值A | 变现体系 |', '变现体系') === null, '**事实名不在第 1 格 ⇒ 不算定义**（原有正则作为 AND 保留的守卫：丢了它这里会变成假阳性）');
+  check(definitionKind('| 变现体系 | 进行中 | 备注 |', '变现体系') === null, '3 列且第 2 格是状态词 ⇒ 不算定义（列数判据优先）');
+  // D2：引用语境（**行内代码 span**）。⚠️ 这条夹具刻意用 `zh-quoted` 形态：不带 D2 时它**会**命中
+  // `zh-quoted`（该正则不锚行首）⇒ 是定义；带 D2 ⇒ `null` ⇒ **能红**（M161 抓的就是它）。
+  check(definitionKind('`「变现体系」：指三大域`', '变现体系') === null, '**行内代码 span 包住事实名 ⇒ 引用语境**（D2 规则①，能红夹具）');
+  check(definitionKind('| `变现体系` | 说明 |', '变现体系') === null, '表格单元格内的代码 span ⇒ 引用语境（D2 规则①的另一形态）');
+  check(definitionKind('## 变现体系', '变现体系') === 'zh-heading', '**标题优先于 D2**：`zh-heading` 在引用语境判定之前（冻结顺序）');
+  // ⚠️ 这条是"已删除的散文关键词规则"的**回退守卫**：若有人把「含 参见/引用/证据/见 ⇒ 判为引用」加回来，
+  //    它会把合法定义 `- 变现体系：参见三大域` 漏判成引用（**掩盖真分叉**）⇒ 本条必红。
+  check(definitionKind('- 变现体系：参见三大域', '变现体系') === 'zh-list', '合法 `zh-list` 定义**不得**被散文关键词规则误判成引用（旧候选规则已删的守卫）');
+
   // (e) 端到端：复现那个 run 的真实场景（SPEC 里 8 处 `变现体系`，旧实现报 0）
   const root = await mkdtemp(join(tmpdir(), 'dsh-scan-zh-'));
   await writeFile(join(root, 'SPEC.md'), [

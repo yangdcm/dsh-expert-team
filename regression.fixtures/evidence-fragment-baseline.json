@@ -1,8 +1,9 @@
 {
   "$comment": "证据门禁棘轮基线（B-08D / FIND-11 三键；B-08E 分级）。⚠ **只有 `fragmentOnly` 触发失败**（exit 1）：它代表**债务** —— 看着像真引用、却无法逐字核验。`exemptPlaceholder` / `exemptFenced` **只用于可见性对比**，超基线**不判失败**（只打印 ⚠ 告警行），因为它们统计的是**合法的文档形态**：按引用纪律教格式的模板行、作者显式声明的围栏示例。三个数字都只降不升的口径不变；把一条引用改成整条逐字命中、或把模板/反例从正文挪进围栏，就能下调它们一次。任一 key 缺失或整个文件缺失 ⇒ 该 key 按 0 处理：弱证据仍 fail-closed，豁免类只告警。路径可用 env DSH_EVIDENCE_FRAGMENT_BASELINE 覆写。",
-  "$changeNote": "B-08D 统一规则（命中只认逐字）一次性重测：fragmentOnly 52 → 59（+3 = SG-7 把原先静默豁免的锚点侧占位符改为可见的未校验桶；+4 = 并发写入新增，含本次讨论催生的 <QANonexistentAnchor> ×2）；exemptPlaceholder 无 → 45（新口径：只统计**路径侧**占位符的真模板写法，旧口径用 looksLikeSourcePath 会漏掉 `<相对路径> · <锚点>`）；exemptFenced 无 → 2。B-08E：前两者的硬失败降级为告警对比，故 version 3；数值不变。",
+  "$changeNote": "B-08D 统一规则（命中只认逐字）一次性重测：fragmentOnly 52 → 59（+3 = SG-7 把原先静默豁免的锚点侧占位符改为可见的未校验桶；+4 = 并发写入新增，含本次讨论催生的 <QANonexistentAnchor> ×2）；exemptPlaceholder 无 → 45（新口径：只统计**路径侧**占位符的真模板写法，旧口径用 looksLikeSourcePath 会漏掉 `<相对路径> · <锚点>`）；exemptFenced 无 → 2。B-08E：前两者的硬失败降级为告警对比，故 version 3；数值不变。 G2（2026-09-17）：**仅新增** `fragmentOnlyReferences` 这个 key（references 面的弱证据，独立成桶，实测值 0）；既有三个 key 的数值逐字未动（59 / 45 / 2）。",
   "version": 3,
   "fragmentOnly": 59,
   "exemptPlaceholder": 45,
-  "exemptFenced": 2
+  "exemptFenced": 2,
+  "fragmentOnlyReferences": 0
 }

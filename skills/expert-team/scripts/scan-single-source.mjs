@@ -83,6 +83,60 @@ export function factMatcher(fact) {
   return new RegExp(`\\b${escapeRegExp(f)}\\b`);
 }
 
+// ── 冻结段 A：表格单元格解析与"定义格"判据（模块级，放在 definitionKind() 之前）────────
+// 行首的 | 与行尾的 | 各产生一个空片段 ⇒ 去空后才能得到真实单元格数。
+/** 去掉被 |/｜ 切出的空片段（行首行尾各一个），返回真实单元格文本数组。 */
+function tableCells(line) {
+  return String(line).split(/[|｜]/).map((s) => s.trim()).filter((s) => s !== '');
+}
+// 显式列举，**新增状态词 = 改契约**（须回 T3）：不是模式，是有意固定的短词表。
+const TABLE_STATUS_WORDS = new Set(['待定', '进行中', '已完成', '未开始', '见上', '同上', '—', '-', 'N/A']);
+/** 第 2 格是否是「指针 / 状态」形态（指针与状态不是定义正文）。 */
+function isDefinitionCell(cell) {
+  const s = String(cell || '').trim();
+  if (s === '') return false;
+  if (/^\S*\.(?:md|markdown|mjs|cjs|js|ts|tsx|json|ya?ml|txt|svg)$/.test(s)) return false;
+  if (TABLE_STATUS_WORDS.has(s)) return false;
+  return true;
+}
+
+/**
+ * D2（`BL-13`）**引用语境的判别式**（模块级；在 `definitionKind()` 里由 `isRefContext(line, fact)` 调用）。
+ *
+ * 为什么需要它：`BL-13` 的观测形态**不是**围栏块、也不是"行内代码 span"本身 —— 实测反例里被判成
+ * 假定义的是**普通 markdown 表格行**（`| 变现体系 | 说明 | 台账行 |`）。它之所以像定义，是因为
+ * **逐字引用 = 逐字复制了「定义式形状」**，而扫描器只看单行文本、看不到"这一行是在讲解/转述"。
+ * ⇒ 表格行那一类由 **D1 的列数判据**负责；**D2 只负责 D1 盖不住的那一类：标记级的引用语境**。
+ *
+ * **判据只有"标记级"两条，一条散文关键词启发式都没有**（有意为之）：
+ *   ① 行内代码 span 包住事实名：`` `…事实名…` ``；
+ *   ② 块引用标记行（行首 `>`）—— PR/评审里"转述别人的表格/定义"的典型形态。
+ *
+ * ⚠️ **删掉的两条候选规则，各自有可证伪的理由**（本仓判据：**没有失败信号的规则视为未定义**）：
+ *   · 「列表项里出现 `引用/证据/见 /参见` ⇒ 判为引用」——**散文关键词启发式**：不可枚举、不可证伪，
+ *     而且它会把**合法定义** `- 变现体系：参见三大域` 漏判成引用（**方向与目标相反**：掩盖真分叉）。
+ *     这条删除由断言 #9 守着。
+ *   · 「表格单元格内代码 span（`| \`事实名\` | … |`）」—— **零可达性**：事实名一旦被反引号包住，
+ *     `zh-table` 外层正则 `^\s*[|｜]\s*\*{0,2}<事实名>\*{0,2}\s*[|｜]`（要求 `|` 后紧跟事实名）
+ *     **必然不匹配** ⇒ 无论有没有这条规则，该行都落到 `null`：**判定结果完全相同** ⇒ 它是一条
+ *     不产生任何效果、也无法被证伪的规则。删掉它**不改变任何行为**（已用 `| \`变现体系\` | 说明 |`
+ *     在删前/删后各实测一次，两次都是 `null`）。
+ * ⚠️ **如实注明规则 ② 的作用域**：`> | … |` **匹配不上** `zh-table` 的 `^\s*[|｜]`（`\s*` 不跨 `>`）
+ * ⇒ 规则 ② 实际只对 **`zh-quoted`** 形态生效（如 `> 「变现体系」：指三大域`）；它**不覆盖任何
+ * `zh-table` 形态**，本实现不假装它覆盖。
+ * ⚠️ **围栏块（``` / ~~~）内的行本批不做**（需跨行状态 ⇒ 动签名面）⇒ 显式登记为 `BL-23`，不是静默放过。
+ */
+function isRefContext(line, fact) {
+  const s = String(line);
+  const t = s.trim();
+  // ① 行内代码 span 包住事实名：`...事实名...`
+  const span = new RegExp('`[^`]*' + escapeRegExp(fact) + '[^`]*`');
+  if (span.test(s)) return true;
+  // ② 块引用标记行（行首 >）：PR/评审里"转述别人的表格/定义"的典型形态
+  if (/^\s*>/.test(t)) return true;
+  return false;
+}
+
 /** 提取一行里"看起来是定义"的那种写法；不是定义返回 null。 */
 export function definitionKind(line, fact) {
   const f = escapeRegExp(fact);
@@ -92,7 +146,18 @@ export function definitionKind(line, fact) {
   if (isCjkFact(fact)) {
     if (new RegExp(`^\\s*#{1,6}\\s*.*${f}`).test(line)) return 'zh-heading';
     if (new RegExp(`^\\s*\\*\\*${f}\\*\\*\\s*[:：]`).test(line)) return 'zh-bold';
-    if (new RegExp(`^\\s*[|｜]\\s*\\*{0,2}${f}\\*{0,2}\\s*[|｜]`).test(line)) return 'zh-table';
+    // ── D2（`BL-13`）：**引用语境优先**。判定顺序（冻结）：标题 → 加粗 → **本行** → 表格 → 引号 → 列表。
+    // 为什么放在这里：标题/加粗**本身就是最强的定义信号**，不该因"行内出现反引号"被翻成引用；
+    // 而表格/引号/列表这三支才是台账行与逐字引用的高发形态。
+    if (isRefContext(line, fact)) return null;
+    if (new RegExp(`^\\s*[|｜]\\s*\\*{0,2}${f}\\*{0,2}\\s*[|｜]`).test(line)) {
+      // D1（`BL-12`）：恰好 2 个单元格，且第 2 格是「定义正文」而非指针/状态。
+      // ⚠️ 上面那个「行首是 |/｜ 且第 1 格就是事实名」的正则**必须作为 AND 保留** ——
+      //    调用方（`scanSingleSource()` 的 `word.test(line)`）只保证"这一行里出现过事实名"，
+      //    不保证它在第 1 格；丢掉它会让 `| 值A | 变现体系 |` 变成定义 = **新增假阳性**。
+      const cells = tableCells(line);
+      if (cells.length === 2 && isDefinitionCell(cells[1])) return 'zh-table';
+    }
     if (new RegExp(`[「『]${f}[」』]\\s*[:：]`).test(line)) return 'zh-quoted';
     if (new RegExp(`^\\s*(?:[-*+]|\\d+[.、])\\s*\\*{0,2}${f}\\*{0,2}\\s*[:：]`).test(line)) return 'zh-list';
     return null;

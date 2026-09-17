@@ -33,25 +33,38 @@
 //     历史写法不会变成假阳性洪峰。
 //   - **锚点侧**的尖括号占位符不再静默豁免（SG-7）⇒ 落未校验桶，**可见**、受棘轮约束。
 //
-// 弱证据棘轮（B-08D / FIND-11；B-08E 分级）：
-//   基线文件 `regression.fixtures/evidence-fragment-baseline.json` 三个 key，各自只降不升：
-//   - `fragmentOnly`（未校验/弱证据）= **债务** ⇒ 超基线 **exit 1**（fail-closed）；
+// 弱证据棘轮（B-08D / FIND-11；B-08E 分级；G2 加第四键）：
+//   基线文件 `regression.fixtures/evidence-fragment-baseline.json` 四个 key，各自只降不升：
+//   - `fragmentOnly`（未校验/弱证据，**非 references 面**）= **债务** ⇒ 超基线 **exit 1**（fail-closed）；
+//   - `fragmentOnlyReferences`（**references 面**的弱证据，G2 新增）= 同一套纪律，但**独立成桶** ——
+//     两个面不许合并，否则一个面的债会掩盖另一个面（references 此前根本不在扫描面里）；
 //   - `exemptPlaceholder`（路径侧占位符豁免）/ `exemptFenced`（围栏豁免）= **合法的文档形态**
 //     （按引用纪律教格式的模板行、作者显式声明的示例）⇒ 只做「可见 + 对比 + 告警」，**不作为失败**
 //     （本仓教训：大量假阳性会让门禁被整体忽略）。
-//   缺失的 key 按 0 处理：弱证据仍 fail-closed，豁免类只告警。
+//   缺失的 key 按 0 处理：两类弱证据仍 fail-closed，豁免类只告警。
 //   基线路径可用 `DSH_EVIDENCE_FRAGMENT_BASELINE` 覆写（FIND-14②）。
 //
+// G2 扫描面与警示通道（2026-09-17 冻结）：
+//   · **默认扫描面** = `<workspace>/team/**` ∪ `<pkg>/skills/expert-team/references/**`（后者此前
+//     **完全不在**校验面里 ⇒ 那些文档的锚点失效时门禁一个字都不说）；
+//   · `--json` 的 `scope.{team,references}` 是**可机判**的覆盖记账：`covered:false` 时 `reason` **必填**
+//     （沉默不允许 —— "没提"与"覆盖了且没问题"在输出上会完全同形）；
+//   · `ignoredUnattributedWarnings` = `driftWarnings + loneLineRefs + emptyAnchors + leanAnchors
+//     + exemptPlaceholder + exemptFenced`（**不含** `fragmentOnly`：它有独立 enforced 棘轮，
+//     不得被并进"忽略"通道）；`N>0` 时汇总区**必然**出现「已忽略 N 条未归因警示（不计入退出码）」一行。
+//   · `DRIFT` / `LONEFILE` / 空锚点 / 示意锚点 / 豁免量**不得**改成失败（并发写入导致的行号偏移
+//     **不算错**；大量假阳性会让门禁被**整体忽略** —— 那比"有噪声"糟得多）⇒ 只做显式计数 + 声明。
+//
 // 用法：
-//   node scripts/check-evidence.mjs                    # 校验 team/ 下所有工件
-//   node scripts/check-evidence.mjs <dir|file> [...]   # 校验指定路径
+//   node scripts/check-evidence.mjs                    # 校验 team/ 与 skills/expert-team/references/
+//   node scripts/check-evidence.mjs <dir|file> [...]   # 校验指定路径（只扫传参 ⇒ 默认面不生效）
 //   node scripts/check-evidence.mjs --json             # 机器可读输出
 //   node scripts/check-evidence.mjs --quiet            # 只输出汇总与 MISSING
 //
-// 退出码：0 = 无 MISSING 且弱证据（fragmentOnly）未超基线；1 = 有 MISSING 或弱证据超基线；2 = 用法/环境错误
+// 退出码：0 = 无 MISSING 且 enforced 棘轮未超基线；1 = 有 MISSING 或 enforced 棘轮超基线；2 = 用法/环境错误
 
 import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
-import { join, resolve, dirname, relative, isAbsolute } from 'node:path';
+import { join, resolve, dirname, relative, isAbsolute, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -92,7 +105,9 @@ const BASELINE_FILE =
 
 /** 读基线：缺失/损坏/缺 key ⇒ 该 key 按 0（fail-closed）。 */
 function loadBaseline() {
-  const out = { present: false, fragmentOnly: 0, exemptPlaceholder: 0, exemptFenced: 0 };
+  // `fragmentOnlyReferences` = G2 新增的**第四个** key（references 面的弱证据，独立桶）。
+  // 老基线文件里没有它 ⇒ 按 **0** 处理（fail-closed：references 面新增弱证据必须当场可见/可拦）。
+  const out = { present: false, fragmentOnly: 0, exemptPlaceholder: 0, exemptFenced: 0, fragmentOnlyReferences: 0 };
   let parsed = null;
   try {
     parsed = JSON.parse(readFileSync(BASELINE_FILE, 'utf8'));
@@ -100,7 +115,7 @@ function loadBaseline() {
     return out;
   }
   out.present = true;
-  for (const key of ['fragmentOnly', 'exemptPlaceholder', 'exemptFenced']) {
+  for (const key of ['fragmentOnly', 'exemptPlaceholder', 'exemptFenced', 'fragmentOnlyReferences']) {
     if (typeof parsed?.[key] === 'number') out[key] = parsed[key];
   }
   return out;
@@ -693,9 +708,18 @@ function main() {
   const quiet = argv.includes('--quiet');
   const targets = argv.filter((a) => !a.startsWith('--'));
 
-  const defaultTarget = join(WORKSPACE_ROOT, 'team');
-  const roots = targets.length > 0 ? targets.map((t) => resolve(process.cwd(), t)) : [defaultTarget];
-  for (const r of roots) {
+  // ── G2（BL-6 / BL-9）：默认扫描面 = `team/` **+** 随包分发的技能参考文档 ────────────────
+  // 为什么要加 `references/`：那里的锚点同样是**证据性引用**（改了代码、文档里的锚点就失效），
+  // 而它们不在 `team/` 下 ⇒ 此前门禁对它们**完全失明**（一个字都不说）。
+  // ⚠️ **不得**把 `references` 加进任何豁免/忽略名单来消音（SPEC 边界⑧「消音即判失败」）——
+  // 覆盖与否只有两种合法形态：`covered:true`，或 `covered:false` **且带 reason**（沉默不允许，R2）。
+  const TEAM_DIR = join(WORKSPACE_ROOT, 'team');
+  const REFERENCES_DIR = join(PKG_ROOT, 'skills', 'expert-team', 'references');
+  const explicit = targets.length > 0;
+  const roots = explicit ? targets.map((t) => resolve(process.cwd(), t)) : [TEAM_DIR, REFERENCES_DIR];
+  // **显式**路径不存在 ⇒ 用法/环境错误（exit 2，既有语义）。**默认**扫描面里某个目录不存在**不是**
+  // 用法错 —— 那是一条「没覆盖」的**事实**，交给 `scope.<name>.reason` 说出来，而不是让门禁崩掉。
+  for (const r of (explicit ? roots : [])) {
     if (!existsSync(r)) {
       console.error(`✗ 路径不存在：${r}`);
       process.exit(2);
@@ -708,12 +732,36 @@ function main() {
     process.exit(2);
   }
 
+  // ── 扫描面记账（G2 · BL-9）：**沉默不允许** ────────────────────────────────────────
+  // 冻结契约的 `scope` 形状（**逐字**）：
+  //   `team {covered, docs}`（additionalProperties:false ⇒ **不带 reason**）
+  //   `references {covered, docs, reason}`（`reason` **必填**：`covered=false` 时是非空字符串，
+  //   `covered=true` 时为 **null**）。⇒ "没覆盖"永远是一条**可机判的事实**，而不是"没提"
+  //   （"没提"与"覆盖了且没问题"在输出上完全同形）。
+  const within = (p, dir) => { const a = resolve(p); const b = resolve(dir); return a === b || a.startsWith(b + sep); };
+  const scopeOf = (dir) => {
+    const covered = roots.some((r) => within(r, dir));
+    return { covered, docs: covered ? files.filter((f) => within(f, dir)).length : 0 };
+  };
+  const uncoveredReason = (dir) => (explicit
+    ? `本次是**显式**指定扫描面（${roots.map((r) => relative(WORKSPACE_ROOT, r)).join(' / ')}），其中不含 ${dir}`
+    : `目录不存在或不可读：${dir}`);
+  const scopeTeam = scopeOf(TEAM_DIR);
+  const scopeRefs = scopeOf(REFERENCES_DIR);
+  const scope = {
+    team: scopeTeam,
+    references: { ...scopeRefs, reason: scopeRefs.covered ? null : uncoveredReason(REFERENCES_DIR) },
+  };
+
   const missing = [];
   const drift = [];
   const lone = [];
   const emptyAnchor = [];
   const leanAnchor = [];
-  const fragmentOnly = []; // 弱证据：整条锚点搜不到，但存在"够具体"的片段
+  // 弱证据：整条锚点搜不到、但存在"够具体"的片段。
+  // ⚠️ **这一行/这个名字是变异体锚点**：`M87` 的 `find` 串里**逐字含** `fragmentOnly.push({`，
+  // 所以四个投递点**必须保持原样**（不许改名、不许换成路由函数）—— 分面在**循环之后**做。
+  const fragmentOnly = [];
   let anchorsChecked = 0;
   let anchorsFound = 0;
   let lineRefsChecked = 0;
@@ -842,6 +890,16 @@ function main() {
     }
   }
 
+  // ── 弱证据**分面**（G2 冻结口径）：`fragmentOnly` 收的是"全部扫到的弱证据"，这里按**文档位置**
+  // 把它切成两个**独立桶**（在循环之后切，是为了让四个投递点保持原样 —— M87 的 find 串含它们）：
+  //   · `fragmentOnlyLocal`      —— 非 references 面（team/** 与**显式传参**的面）⇒ 沿用既有基线 59
+  //   · `fragmentOnlyReferences` —— references 面 ⇒ 新基线 key，独立计数、独立棘轮
+  // 两桶**不许合并**：references 此前根本不在扫描面里，把它的首个计数并进 59 会让既有基线失真，
+  // 而且"一个面的债掩盖另一个面"正是本批要修的形态。
+  const isRefsDoc = (entry) => within(join(WORKSPACE_ROOT, String(entry.doc)), REFERENCES_DIR);
+  const fragmentOnlyLocal = fragmentOnly.filter((f) => !isRefsDoc(f));
+  const fragmentOnlyReferences = fragmentOnly.filter(isRefsDoc);
+
   // 弱证据/豁免量棘轮（照 gate:bypass 的惯例 + B-08D/FIND-11 的三键）：数字只降不升。
   // 基线文件缺失或某个 key 缺失 ⇒ **该 key 按 0 处理**（fail-closed：宁可报红，
   // 也不给"删掉基线就关棘轮"的口子）。基线路径可用 env 覆写（便于自动化验证该行为）。
@@ -858,36 +916,66 @@ function main() {
     driftWarnings: drift.length,
     loneLineRefs: lone.length,
     workspaceRoot: WORKSPACE_ROOT,
-    // 只增不删（B-08A / B-08D）：
-    fragmentOnly: fragmentOnly.length,
+    // 只增不删（B-08A / B-08D）：既有键的**口径与数值都不许改** ⇒ 只数**非 references 面**那一桶
+    fragmentOnly: fragmentOnlyLocal.length,
     fragmentOnlyBaseline: baseline.fragmentOnly,
+    // G2 新增：references 面的弱证据**独立桶**（与 team 面的 `fragmentOnly` 不合并 —— 一个面的债
+    // 不许掩盖另一个面；references 此前根本不在扫描面里，并进 59 会让既有基线失真）。
+    fragmentOnlyReferences: fragmentOnlyReferences.length,
+    fragmentOnlyReferencesBaseline: baseline.fragmentOnlyReferences,
     exemptPlaceholder,
     exemptPlaceholderBaseline: baseline.exemptPlaceholder,
     exemptFenced,
     exemptFencedBaseline: baseline.exemptFenced,
   };
 
-  // 棘轮（B-08D 三键 → B-08E 分级）：
+  // 棘轮（B-08D 三键 → B-08E 分级 → G2 第四键）：
   //   - `fragmentOnly` = **债务**（看着像真引用、却无法逐字核验）⇒ 超基线**硬失败**（enforced）
+  //   - `fragmentOnlyReferences` = **同一套纪律**，但只算 references 面的那份债（新 key，独立桶）
   //   - `exemptPlaceholder` / `exemptFenced` = **合法的文档形态**（按引用纪律教格式的模板行、
   //     作者显式声明的围栏示例）⇒ 只做"可见 + 对比 + 告警"，**不作为失败**
   //     （本仓教训：大量假阳性会让门禁被整体忽略）
+  // ⚠️ 新行**追加在两行豁免之后**：既有变异体 M88/M89 的 `find` 串逐字指向 `exemptPlaceholder`
+  // 与 `exemptFenced` 那**连续两行**，这里既不动它们、也不制造该串的第二处出现（否则命中 ≠ 1 直接 throw）。
   const ratchets = [
-    { key: 'fragmentOnly', label: '仅片段命中（弱证据）', now: fragmentOnly.length, enforced: true },
+    { key: 'fragmentOnly', label: '仅片段命中（弱证据）', now: fragmentOnlyLocal.length, enforced: true },
     { key: 'exemptPlaceholder', label: '占位符豁免', now: exemptPlaceholder, enforced: false },
     { key: 'exemptFenced', label: '围栏块豁免', now: exemptFenced, enforced: false },
+    { key: 'fragmentOnlyReferences', label: 'references 面弱证据（独立桶）', now: fragmentOnlyReferences.length, enforced: true },
   ].map((r) => ({ ...r, base: baseline[r.key], broken: r.now > baseline[r.key] }));
   const broken = ratchets.filter((r) => r.broken && r.enforced); // 只有 enforced 的 key 触发失败
   const drifted = ratchets.filter((r) => r.broken && !r.enforced); // 豁免类：只告警
   const ratchetBroken = broken.length > 0;
+
+  // ── G2（BL-9）「已忽略 N 条未归因警示」：**不得沉默** ────────────────────────────────
+  // 口径（冻结契约 `json.ignoredUnattributedWarnings`，**唯一真源就在这一行**）：
+  //   N = driftWarnings + loneLineRefs + emptyAnchors + leanAnchors + exemptPlaceholder + exemptFenced
+  // 即把**六项原值**相加 —— 它们每一个都**不进退出码**（DRIFT/LONEFILE/空锚点/示意锚点/两类豁免，
+  // 全是"非失败类警示"），此前**各自有计数、却没有一处汇总**，于是"门禁全绿"与"门禁忽略了 200 条
+  // 警示"在输出上很难一眼分开。
+  // 刻意**不含** `fragmentOnly`（无论哪个面）：它是 **enforced** 键（超基线直接 `exit 1`），
+  // 每轮都渲染「now / 基线」⇒ 它**有归属**，不是"被忽略"。把 enforced 的量并进来，
+  // 会让这个数字既说不清又虚高（本仓教训：没人看得懂的指标等于没有指标）。
+  // 这些量**不**改成失败是有意为之（SPEC 边界⑧ / 本仓裁定）：并发写入导致的行号偏移**不算错**，
+  // 而大量假阳性会让门禁被**整体忽略** —— 那比"有噪声"糟得多。所以走"显式列出 + 计数"这条通道。
+  const ignoredUnattributedWarnings = drift.length + lone.length + emptyAnchor.length + leanAnchor.length + exemptPlaceholder + exemptFenced;
+  // 两个键同时进 `summary`（PLAN 契约：「summary 既有键全部保留 + 上述新键」）与顶层（PLAN 契约
+  // 把 `scope` / `ignoredUnattributedWarnings` 列为 `summary` 的**兄弟**键）—— 两种读法都兼容。
+  // ⚠️ 它们是**同一份值**的投影（真源只有上面这两个变量），不是两份口径。
+  summary.ignoredUnattributedWarnings = ignoredUnattributedWarnings;
+  summary.scope = scope;
 
   if (asJson) {
     console.log(
       JSON.stringify(
         {
           summary,
+          scope,
+          ignoredUnattributedWarnings,
           missing,
-          fragmentOnlyRefs: fragmentOnly,
+          // 既有键：口径不变（非 references 面那一桶）；G2 新增 references 面的独立明细
+          fragmentOnlyRefs: fragmentOnlyLocal,
+          fragmentOnlyReferencesRefs: fragmentOnlyReferences,
           ratchet: {
             baselineFile: BASELINE_FILE,
             present: baseline.present,
@@ -907,17 +995,22 @@ function main() {
     console.log('# 证据/锚点校验');
     console.log(`工作区根：${WORKSPACE_ROOT}`);
     console.log(`扫描工件：${summary.docs} 份`);
+    // G2（BL-9）：扫描面**每轮**渲染 —— 「没覆盖」必须是一条可读的**事实**，不能是"没提"。
+    const scopeNote = (name, s) => (s.covered ? `${name} ${s.docs} 份（已覆盖）` : `${name} 未覆盖（${s.reason}）`);
+    console.log(`扫描面：${scopeNote('team/', scope.team)} · ${scopeNote('references/', scope.references)}`);
     console.log('');
     console.log(`锚点引用（可逐字校验）：${anchorsChecked} 条 —— 命中 ${anchorsFound}，未命中 ${missing.length}`);
     // R22/FIND-6：豁免量与弱证据量都必须**始终**渲染，不得静默省略；
     // FIND-14①：基线值也**每轮**打印（"偷偷抬基线"必须可见）
-    console.log(`- 未校验（弱证据，受棘轮约束）：${fragmentOnly.length} 条 / 基线 ${baseline.fragmentOnly} 条`);
+    console.log(`- 未校验（弱证据，受棘轮约束）：${fragmentOnlyLocal.length} 条 / 基线 ${baseline.fragmentOnly} 条`);
+    // G2 新增：references 面的弱证据是**独立桶** ⇒ 必须**单独**渲染，否则它会被 team 面的数字掩盖
+    console.log(`- references 面弱证据（独立桶，受棘轮约束）：${fragmentOnlyReferences.length} 条 / 基线 ${baseline.fragmentOnlyReferences} 条`);
     console.log(
       `- 豁免（不计入校验）：占位符 ${exemptPlaceholder} 条 · 围栏块 ${exemptFenced} 条（棘轮基线 ${baseline.exemptPlaceholder} / ${baseline.exemptFenced} 条）`,
     );
     if (!baseline.present) {
       console.log(
-        `  ⚠ 棘轮基线文件缺失或不可解析（${BASELINE_FILE}）⇒ 三个 key 均按 0 处理：弱证据仍 fail-closed，豁免类只告警`,
+        `  ⚠ 棘轮基线文件缺失或不可解析（${BASELINE_FILE}）⇒ 四个 key 均按 0 处理：两类弱证据仍 fail-closed，豁免类只告警`,
       );
     }
     if (drifted.length > 0) {
@@ -934,7 +1027,7 @@ function main() {
       console.log(`  ℹ ${r.label} ${r.now} 条 < 基线 ${r.base} 条：可手动下调该基线（本脚本**不自动**下调）`);
     }
     // 弱证据未破线时不逐条刷屏（几十条会淹没真缺陷），但必须给出取明细的路子
-    if (!quiet && !ratchetBroken && fragmentOnly.length > 0) {
+    if (!quiet && !ratchetBroken && (fragmentOnlyLocal.length > 0 || fragmentOnlyReferences.length > 0)) {
       console.log(
         '  ℹ 弱证据明细：node scripts/check-evidence.mjs --json（fragmentOnlyRefs）；新增弱证据会让本门禁失败',
       );
@@ -943,6 +1036,17 @@ function main() {
     console.log(`示意性引用（含省略号，不可逐字校验）：${leanAnchor.length} 条`);
     console.log(`旧式裸行号引用（待逐步收敛）：${lone.length} 条`);
     console.log(`行号漂移告警（±${DRIFT_TOLERANCE} 行外，非错误）：${drift.length} 条`);
+    // ── G2（BL-9）汇总区**必然**打印的一行：把"被忽略的量"汇成一个数 ──────────────────
+    // 为什么必须有这一行：下面每一项**各自**都有计数，但**没有一处**告诉你"这些加起来有多少条
+    // 是既没进退出码、也没被任何门禁咬住的"。缺了它，"门禁全绿"与"门禁忽略了 200 条警示"
+    // 在输出上就很难一眼分开 —— 而"看不见"正是本批要修的那类缺陷。
+    // **N>0 时必须出现**；这里选择**无条件**打印（N=0 也打），这样"通道存在"本身也是可见的。
+    // 冻结契约要求这一行明说「不计入退出码」；文案里的 N 与 `--json` 的 `ignoredUnattributedWarnings`
+    // 是**同一个变量**（不是两次计算），所以两者永远同值。
+    console.log(
+      `已忽略 ${ignoredUnattributedWarnings} 条未归因警示（不计入退出码）（DRIFT ${drift.length} · 裸行号 ${lone.length} · 空锚点 ${emptyAnchor.length} · 示意锚点 ${leanAnchor.length} · 占位符豁免 ${exemptPlaceholder} · 围栏豁免 ${exemptFenced}）` +
+      '—— 它们**不进退出码**（并发行号偏移不算错；大量假阳性会让门禁被整体忽略），但**必须可见**，不得静默丢弃',
+    );
     if (missing.length > 0) {
       console.log('');
       console.log(
@@ -957,9 +1061,10 @@ function main() {
       console.log(
         `✗ 弱证据增长（棘轮）：${broken.map((r) => `${r.label} ${r.now} > 基线 ${r.base}`).join('；')} —— 新增引用必须**整条锚点**逐字命中（片段不算证据）：`,
       );
-      const shown = fragmentOnly.slice(0, quiet ? 20 : 30);
+      const shownFrag = [...fragmentOnlyLocal, ...fragmentOnlyReferences];
+      const shown = shownFrag.slice(0, quiet ? 20 : 30);
       for (const f of shown) console.log(`  - [${f.doc}] ${f.raw}\n      ${f.reason}`);
-      if (fragmentOnly.length > shown.length) console.log(`  … 另有 ${fragmentOnly.length - shown.length} 条`);
+      if (shownFrag.length > shown.length) console.log(`  … 另有 ${shownFrag.length - shown.length} 条`);
     }
     if (!quiet && drift.length > 0) {
       console.log('');

@@ -47,14 +47,14 @@ const implementers = await parallel([
   () => agent(
     `【后端工程师】运行目录：{{run-dir}}。\n` +
     `只实现 TASKS.json 里 owner=backend 的任务，以 PLAN.md 契约为准（读 {{run-dir}}/PLAN.md 的设计段）。\n` +
-    `直接改代码；每完成一个任务，在返回值里给出 status/改动文件/一行说明（TASKS.json 的写者按 §2：由产出它的角色落盘；lead 没有 write，用 /team task <id> <状态> 命令回写状态）。\n` +
+    `直接改代码；每完成一个任务，在返回值里给出 status/改动文件/一行说明（**TASKS.json 的写者口径**：实现者只**回报** status，落地由 `/team task` 路由或派工账本写盘；真源 `lib/artifact-ownership.js` 的 `ARTIFACT_OWNERS`；**lead 无 `write`**）。\n` +
     `「此能力是否被真正调用并回流到前端」属你的自检项，未接线必须上报（不要等评审/QA 才暴露）。契约/枚举分歧写进 blockers。`,
     { label: "backend", phase: "implement", schema: { type: "object", properties: { tasks: { type: "array", items: { type: "object" } }, blockers: { type: "array", items: { type: "string" } } }, required: ["tasks"] } }
   ),
   () => agent(
     `【前端工程师】运行目录：{{run-dir}}。\n` +
     `只实现 TASKS.json 里 owner=frontend 的任务，以 PLAN.md 契约为准（读 {{run-dir}}/PLAN.md 的设计段）。\n` +
-    `直接改代码；每完成一个任务，在返回值里给出 status/改动文件/一行说明（TASKS.json 的写者按 §2：由产出它的角色落盘；lead 没有 write，用 /team task <id> <状态> 命令回写状态）。\n` +
+    `直接改代码；每完成一个任务，在返回值里给出 status/改动文件/一行说明（**TASKS.json 的写者口径**：实现者只**回报** status，落地由 `/team task` 路由或派工账本写盘；真源 `lib/artifact-ownership.js` 的 `ARTIFACT_OWNERS`；**lead 无 `write`**）。\n` +
     `「此能力是否被真正调用并回流」属你的自检项，未接线必须上报。契约/枚举分歧写进 blockers。`,
     { label: "frontend", phase: "implement", schema: { type: "object", properties: { tasks: { type: "array", items: { type: "object" } }, blockers: { type: "array", items: { type: "string" } } }, required: ["tasks"] } }
   ),

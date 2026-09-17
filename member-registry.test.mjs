@@ -1,7 +1,7 @@
 // 测试：派工即登记 —— `STATE.members` 回写（修「协议要求但代码零写路径」）
 //
-// 缺陷：`SKILL.md §7.22` 明写「每次派工后把 `<agentId>:<role>` 写入 STATE.members」，
-// 并说"浮层据此**精确归属**成员到本 run，多个专家团并行绝不串号"。
+// 缺陷：`SKILL.md §7.16①` 明写派工登记 `<agentId>:<role>`「交由运行时回写 `STATE.members`」
+// （`STATE.json` 的唯一写者是运行时、lead 只读核对），并说"浮层据此**精确归属**成员到本 run，多个专家团并行绝不串号"。
 // 但代码里**没有任何写路径** —— 只有 `scaffoldRun` 初始化 `members: []`。
 // 实测后果：所有 run 的 `stateMembers` 恒空 ⇒ `buildRoleSubMap` 的"精确路径"永不生效 ⇒
 // 成员归属只能靠 label / 事件流 / 会话映射去**猜**（这正是"跨会话串味""未解析出角色"的土壤）。

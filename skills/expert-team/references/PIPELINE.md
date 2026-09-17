@@ -7,7 +7,7 @@
 | clarify | pm | TASK.md | SPEC.md（Ultra Spec）、PLAN.md 骨架、TASKS.json 初稿 | SPEC 验收标准逐条可测；安全边界三级权限写清；歧义已问或标为假设 |
 | research | researcher | SPEC、PLAN | RESEARCH.md（代码定位/依赖/环境/存量约束） | 相关文件与调用链、环境结论、存量约束已写清（纯新项目可跳过） |
 | design | architect(+dba 数据契约) | SPEC、RESEARCH、PLAN | PLAN.md「设计」段（接口 I/O 用 JSON Schema + 数据契约）、TASKS.json 细化 | **契约冻结到签名级**：字段/类型/错误语义/DML 明确且作为实现端只读基准；每任务有 owner+acceptance+dependsOn |
-| **spec-review** | reviewer + sec(+性能补位) | SPEC、PLAN | REVIEW-SPEC.md（对 Spec 的交叉审查） | Spec 缺陷已修；验证者反向推导剔除幻觉误报 |
+| **spec-review** | reviewer + sec(+性能补位) | SPEC、PLAN | REVIEW-SPEC.md（对 Spec 的交叉审查） | Spec 缺陷已修；验证者反向推导剔除幻觉误报。**定名**：spec 审查产出 `REVIEW-SPEC.md`、代码审查产出 `REVIEW.md`（两者都归 `reviewer`，真源 `lib/artifact-ownership.js` 的 `ARTIFACT_OWNERS`） |
 | **方案确认** | lead | SPEC、PLAN、TASKS | 中文「执行方案」汇总 + `ask_user_question` | 用户已确认「执行」；未确认不改代码、不进 implement |
 | implement | backend/frontend(+ui/dba 按需)，**按 DAG 并行** | PLAN 契约、TASKS.json、UI.md | 工作区代码改动、TASKS.json 状态更新 | 每任务 `verify` 命令通过 + `changedPaths` 落在 `inScope` 内 + acceptance 证据齐；无未解决 blocker/choices |
 | review | reviewer | SPEC、PLAN、代码 diff、最新 attempt | REVIEW.md + TASKS.json verdict | `verdict=pass` 才 `completed`；`needs_revision/reject` 必须 `failed` 且带 ≥1 finding；lead 自动开 `repair-N` + `review-N+1` |
@@ -49,7 +49,7 @@
 - **attempt/attemptId**：每次派工/转派递增 attempt、设新 attemptId；成员回报带当前 attemptId，旧 attemptId 的迟到写入一律拒绝；转派先使旧 attempt 失效。
 - **空闲自动领题**：persist 模式下，成员 idle 后自动领下一个依赖已满足的 `pending` 任务；一成员一次最多 1 个未完成任务；冷启动对残留开放 attempt 自动重试一次。
 - **自动修复链**：review 非 pass → `repair-N` + `review-N+1`（独立、针对最新 attempt），`round` 递增至 `maxReviewRounds`，到顶升级到用户，不无限互审。
-  - **轮次上限是代码强制，不是口号**（2026-09-11 起）：`maxReviewRounds` / `maxTestRounds` 落在 `lib/command.js` 的 `ROUND_LIMITS`（默认 3/3；`config.limits` 或 env `DSH_EXPERT_TEAM_MAX_REVIEW_ROUNDS` / `DSH_EXPERT_TEAM_MAX_TEST_ROUNDS` 可改）。四道机判：① 读侧 `/team check` 报 **`REWORK_LOOP_UNESCALATED`**（超过上限且无 `pendingDecision`）；② 读侧报 **`FINDING_REOPENED`**（同一 finding 连续两轮未闭环 ⇒ 判为**规格歧义**，应升级裁定而非再派修复）；③ 写侧**新建**超限质量任务且无 `pendingDecision` ⇒ **落盘前拒绝** `REWORK_LOOP_LIMIT`（fail loud，不静默截断）；④ METRICS 出「评审效率（轮次/撤销率）」。
+  - **轮次上限是代码强制，不是口号**（2026-09-11 起）：`maxReviewRounds` / `maxTestRounds` 落在 `lib/validate.js` 的 `ROUND_LIMITS`（`export const ROUND_LIMITS` @ :108；`DEFAULT_ROUND_LIMITS` @ :106；`lib/command.js` 只 import 它，不是它的家）（默认 3/3；`config.limits` 或 env `DSH_EXPERT_TEAM_MAX_REVIEW_ROUNDS` / `DSH_EXPERT_TEAM_MAX_TEST_ROUNDS` 可改）。四道机判：① 读侧 `/team check` 报 **`REWORK_LOOP_UNESCALATED`**（超过上限且无 `pendingDecision`）；② 读侧报 **`FINDING_REOPENED`**（同一 finding 连续两轮未闭环 ⇒ 判为**规格歧义**，应升级裁定而非再派修复）；③ 写侧**新建**超限质量任务且无 `pendingDecision` ⇒ **落盘前拒绝** `REWORK_LOOP_LIMIT`（fail loud，不静默截断）；④ METRICS 出「评审效率（轮次/撤销率）」。
   - **到顶的正确动作是「升级用户」，不是「再来一轮」**——想继续必须先把 `pendingDecision` 立起来（用户点「继续」后再临时调高上限）。
   - ⚠️ **诚实边界（不要高估写侧拦截）**：写侧 `REWORK_LOOP_LIMIT` 只挡**经插件路由**的写入，且实际可达的只有 **`/plan/approve`** 一处（`/plan` 因 `normalizeDraft` 钉死 `round:1` 而不可达；面板的任务路由只按 id 改既有任务、无新增面，故不需要守卫）。**`TASKS.json` 的写者按 §2**：由产出它的角色落盘；lead 没有 `write`，用 `/team task <id> <状态>` 命令回写状态（命令由宿主执行）。⚠️ 这道写侧守卫只拦**经插件路由**的写入，**任何文件工具写入（`write`/`edit`）都不经过插件**，因此同样绕过它——而回写 `TASKS.json` 正是本 skill 的常规动作。⇒ **真正的强制点是读侧**：`checkTasks` 在**每次 `/state` 轮询**与 `/team check` 都会重算违规并推到浮层红条，绕不过去。另：`POST /plan` 因 `normalizeDraft` 把 `round` 钉死为 1，**本来就造不出**超限任务（该路由不可达属预期，不是漏洞）。
   - 收敛口径：只有 **P1/P2 + 可机判项**阻塞 `pass`；**P3/文字项不阻塞**（进 backlog）；`verify` 未实跑不得计 pass。

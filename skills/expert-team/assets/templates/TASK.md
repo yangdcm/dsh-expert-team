@@ -6,7 +6,7 @@
 - 交付：code+artifacts / artifacts-only
 - 固定角色：pm, architect, backend, frontend, qa
 
-## 完成标准（lead 在 clarify 结束时填写，deliver 按它验收）
+## 完成标准（lead 在 clarify 结束时口述「客观验收条件」，由指派的有 `write` 成员落盘；deliver 按它验收）
 
 - （验收必须满足的客观条件，如「9 个未达标页全部重设计并通过 token 断言」）
 
@@ -20,4 +20,4 @@
 
 ## 交付结论
 
-（deliver 阶段由 lead 填写）
+（deliver 阶段由 lead 口述、指派的有 `write` 成员落盘）

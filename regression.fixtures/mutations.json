@@ -2046,6 +2046,97 @@
           "replace": "    if (!covered && !!(SUB_ROWS_MEMO.get(root) || {}).provisional) {"
         }
       ]
+    },
+    {
+      "id": "M157-empty-scan-guard-disabled",
+      "title": "「全体 0/0 空转」重新变绿：scan-authority 的 fail-closed guard 被关掉",
+      "why": "2026-09-17 新增（Batch 2 / G1 / BL-4）。旧实现只看 `rows.some(r => r.divergent)` ⇒ 一次真实 run 的 19 条事实里 18 条权威列写 `SPEC.md`（真源在代码里）、run 目录内一条定义式都扫不到，脚本却照样报「分叉 0 条 / 退出码 0」，与「真的干净」完全同形（空转绿）。变异把 guard 的判据整条关掉，回到「空转也报绿」的旧行为。 预期红：`⑦ **全体 0/0 ⇒ 退出码 3**`（1 项）。**必须仍然绿**：`⑦ **≥1 条命中 ⇒ 退出码 0**`、`⑦ 覆盖率行逐字符合冻结契约`、`⑦ rows[] 的元素键集合 = 冻结契约`。 ⚠️ 判据是 **AND**（`matchedFacts === 0 && defsElsewhereTotal === 0`）：只判前者会让既有变异体 M129（造分叉）落进「空转码」⇒ 信号混码。",
+      "test": "authority.test.mjs",
+      "edits": [
+        {
+          "file": "skills/expert-team/scripts/scan-authority.mjs",
+          "find": "if (matchedFacts === 0 && defsElsewhereTotal === 0) {",
+          "replace": "if (false) { // MUTANT: 关掉 0/0 空转 guard（回到空转也报绿）"
+        }
+      ]
+    },
+    {
+      "id": "M158-unattributed-warnings-silenced",
+      "title": "「已忽略 N 条未归因警示」重新被消音：警示通道恒报 0",
+      "why": "2026-09-17 新增（Batch 2 / G2 / BL-9）。此前 `drift` / `lone` / `emptyAnchor` / `leanAnchor` / 两类豁免量**各自有计数、却没有一处汇总**，于是「门禁全绿」与「门禁忽略了 200 条警示」在输出上很难一眼分开。变异把 N 恒置 0，回到「被忽略的量不可见」的旧行为。 预期红：`㉒ 夹具下 ignoredUnattributedWarnings **必须 > 0**`、`㉒ 夹具下 N = 六项之和`、`㉒ 夹具下渲染值 = --json 值（且 > 0）`（3 项）。 ⚠️ 这条变异体只靠**确定性夹具**（`warn-channel`：裸行号 1 条 + 路径侧占位符模板行 1 条 ⇒ N 恒为 2）才能被抓 —— 默认扫描面在变异运行器的副本目录里可能一条警示都没有，「公式 0 = N 0」会让负向断言恒真（空转绿）。**必须仍然绿**：`㉒ 默认扫描面含 references/`、`㉒ 显式指定扫描面时 covered:false 且带 reason`、既有 22 组断言。",
+      "test": "evidence-gate.test.mjs",
+      "edits": [
+        {
+          "file": "scripts/check-evidence.mjs",
+          "find": "const ignoredUnattributedWarnings = drift.length + lone.length + emptyAnchor.length + leanAnchor.length + exemptPlaceholder + exemptFenced;",
+          "replace": "const ignoredUnattributedWarnings = 0; // MUTANT: 警示通道被消音"
+        }
+      ]
+    },
+    {
+      "id": "M159-contract-stall-check-disabled",
+      "title": "契约依赖停滞永不报：contractStallViolations 恒返回空数组",
+      "why": "2026-09-17 新增（Batch 2 / G3 / BL-3）。契约任务（`kind === 'design' && owner === 'architect'` —— 库里没有 `contract` kind，那是任务对象的**字段**名）迟迟不落终态、而下游已「其余依赖全就绪、只差它一个」时，整条 DAG 卡在一个点上却**没有任何地方会报**（`/team check` 只报「下游乱动了」）。变异让判定恒返回空数组，回到「上游卡住无人知」的旧行为。 预期红：`⑧ 停滞夹具 ⇒ 报 CONTRACT_DEP_STALLED`、`⑧ 文案含「继续等 / 覆写 / 换人」三选项`（2 项）。**必须仍然绿**：`⑧ 不误报三分支`、`⑧ 无 clock ⇒ 只走 attempt 维`、`⑦ 全体 0/0 ⇒ 退出码 3`。 ⚠️ 变异锚点用**唯一局部名 `stalled`**：`  return out;` 在本文件有 6 处（`find` 命中 ≠ 1 会直接 throw）。",
+      "test": "authority.test.mjs",
+      "edits": [
+        {
+          "file": "lib/validate.js",
+          "find": "  return stalled;",
+          "replace": "  return []; // MUTANT: 契约停滞永不报"
+        }
+      ]
+    },
+    {
+      "id": "M160-zh-table-ledger-row-counts",
+      "title": "台账/清单类表格行重新被算成「定义」⇒ 假命中压掉 EXIT=3（BL-12）且逐字引用造假分叉（BL-13）",
+      "why": "2026-09-17 新增（Batch 3 · D1 / BL-12+BL-13）。实测反例：`| 变现体系 | 值A | 说明A |`（3 列台账行）被 `zh-table` 的外层正则（只要求「行首 `|` 后紧跟事实名」）认成**定义** ⇒ ① 权威文件内是**假命中**（抬高 `matchedFacts`、压掉 `EXIT=3` 的空转红）；② 同一行的**逐字引用**落在非权威文件里就是**假分叉**（`EXIT=1`）。变异把「恰好 2 格 + 第 2 格是定义正文」换成「只要行首是 `|` 就返回 `zh-table`」，回到旧行为。 预期红：`(d′) **3 列台账行不算定义**`（BL-12 负对照）、`③b **3 列台账行的逐字引用 ⇒ 不得报分叉**`（BL-13 负对照）—— 两条**各自独立**，前者在 `scan-single-source.test.mjs`、后者在 `authority.test.mjs`。 **必须仍然绿**：`(d) | 变现体系 | 说明 | ⇒ zh-table`（既有 2 列定义行断言）、`(d′) **2 列指针行不算定义**`。",
+      "test": "scan-single-source.test.mjs",
+      "edits": [
+        {
+          "file": "skills/expert-team/scripts/scan-single-source.mjs",
+          "find": "      if (cells.length === 2 && isDefinitionCell(cells[1])) return 'zh-table';",
+          "replace": "      if (true) return 'zh-table'; // MUTANT: 台账行重新算定义（BL-12/BL-13 双重复发）"
+        }
+      ]
+    },
+    {
+      "id": "M161-ref-context-not-reference",
+      "title": "引用语境（行内代码 span / 行首 `>`）重新被当成定义 ⇒ 块引用造假分叉",
+      "why": "2026-09-17 新增（Batch 3 · D2 / BL-13）。`BL-13` 里 D1 盖不住的那一类：**2 列 / 形态完全合法**、但出现在**引用语境**里的行。实测形态：`> 「变现体系」：指三大域` —— `zh-quoted` 的正则 `[「『]<事实名>[」』]\\s*[:：]` **不锚行首** ⇒ `>` 开头的行照样命中，而 D1 的列数判据对 `zh-quoted` **没有任何作用** ⇒ **只有 D2 能挡下它**（故断言 #7 是 D2 的真·独立红证据）。变异让引用语境判定失效。 预期红：`③b **块引用里的 zh-quoted 定义行 ⇒ 引用语境，不得造分叉**`（D2 专属，端到端 `divergent` 翻真）、`(d′) **行内代码 span 包住事实名 ⇒ 引用语境**`（判别式直调）。 **必须仍然绿**：`(d′) 反向对照：去掉行首 > 的同一行 ⇒ 仍判分叉`、`(d′) 合法 zh-list 定义不得被散文关键词规则误判成引用`。",
+      "test": "authority.test.mjs",
+      "edits": [
+        {
+          "file": "skills/expert-team/scripts/scan-single-source.mjs",
+          "find": "    if (isRefContext(line, fact)) return null;",
+          "replace": "    if (false) return null; // MUTANT: 引用语境失效（块引用/反引号引用重新算定义）"
+        }
+      ]
+    },
+    {
+      "id": "M162-authority-header-label-only-old",
+      "title": "`parseAuthorityRows` 只认旧表头 ⇒ 新模板表头被当成数据行（每个新 run 恒定 2 条假违规）",
+      "why": "2026-09-17 新增（Batch 3 · D3 的连带面）。D3 把模板表头从「事实类别」改成「事实」（旧表头诱导人把**类别标签**写进第 1 列），而 `parseAuthorityRows` 原本**只跳过** `/^事实类别$/` ⇒ 新表头会被当成数据行（category=`事实` / file=`唯一权威文件` / writer=`唯一写者`）⇒ **两条违规**；模板表头被**每个新 run 原样保留** ⇒ 那是**恒定假阳性**（本仓已登记：假阳性洪峰会让人整体忽略门禁）。修法是**用列标签判表头**（第 2 列 `唯一权威文件` + 第 3 列 `唯一写者`）—— 若改成 `/^(?:事实类别|事实)$/` 则会把**事实名恰为「事实」的真实数据行静默吞掉**（削弱判据），故不取。变异退回「只认旧表头」。 预期红：`⑤ **模板新表头（「事实」）必须被 host 侧认作表头 ⇒ 零违规**`（1 项）。 **必须仍然绿**：`⑤ 反向对照：旧表头「事实类别」仍被认作表头`、`⑤ 事实名恰好为「事实」的数据行不被吞掉`、`② 规范表 ⇒ 零违规`。",
+      "test": "authority.test.mjs",
+      "edits": [
+        {
+          "file": "lib/validate.js",
+          "find": "    if (/^事实类别$/.test(cells[0]) || (cells[1] === '唯一权威文件' && cells[2] === '唯一写者')) continue;",
+          "replace": "    if (/^事实类别$/.test(cells[0])) continue; // MUTANT: 只认旧表头（新模板表头会被当数据行 ⇒ 2 条假违规）"
+        }
+      ]
+    },
+    {
+      "id": "M163-authority-facts-phantom-header",
+      "title": "`authorityFacts` 只认旧表头 ⇒ 新模板表头被当成一条「幻影事实」（假分叉风险）",
+      "why": "2026-09-17 新增（Batch 3 · D3 的第二个连带面 · 与 M162 对称）。`authorityFacts()`（skill 侧）与 `parseAuthorityRows()`（host 侧）是**同一提取语义的两份实现**（已登记 BL-25）；模板表头从「事实类别」改成「事实」后，只跳过 `/^事实类别$/` 的那一份会产生 `{fact:'事实', file:''}`（**实测**）⇒ `scannedFacts`/`codePointerFacts` 各多 1，而且 `事实` 是**极常见子串** ⇒ 只要 run 目录里别的文件有一行「定义式形状且含 `事实`」⇒ `defsElsewhere > 0` ⇒ **假分叉 EXIT=1**（每个新 run 都可能中）。修法与 host 侧同一条规则：**用列标签（第 2 列 `唯一权威文件` + 第 3 列 `唯一写者`）判表头**，不用第 1 列的措辞判（否则事实名恰为「事实」/「事实类别」的真实数据行会被静默吞掉）。变异退回「只认旧表头」。 预期红：`③ **新模板表头不产生任何事实**`（1 项）。 **必须仍然绿**：`③ 反向对照：新表头之下的真实数据行仍被提取`、`③ 事实名恰好为「事实」的数据行仍被提取`、`③ 提取 2 条真声明（跳过示例行）`。",
+      "test": "authority.test.mjs",
+      "edits": [
+        {
+          "file": "skills/expert-team/scripts/scan-authority.mjs",
+          "find": "    if (/^事实类别$/.test(cells[0]) || (cells[1] === '唯一权威文件' && cells[2] === '唯一写者')) continue;",
+          "replace": "    if (/^事实类别$/.test(cells[0])) continue; // MUTANT: 只认旧表头 ⇒ 表头被当成幻影事实"
+        }
+      ]
     }
   ]
 }

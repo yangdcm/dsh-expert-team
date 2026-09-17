@@ -13,13 +13,30 @@
 | `SPEC.md` | **pm 自己落盘** | Ultra Spec：功能目标、验收标准、业务规则、边界 Case、安全边界（三级权限）、测试计划 |
 | `PLAN.md` | **architect 自己落盘**（pm 骨架 + architect 设计段） | 里程碑、接口契约（I/O JSON Schema）、数据流、风险 |
 | `RESEARCH.md` | **researcher 自己落盘** | 代码定位、依赖、环境、存量约束 |
-| `TASKS.json` | pm 初稿 → architect 细化 → lead 用 `/team task` 回写状态 | 唯一实现事实来源（含 dependsOn 依赖） |
+| `TASKS.json` | pm 初稿 → architect 细化（所有权真源：`lib/artifact-ownership.js` 的 `ARTIFACT_OWNERS`）；**状态的落地由实现者回报后经 `/team task` 路由或派工账本写盘 —— lead 无 `write`**（§2 R1） | 唯一实现事实来源（含 dependsOn 依赖） |
 | `REVIEW-SPEC.md` | **reviewer 自己落盘**（spec-review 阶段，可选） | 对 Spec 的交叉审查结论 |
 | `REVIEW.md` | **reviewer 自己落盘** | 代码审查：问题清单、严重级、结论 |
-| `TEST.md` | **qa/测试补位角色自己落盘** | 测试命令、结果、覆盖、结论 |
+| `TEST.md` | **只归 `qa`**（补位角色如 ui 验证的结论**回给 qa**、由 qa 落盘；真源 `lib/artifact-ownership.js` 的 `ARTIFACT_OWNERS`） | 测试命令、结果、覆盖、结论 |
 | `SUMMARY.md` | lead 口述 + 指派的有 `write` 成员落盘（deliver 阶段） | **交付总结**：各任务结论/改动/commit/评审测试结论 |
 | `RUN.log.md` | /team 命令建；事件由产出该事件的角色落盘（lead 口述、指派有 `write` 的成员执行） | 运行轨迹（阶段/角色/决策/卡点，见 LOGGING.md） |
 | `RETRO.md` | lead 口述 + 指派的有 `write` 成员落盘（deliver 阶段） | 本次复盘：快/慢/卡点/可复用经验 |
+| `AUTHORITY.md` | **architect 自己落盘**（design 阶段，与 Ultra Spec 同时产出） | 权威与写者表：每个事实的唯一权威 + 唯一写者，其他文件只许引用、不得另写定义 |
+
+> **预置模板清单以真源为准** —— 真源是 `lib/command.js` 的 `ARTIFACT_TEMPLATES`，**不要另写清单/数字**。
+> ⚠️ 上表里的 `REVIEW-SPEC.md` 与 `RUN.log.md` **不在** `ARTIFACT_TEMPLATES` 的预置模板内（`REVIEW-SPEC.md` 是「用到才建」的 run 内合法产物；`RUN.log.md` 由运行时创建/维护）。**「预置哪些模板」与「谁能覆写」是两个不同问题，不得互相推导**（真源分别是 `ARTIFACT_TEMPLATES` 与 `ARTIFACT_OWNERS`）。
+
+下面这些工件**用到才建、不预置模板**，其中**部分工件在归属表里有主**（真源：`lib/artifact-ownership.js` 的 `ARTIFACT_OWNERS`）：
+
+| 文件 | 维护者 | 内容 |
+|---|---|---|
+| `UI.md` | **ui 自己落盘**（用到才建） | 视觉规范 / 设计 token / 交互稿 / 视觉走查 |
+| `DATA.md` | **dba 自己落盘**（用到才建） | 数据契约（schema/DDL/迁移）、数据质量 |
+| `SECURITY.md` | **sec 自己落盘**（用到才建） | 安全审计：权限边界 / 越权 / 注入 / 敏感数据 / 加密 |
+| `RELEASE.md` | **devops 自己落盘**（用到才建） | 构建 / 部署 / CI / 环境排障 |
+| `DOCS.md` | **docs 自己落盘**（用到才建） | README / 用户手册 / API 文档 |
+| `DECISIONS.md` | lead 口述 + 指派的有 `write` 成员落盘 | 拍板记录（用户在浮层/聊天任一处选择都会记入 `RUN.log.md` + `DECISIONS.md`） |
+
+> ⚠️ **上表里的「主」并不都来自归属表**：`UI.md` / `DATA.md` / `SECURITY.md` / `RELEASE.md` / `DOCS.md` 在归属表里有主 ✅；**未列入归属表的（如 `DECISIONS.md`）= 不限制**（任何角色都可覆写）——「谁能覆写」的唯一真源是 `lib/artifact-ownership.js` 的 `ARTIFACT_OWNERS`，**不要照本表反推**。
 
 > run 工件一律由**产出它的角色自己 `write` 到 `<run-dir>/`**；角色只回 `path` + 摘要 + `verdict`；**lead 没有 `write`**，只读工件做门控与裁决（唯一权威表述见 `SKILL.md` §2）——工件因此是产出角色本轮的产出文件，以 `path` 可核验；交付时由 lead 用 `dsh_im_return_file` 发给用户（「聊天框可点击产出文件行」的机制未独立证实，不作为承诺）。
 
@@ -104,7 +121,7 @@ persist 模式下，`members` 记录每个角色的可继续子 agent id，供 r
 ```json
 {
   "runId": "<run-id>",
-  "phase": "clarify | design | implement | review | test | deliver",
+  "phase": "<阶段 id —— 合法取值与个数以 lib/vocab.js 的 PHASES 为准>",
   "status": "running | complete | failed",
   "mode": "one-shot | persist",
   "deliverable": "code+artifacts | artifacts-only",
