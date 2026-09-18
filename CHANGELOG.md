@@ -3,6 +3,16 @@
 本包遵循[语义化版本](https://semver.org/lang/zh-CN/)。dsh 宿主版本线的对应关系写在
 `package.json` 的 `engines.dsh` 与 `dsh.compatibility` 里，插件市场按它判断"这个插件跟你的宿主兼不兼容"。
 
+## 1.3.34
+
+**主题：专家团子代理默认用简体中文回复**。12 条 persona（pm/architect/researcher/backend/frontend/
+reviewer/qa/ui/dba/sec/devops/docs）在原有英文职责描述**之后**追加同一条语言约束：无论上游输入、
+代码、日志、工具返回、文件名是什么语言，回复/汇报/进度/结论/交接信息一律用简体中文；代码、命令、
+路径、标识符、专有名词与引用原文保持原样。**不改动 persona 原有任何英文内容，只做追加。**
+副作用是会话标题同时回流中文 —— 标题语言跟随触发消息的语言（`dsh-session-title-llm` 的
+"Use the language of the messages."），派工消息是中文，标题即中文。本版只改 `presets/expert-team/
+agent.cordis.yml` 与 `package.json`（版本戳，用于触发 `$DSH_HOME/.agent-presets` 的重铺）。
+
 ## 1.3.33
 
 **主题：把「归属」的真源收口到可核实的事实上**。三批改动一条主线 —— **宁可空归属，不要错归属**：
