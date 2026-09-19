@@ -47,10 +47,15 @@ console.log('① 表单由 host 的 schema 生成（不另写一份默认值/值
   const schema = settingsSchema();
   const defaults = { identity: { profile: 'developer', askBudget: 5 }, roster: { maxTasks: 200, defaultRoles: null } };
   const model = settingsFormModel(schema, defaults);
-  check(model.length === schema.length && model.length === 4, '四个分组都渲染', `${model.length} 组`);
+  check(model.length === schema.length && model.length === 5, '五个分组都渲染（含 2026-09-17 新增的「记忆」组）', `${model.length} 组`);
   check(model.every((g) => g.rows.length > 0), '每组都有行', model.map((g) => `${g.group}:${g.rows.length}`).join(' '));
   const all = model.flatMap((g) => g.rows);
   check(all.length === Object.keys(settingsSchema().flatMap((g) => g.items)).length, '行数 = spec 项数（不重不漏）', String(all.length));
+  // `memory.backend` 是**schema 驱动**的直接证据：它没在客户端手写过任何控件，靠 spec 就出现了，
+  // 且三个候选值的中文标签随 GET /settings 的 schema 一起到达（客户端不能 import lib/）。
+  const mb = all.find((r) => r.path === 'memory.backend');
+  check(!!mb && mb.type === 'enum' && mb.values.join(',') === 'hindsight,midas,off', '「记忆后端」由 spec 自动生成（不在客户端另写一份控件/值域）', mb ? `${mb.type}:${mb.values.join(',')}` : '（找不到 memory.backend）');
+  check(!!mb && !!mb.labels && mb.labels.off && mb.labels.midas, '三个值都带中文标签（下拉里不裸露英文标识）', mb ? JSON.stringify(mb.labels) : '');
   check(all.every((r) => r.label), '每行都带中文标签（UI 直接显示 spec 的 label）');
   const prof = all.find((r) => r.path === 'identity.profile');
   check(prof.type === 'enum' && prof.values.join(',') === 'developer,non-technical,mixed', 'enum 的候选值来自 spec', JSON.stringify(prof.values));
@@ -87,7 +92,18 @@ console.log('\n③ 设置页真的接进了官方设置菜单（注册了但没�
   check(/fetch\('\/plugins\/dsh-expert-team\/settings'\)/.test(src), 'GET 读设置');
   check(/method: 'POST'/.test(src) && /JSON\.stringify\(patch\)/.test(src), 'POST 写设置（自动保存）');
   check(/setErr\(\(\(res\.d && res\.d\.errors\) \|\| \['保存失败'\]\)\.join/.test(src), '400 的 errors 照实显示（不吞）');
-  check(/setMsg\('已保存'\)/.test(src) && !/needsRestart \?/.test(src), '回执只说「已保存」且**不留死分支**（1.3.2 起逐项查明没有任何设置需要重启）');
+  check(/setMsg\('已保存'\)/.test(src) && !/needsRestart \?/.test(src), '回执只说「已保存」且**不留死分支**（除「记忆 → 记忆后端」这一项外，逐项查明没有任何设置需要重启；那一项走专用路由）');
+  // 2026-09-17：`memory.backend` 是**唯一需要重启**的设置 ⇒ 它不能挤在这条"已保存"路径上：
+  // 客户端必须把它改路由到 `/memory-backend`，并把那条路由给的重启要求显示出来。
+  check(/saveMemoryBackend\(mb\)/.test(src) && /'memory\.backend'/.test(src), '`memory.backend` 从通用保存路径**分流**到专用路由（不虚报"已保存、即时生效"）');
+  check(/function memoryBackendMsg\(d\)/.test(src) && /需重启 dsh web 才生效/.test(src), '重启要求有**单一实现**的文案并被渲染（不藏在注释里）');
+  // 2026-09-19 一期：`midas` **真的接通了** ⇒ 客户端那句"本轮未接通"（说的是"这个功能本轮没做"）已经过时，
+  // 换成五态结论的文案 + 首装引导。两条一起钉：**未接通要如实说**，且**引导的步骤来自服务端**。
+  check(/Midas 未接通/.test(src) && !/本轮未接通/.test(src),
+    '`midas` 的「未接通」仍如实显示，但不再说"本轮未接通"（那已经是假话 —— 它真的接线了，只是缺步骤）');
+  check(/st\.midasSetup/.test(src) && /midasSetup\.steps/.test(src) && /exp-hs-midas-guide/.test(src),
+    '选 `midas` 且未就绪时渲染**块级**首装引导，步骤取自服务端的 `midasSetup.steps`（客户端不硬编命令）');
+  check(/这与「你选了不使用」不是一回事/.test(src), '"选了不使用"与"选了 Hindsight 但不通"在界面上**分开说**（不许渲染成同一件事）');
   // 1.3.2：枚举中文标签 —— 规格层给了 labels，模型要透出来、渲染要取用，且**缺标签时退回裸值**
   // （不能渲染成空白：那会让"标签漏配"看起来像"这个选项本来就没有名字"）。
   check(/labels: it\.labels \|\| null/.test(src), '表单模型透出 \`labels\`（标签随 GET /settings 的 schema 到达客户端）');

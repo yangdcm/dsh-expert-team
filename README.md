@@ -15,7 +15,7 @@
 
 装在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 上的 dsh 插件：**零运行时依赖、无构建步骤、无安装钩子**。
 
-| 12 角色 | 9 阶段 | 89 个测试文件 | 0 运行时依赖 | 0 构建步骤 |
+| 12 角色 | 9 阶段 | 90 个测试文件 | 0 运行时依赖 | 0 构建步骤 |
 |---|---|---|---|---|
 | 各带人设 / `toolFilter` / `maxDepth: 1` | 含 1 道硬门 + 1 道确认门 | CI 每次 push 跑全套测试 | `dependencies: {}` | 无 bundler、无 `prepare` 钩子 |
 
@@ -146,7 +146,7 @@ $ /team 做一个带登录的支付模块
 
 ![DeepSeek Harness 官方设置页里的「专家团」分节：全部设置项、中文标签、改动即时生效](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/settings.png)
 
-<sub>图 8：**设置**。看官方 `设置 →「专家团」` 这一页 —— 全部设置项、中文标签、**改动即保存并即时生效**（上限/轮次/档位门/振荡检测在进程内重算）；值存在宿主命名空间 `expert-team`，随插件市场的备份/恢复一起走。</sub>
+<sub>图 8：**设置**。看官方 `设置 →「专家团」` 这一页 —— 全部设置项、中文标签、**改动即保存并即时生效**（上限/轮次/档位门/振荡检测在进程内重算）；值存在宿主命名空间 `expert-team`，随插件市场的备份/恢复一起走。**唯一例外**是「记忆 → 记忆后端」：它要改 dsh profile 的补丁文件（`cordis.patch.yml`），需重启 `dsh web` 才生效 —— 那一行会自己把重启要求写在界面上。</sub>
 
 **输入框正上方还有一条常驻状态条**（client 槽 `conversation.input.dock`，id `expert-team-subagents`，order 200）—— 有子代理在跑时是琥珀色横幅「N 个子代理运行中」+ 最多 3 个角色名 + 一个跳动圆点，点击它直接打开团队面板；没有在跑时只剩一行暗灰字「无子代理在运行」，会话或状态尚未就绪时则完全不渲染（判据与页头徽章同一条：`/state` 的 `agents[].activity === 'running'`）。
 
@@ -172,7 +172,7 @@ $ /team 做一个带登录的支付模块
 | `?section=summary` 响应 | 中位 **3.5–5.8 ms** | 真机（1.3.20 起）；95 个子代理 / 13 条 `STATE.members` / 104 个任务 |
 | `?section=people,feed` 响应 | **4–13 ms**（1.3.19 为 ~280 ms/次，约 **70×**） | 同上；提速**没有靠丢成员**（`agents`/`stateMembers` 数量不变） |
 | 历史最差（1.3.5 已修） | 热态 7.1–9.8 s、冷态 **283.6 s** | 1.3.5 之前：`/state` 逐条全量读 75 个子会话日志，并堵住 `dsh web` 事件循环 |
-| 测试 | **89 个测试文件** | `npm run test:all`，零依赖、无需 `install`（CI 跑的就是它） |
+| 测试 | **90 个测试文件** | `npm run test:all`，零依赖、无需 `install`（CI 跑的就是它） |
 
 以上都是**真机实测**；机器负载会影响绝对值，**不同负载下的数字不可直接比**。`state-perf-guard.test.mjs` 守着性能不许回退。
 
@@ -239,7 +239,7 @@ pnpm install && dsh web
 
 **必需**：无。本插件**零运行时依赖**（`package.json` 无 `dependencies` 字段；`lib/` 只 import 同目录文件与 Node 内建，
 `client.js` 只 `require('react')`，由宿主提供），只要求宿主 `DeepSeek Harness ≥ 0.1.5-rc.1`（web profile）。
-下面这些**不装也能跑完整个团队流程**，装上是为了让「跨项目记忆」「费用显示」这类事真正兑现。
+下面这些**不装也能跑完整个团队流程**，装上是为了让「跨项目记忆」「本地零 LLM 记忆」「费用显示」这类事真正兑现。
 
 ### 推荐：Hindsight 长期记忆（跨项目 / 跨会话）
 
@@ -252,6 +252,25 @@ dsh plugin --profile web add @vectorize-io/hindsight-coding-agents
 - **不装会怎样**：**不报错、团队照常交付** —— 只是这些工具不存在、模型调不到，跨项目记忆这一环不生效。
   团队**自身**的跨 run 学习走本地文件（`$DSH_HOME/expert-team/LEARNINGS.md`、`<工作区>/team/LEARNINGS.md`），**与 Hindsight 无关**。
 - **注意**：Hindsight 的记忆配置在 dsh 之外（服务地址/令牌/库命名），装完还要配它自己。
+
+### 可选：Midas 本地记忆（零 LLM 成本）
+
+```sh
+npm i -g midas-memory-mcp
+dsh plugin --profile web add @deepseek-ai/dsh-mcp-client
+```
+
+- **为什么**：Midas 是**本机**的零 LLM 记忆服务（MCP stdio，写本地 SQLite）—— 写入与召回都**不花 token**。
+  在 `设置 →「专家团」→「记忆后端（Hindsight）· 诊断与配置」` 里把「写哪个后端」选成 `Midas` 之后，
+  插件会把 `mcp-midas` 那一行写进 dsh profile 的补丁文件（显式带 `MIDAS_MCP_DB` 与 `cwd`、用**绝对路径**
+  启动），记忆就从 Hindsight 换到本地。
+- **不装会怎样**：**不报错**。默认后端是 `Hindsight`，什么都不改的人完全不受影响；只有当你**主动选了** `Midas`
+  却还没装好时，设置页会当场给出**五态结论**（已接通 / 差一步 / 没装 / 装了起不来 / 探测不可用），
+  并列出"缺哪一步 + 该敲哪条命令"——**不会**假装已经换过去了（记忆此刻仍走 Hindsight、仍按 token 计费）。
+- **注意**：Midas **不做整会话摘要**（这是它的设计取舍，不是缺陷）—— 它只存/取你**显式写入**的事实与知识页；
+  需要"总结整段对话"的场景仍应使用 Hindsight。另外：它依赖 Node 内建的 `node:sqlite`（需要较新的 Node）；
+  记忆文件落在 `$DSH_HOME/storages/midas/memory.sqlite3`，目录由插件在切换时创建；装完必须**重启 `dsh web`**
+  （profile 补丁是**加载 profile 时**读的）才真正生效。
 
 ### 可选：会话费用显示
 
@@ -306,7 +325,7 @@ dsh plugin --profile web add dshmarket
 
 **和"直接让一个 agent 硬做"有什么区别？** 针对三个固定失败模式：**上下文漂移**（阶段与工件双通道交接）、**自己批自己**（评审/测试是独立角色，`qa`/`reviewer` 裁决才算过）、**返工不收敛**（超轮次与未闭环被硬门禁拦下并如实报错）。详见[为什么不是「一个 agent 硬做」](#为什么不是一个-agent-硬做)。
 
-**必须再装别的插件吗？** **不必**。本插件零运行时依赖；Hindsight（跨项目记忆）是**推荐**、`dsh-cost-meter`（费用视图）是**可选**，不装也能跑完整个流程 —— 见[依赖与推荐插件](#依赖与推荐插件--dependencies-and-recommended-plugins)。
+**必须再装别的插件吗？** **不必**。本插件零运行时依赖；Hindsight（跨项目记忆）是**推荐**、Midas（本地零 LLM 记忆）与 `dsh-cost-meter`（费用视图）是**可选**，不装也能跑完整个流程 —— 见[依赖与推荐插件](#依赖与推荐插件--dependencies-and-recommended-plugins)。
 
 **支持哪些 dsh 版本？** `engines.dsh: >=0.1.5-rc.1`（开发与验证基线 0.1.5-rc.1）；更早版本未经测试。Node.js ≥ 20。
 
@@ -329,7 +348,9 @@ dsh plugin --profile web add dshmarket
 - `… -> 500 {"detail":"could not resize shared memory segment … No space left on device"}` ⇒ 服务端 **PostgreSQL 分配共享内存失败**：自托管最常见成因是容器 `/dev/shm` 只有 64 MB（用 `--shm-size=1g` 重启容器），也可能是磁盘/inode 满（`df -h`）或并行度太高；
 - `… -> 403 <!doctype html>…网站防火墙…` ⇒ **应用层返回了 403 的 HTML 页面**（该页自称「网站防火墙」）。这是**观察到的现象，不是根因**：能返回 HTML 403 的环节可能是反向代理 / 面板安全插件 / CDN / 临时拦截等，插件无法判定是哪一种，**也不给你未经证实的整改动作**。面板会告诉你这条失败**之后是否已有成功**：已恢复 ⇒ 只是历史记录；仍在持续 ⇒ 再去服务端逐层确认。
 
-**怎么看**：`设置 →「专家团」→「记忆后端（Hindsight）· 只读诊断」` 会显示配置文件路径、部署形态（`cloud`/`self-hosted`/`daemon`）、服务地址、**token 是否已配置（值不显示）**、以及**最近一条失败的分类与处理建议**，并可按需**探测一次连通性**（**连通 ≠ 鉴权成功**：401/403 也算"可达"）。重启语义：改 `serverMode`/`apiUrl` 需重启 `dsh web`；只改 `apiToken` 免重启（401 时会重读）。本页**只读**，没有任何写入控件。
+**怎么看**：`设置 →「专家团」→「记忆后端（Hindsight）· 诊断与配置」` 会显示配置文件路径、部署形态（`cloud`/`self-hosted`/`daemon`）、服务地址、**token 是否已配置（值不显示）**、以及**最近一条失败的分类与处理建议**，并可按需**探测一次连通性**（**连通 ≠ 鉴权成功**：401/403 也算"可达"）。页面顶部还有**记忆后端三选一**：`Hindsight`（自托管，按 token 计费）/ `Midas`（本地 SQLite、零 LLM 调用，写入/召回不花 token；**不做整会话摘要**）/ `不使用`（真的关掉：插件往 dsh profile 的补丁文件写一行 `- id: hindsight` + `disabled: true`）。选了 `Midas` 时同一块会给出**五态就绪结论**（已接通 / 差一步 / 没装 / 装了起不来 / 探测不可用）与**首装引导**（说清缺哪一步，并给出可复制的命令）—— 没装好时**如实说未接通**，绝不假装已经换过去了。它同时显示**实际生效状态**：补丁文件到底有没有禁用 Hindsight、设置与实际是否一致 —— 「你选了不使用」与「你选了 Hindsight 但连不上」在界面上是**两种不同的说法**（后者是故障，处置动作正好相反）。
+
+重启语义：改 `serverMode`/`apiUrl` 需重启 `dsh web`；只改 `apiToken` 免重启（401 时会重读）；**改记忆后端选择**（真的动了 profile 补丁时）同样**必须重启**才生效 —— 那一条会自己把重启要求显示出来。配置区可改形态 / 地址 / token（token 输入框是 password，**不预填、不回显**，清除要再点一次确认）。
 
 ## 术语 / Glossary
 
@@ -379,7 +400,7 @@ presets/expert-team/   「专家团模式」preset：12 个角色 subagent 工�
 
 - **两条规则被搬到宿主 `tools/post-execute` 瀑布上**（`lib/interception.js`）：「台账契约」——重复 id / 环 / 自依赖当场顶回（`HARD_GRAPH_CODES`）；「规格边界」——SPEC 未填不许进实现（`SPEC_COMPLETE_PHASES`）。**规格沉默等于允许，那正是头号返工源。**
 - **写侧归属门禁**挂在 `tools/pre-execute`（`lib/artifact-ownership.js`）：创建放行、覆写他人工件当场拒绝；**持 `bash` 的角色仍可能绕过**（已列进[适用性与边界](#适用性与边界)）。
-- **89 个测试文件 + 165 条变异目录**：`npm run test:all` 零依赖、无需 `install`（CI 跑的就是它）。变异目录在 CI 里校验的是**形状**（id 唯一、每个变异体的 `find` 串在目标文件里恰好命中一次、条数与常量一致）；**变异体本身需手动注入**，**CI 目前不执行变异体** ⇒ 它是"防呆 + 防漂移"，**不是**"自动证明测试能抓错"。
+- **90 个测试文件 + 170 条变异目录**：`npm run test:all` 零依赖、无需 `install`（CI 跑的就是它）。变异目录在 CI 里校验的是**形状**（id 唯一、每个变异体的 `find` 串在目标文件里恰好命中一次、条数与常量一致）；**变异体本身需手动注入**，**CI 目前不执行变异体** ⇒ 它是"防呆 + 防漂移"，**不是**"自动证明测试能抓错"。
 - **多组棘轮（ratchet）**：`vocab-consistency`（术语与角色标签单一真源）、`scan-single-source`（同一事实不许有两个家）、`write-bypass-ratchet`（写侧不许绕过拦截）、`settings-consumers`（每个设置项都必须有消费者，白名单集合相等 ⇒ 只减不增）、`state-perf-guard`（子会话计时**零次**读日志，性能回归即红）。
 - **两种零要分得清**："我不知道有什么"与"确实没有"不长成同一个样子 —— 工具面收窄失败时区分 `no-known-names` / `nothing-to-deny`；`/state` 取不到时间戳时给 `hasTimestamp: false`，而不是用 `0` 冒充。
 - **失败必须出声**：写侧越界、工件分叉、超轮次返工一律**显式报错**，不做静默截断 —— 静默失败是本仓最贵的 bug 类型。
@@ -387,7 +408,7 @@ presets/expert-team/   「专家团模式」preset：12 个角色 subagent 工�
 ## 开发
 
 ```sh
-npm run test:all        # 89 个测试文件，零依赖、无需 install（CI 跑的就是它）
+npm run test:all        # 90 个测试文件，零依赖、无需 install（CI 跑的就是它）
 npm run rename <新包名>  # fork 后改名：全树扫描并同步所有包名写法（预演会列出命中文件与写法）
 npm run check:name      # 检查占位包名残留
 ```

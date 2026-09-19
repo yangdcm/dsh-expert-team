@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="100%" role="img" aria-label="专家团 dsh-expert-team：给中小团队与个人接单者的一支「完整技术部」，一句话组队交付，12 角色专家、9 阶段门控、89 个测试文件">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="100%" role="img" aria-label="专家团 dsh-expert-team：给中小团队与个人接单者的一支「完整技术部」，一句话组队交付，12 角色专家、9 阶段门控、90 个测试文件">
   <!-- 分带布局（band layout）：每个元素必须完整落在一条带内；B4 内左右两栏 x 互不相交。
        B1 标题 [40,80] · B2 定位 tagline [82,104] · B3 副标题 [106,128]
        B4 命令框(左 x≤600) / 指标(右 x≥636) [132,192] · B5 进度条 [204,224] · B6 页脚 [232,260]
@@ -31,8 +31,8 @@
     <text x="636" y="184" font-size="11.5" fill="#cbd5e1">角色专家（人设 + 工具边界）</text>
     <text x="826" y="158" font-size="28" font-weight="650" fill="#f8fafc">9</text>
     <text x="826" y="184" font-size="11.5" fill="#cbd5e1">阶段门控（规格评审为硬门）</text>
-    <text x="1006" y="158" font-size="28" font-weight="650" fill="#f8fafc">89</text>
-    <text x="1006" y="184" font-size="11.5" fill="#cbd5e1">测试文件（另有 165 条变异）</text>
+    <text x="1006" y="158" font-size="28" font-weight="650" fill="#f8fafc">90</text>
+    <text x="1006" y="184" font-size="11.5" fill="#cbd5e1">测试文件（另有 170 条变异）</text>
 
     <!-- B5 进度条：9 段对应 9 阶段（前 4 段已完成/进行中示意） -->
     <rect x="64" y="212" width="72" height="8" rx="4" fill="#2563eb"/>

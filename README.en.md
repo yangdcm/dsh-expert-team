@@ -17,7 +17,7 @@ English | [中文](README.md)
 A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh):
 **zero runtime dependencies, no build step, no install hooks.**
 
-| 12 roles | 9 phases | 89 test files | 0 runtime deps | 0 build steps |
+| 12 roles | 9 phases | 90 test files | 0 runtime deps | 0 build steps |
 |---|---|---|---|---|
 | own persona / `toolFilter` / `maxDepth: 1` | 1 hard gate + 1 approval gate | CI runs the full suite on every push | `dependencies: {}` | no bundler, no `prepare` hook |
 
@@ -192,7 +192,7 @@ A persistent status bar also sits directly above the chat input box (client slot
 | `?section=summary` response | median **3.5–5.8 ms** | real machine (1.3.20+); 95 sub-agents / 13 `STATE.members` / 104 tasks |
 | `?section=people,feed` response | **4–13 ms** (was ~280 ms/call on 1.3.19, about **70×**) | same; the speed-up did **not** come from dropping members (`agents`/`stateMembers` counts unchanged) |
 | Worst historical (fixed in 1.3.5) | 7.1–9.8 s warm, **283.6 s** cold | before 1.3.5: `/state` read 75 sub-session logs in full and blocked the `dsh web` event loop |
-| Tests | **89 test files** | `npm run test:all`, zero dependencies, no `install` needed (this is what CI runs) |
+| Tests | **90 test files** | `npm run test:all`, zero dependencies, no `install` needed (this is what CI runs) |
 
 All figures are real-machine measurements; absolute values depend on machine load, so **numbers taken under different
 load are not directly comparable**. `state-perf-guard.test.mjs` keeps performance from regressing.
@@ -242,6 +242,8 @@ pnpm install && dsh web
 > as other plugins' settings. The data layer is the host namespace `expert-team` (owned by the host, travels with
 > the plugin market's **backup and restore**; after a change, caps/rounds/the tier gate are recomputed
 > **in-process** — no restart). The overlay's old "settings" tab was removed so the same form renders in one place.
+> **One deliberate exception**: `Memory → backend` writes dsh's profile patch (`cordis.patch.yml`), which is read
+> when the profile loads — that one needs a **`dsh web` restart**, and that row says so on the page itself.
 > **Honest boundary**: `default roster` (an array of role ids) is deliberately not part of the host schema
 > (unreliable to express there); the control on that page and `$DSH_HOME/expert-team/settings.json` cover it.
 > When the host has no settings service, every setting falls back to that file.
@@ -270,8 +272,8 @@ pnpm install && dsh web
 **Required**: none. This plugin has **zero runtime dependencies** (`package.json` has no `dependencies` field;
 `lib/` imports only sibling files and Node built-ins, and `client.js` only `require('react')`, which the host
 provides). It only requires the host `DeepSeek Harness >= 0.1.5-rc.1` (web profile). Everything below is optional:
-**the whole team workflow runs without them** — they exist so that things like cross-project memory and a cost view
-actually materialise.
+**the whole team workflow runs without them** — they exist so that things like cross-project memory, local
+zero-LLM memory and a cost view actually materialise.
 
 ### Recommended: Hindsight long-term memory (cross-project / cross-session)
 
@@ -287,6 +289,29 @@ dsh plugin --profile web add @vectorize-io/hindsight-coding-agents
   (`$DSH_HOME/expert-team/LEARNINGS.md`, `<workspace>/team/LEARNINGS.md`) and is **independent of Hindsight**.
 - **Note**: Hindsight's memory configuration lives outside dsh (service address / token / bank name); installing the
   plugin is only half the setup.
+
+### Optional: Midas local memory (zero LLM cost)
+
+```sh
+npm i -g midas-memory-mcp
+dsh plugin --profile web add @deepseek-ai/dsh-mcp-client
+```
+
+- **Why**: Midas is a **local** zero-LLM memory service (MCP over stdio, backed by a local SQLite file) —
+  writes and recalls cost **no tokens**. After you pick `Midas` under
+  `Settings → "Expert team" → "Memory backend (Hindsight) · diagnostics & settings"`, the plugin writes the
+  `mcp-midas` row into dsh's profile patch (with an explicit `MIDAS_MCP_DB`, an explicit `cwd`, and an
+  **absolute** binary path), so memory moves off Hindsight onto the local store.
+- **Without it**: **no error**. The default backend is `Hindsight`, so nothing changes for anyone who does not
+  touch the setting. If you *do* pick `Midas` before it is installed, the settings page immediately reports a
+  **five-state readiness verdict** (ready / one step short / not installed / installed but fails to start /
+  probe unavailable) plus "which step is missing and which command to run" — it never pretends the switch
+  happened (memory still goes through Hindsight and still costs tokens until then).
+- **Note**: Midas does **not** summarize whole conversations — that is its design tradeoff, not a defect: it
+  stores and recalls the facts and knowledge pages you explicitly write, so "summarize this conversation" stays
+  a Hindsight use case. It also needs a recent Node (it uses the built-in `node:sqlite`); the memory file lives at
+  `$DSH_HOME/storages/midas/memory.sqlite3` (the plugin creates the directory when you switch), and you must
+  **restart `dsh web`** for the change to take effect (the profile patch is read once, at profile load).
 
 ### Optional: session cost display
 
@@ -344,7 +369,7 @@ Full command list (`/team codeindex` code index, `/team limit` quotas, `/team se
 
 **How is it different from "one agent doing it all"?** It targets the three classic failure modes: **context drift** (hand-offs carry structured returns *and* artifact files, not chat history), **grading your own homework** (review and test are separate roles; a `qa`/`reviewer` verdict is required), and **rework that never converges** (over-budget rounds and unclosed items are stopped by hard gates and reported, not hidden).
 
-**Do I have to install other plugins?** **No.** This plugin has zero runtime dependencies; Hindsight (cross-project memory) is **recommended** and `dsh-cost-meter` (cost view) is **optional** — the full flow runs without either. See [Dependencies and recommended plugins](#dependencies-and-recommended-plugins).
+**Do I have to install other plugins?** **No.** This plugin has zero runtime dependencies; Hindsight (cross-project memory) is **recommended**, and Midas (local zero-LLM memory) plus `dsh-cost-meter` (cost view) are **optional** — the full flow runs without any of them. See [Dependencies and recommended plugins](#dependencies-and-recommended-plugins).
 
 **Which dsh versions are supported?** `engines.dsh: >=0.1.5-rc.1` (developed and verified on 0.1.5-rc.1); earlier versions are untested. Node.js ≥ 20.
 
@@ -367,7 +392,9 @@ Full command list (`/team codeindex` code index, `/team limit` quotas, `/team se
 - `… -> 500 {"detail":"could not resize shared memory segment … No space left on device"}` ⇒ the server's **PostgreSQL failed to allocate shared memory**: the most common self-hosted cause is a container `/dev/shm` of only 64 MB (restart it with `--shm-size=1g`); it can also be a full disk/inode table (`df -h`) or too much parallelism;
 - `… -> 403 <!doctype html>…网站防火墙…` ⇒ the **application returned a 403 HTML page** (a page that calls itself a "website firewall"). That is an **observation, not a root cause**: a reverse proxy, a panel security plugin, a CDN or a transient block could all produce it, and the plugin cannot tell which. It therefore offers **no unverified fix**. The panel tells you whether the failure was **followed by a success**: recovered ⇒ it is history; still ongoing ⇒ dig into the server layer by layer.
 
-**Where to look:** `Settings → "Expert team" → "Memory backend (Hindsight) · read-only diagnostics"` shows the config path, the server mode (`cloud`/`self-hosted`/`daemon`), the API URL, **whether a token is configured (the value is never shown)**, and the **classification plus suggested fix of the most recent failure**, with an optional **one-shot connectivity probe** (**connectivity ≠ authenticated**: 401/403 still count as reachable). Restart semantics: changing `serverMode`/`apiUrl` needs a `dsh web` restart; `apiToken` alone does not (re-read on 401). The page is **read-only** — it has no write controls.
+**Where to look:** `Settings → "Expert team" → "Memory backend (Hindsight) · diagnostics & settings"` shows the config path, the server mode (`cloud`/`self-hosted`/`daemon`), the API URL, **whether a token is configured (the value is never shown)**, and the **classification plus suggested fix of the most recent failure**, with an optional **one-shot connectivity probe** (**connectivity ≠ authenticated**: 401/403 still count as reachable). At the top of the block there is a **three-way backend selector**: `Hindsight` (self-hosted, billed per token) / `Midas` (local SQLite, zero LLM calls — writes and recalls cost no tokens, but it does **not** summarize whole conversations) / `off` (genuinely stopped: the plugin writes `- id: hindsight` + `disabled: true` into dsh's profile patch). When `Midas` is selected the same block reports a **five-state readiness verdict** (ready / one step short / not installed / installed but fails to start / probe unavailable) and a **first-run guide** (it names the missing step and gives copyable commands) — while it is not ready it says so plainly instead of pretending the switch happened. It also shows the **actual state** (does the patch really disable Hindsight, and does the stored setting agree?) — "you chose off" and "you chose Hindsight but it is unreachable" are rendered as **two different things** (the latter is a failure, and the fix is the opposite).
+
+Restart semantics: changing `serverMode`/`apiUrl` needs a `dsh web` restart; `apiToken` alone does not (re-read on 401); **changing the backend selection** (when the profile patch really changes) also needs a **restart** — that row states the requirement itself. The settings area can change the mode / URL / token (the token field is a password input, **never pre-filled, never echoed**, and clearing it takes a second confirming click).
 
 ## Glossary
 
@@ -418,7 +445,7 @@ evolve with the skill, without shipping a new package.
 
 - **Two rules are moved onto the host's `tools/post-execute` waterfall** (`lib/interception.js`): the "task-ledger contract" — duplicate ids / cycles / self-dependencies are rejected on the spot (`HARD_GRAPH_CODES`) — and the "spec boundary" — an empty SPEC boundary section cannot enter `implement` (`SPEC_COMPLETE_PHASES`). **Silence in the spec means permission, and that is the number-one source of rework.**
 - **The write-side ownership gate** sits on `tools/pre-execute` (`lib/artifact-ownership.js`): creating is allowed, overwriting another role's artifact is rejected outright; **a role holding `bash` can still bypass it** (listed under [Fit and boundaries](#fit-and-boundaries)).
-- **89 test files plus a 165-entry mutation catalog**: `npm run test:all` needs no `install` (it is what CI runs). In CI the catalog validates its **shape** (unique ids, each mutant `find` string matching exactly once in its target file, entry count matching the constant); **mutants must be injected by hand** and **CI does not execute them today** ⇒ it guards against drift and typos, it is **not** an automatic proof that the suite catches errors.
+- **90 test files plus a 170-entry mutation catalog**: `npm run test:all` needs no `install` (it is what CI runs). In CI the catalog validates its **shape** (unique ids, each mutant `find` string matching exactly once in its target file, entry count matching the constant); **mutants must be injected by hand** and **CI does not execute them today** ⇒ it guards against drift and typos, it is **not** an automatic proof that the suite catches errors.
 - **Several ratchet tests**: `vocab-consistency` (one source for vocabulary and role labels), `scan-single-source` (no fact with two homes), `write-bypass-ratchet` (no write path may bypass interception), `settings-consumers` (every setting must have a consumer; the allow-list is compared as a set, so it can only shrink), `state-perf-guard` (sub-session timing must perform **zero** log reads).
 - **Two kinds of zero, kept apart**: "I don't know what exists" must not look like "there is nothing" — a failed tool-face narrowing distinguishes `no-known-names` from `nothing-to-deny`, and when `/state` cannot obtain a timestamp it returns `hasTimestamp: false` instead of passing `0` off as a measurement.
 - **Failures must be loud**: out-of-bounds writes, artifact divergence and over-budget rework always raise an explicit error; nothing is truncated silently — silent failure is the most expensive bug class in this repo.
@@ -426,7 +453,7 @@ evolve with the skill, without shipping a new package.
 ## Development
 
 ```sh
-npm run test:all        # 89 test files, zero dependencies, no install needed (this is what CI runs)
+npm run test:all        # 90 test files, zero dependencies, no install needed (this is what CI runs)
 npm run rename <name>   # after forking: full-tree scan, syncs every package-name spelling (dry run lists them)
 npm run check:name      # check for leftover placeholder package names
 ```

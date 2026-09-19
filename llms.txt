@@ -22,12 +22,13 @@
 - 落盘位置：工件在 `<你的工作区>/team/<run-id>/`；本机偏好与跨项目经验在 `$DSH_HOME/expert-team/`
 - 推荐插件：Hindsight（跨项目/跨会话长期记忆）— 不装也能跑完整个流程
 - 可选插件：`dsh-cost-meter`（会话费用视图）
-- 测试：89 个测试文件（`npm run test:all`，零依赖、无需 `install`），含 165 条变异目录与多组棘轮（ratchet）测试（变异目录在 CI 里只校验形状；变异体需手动注入验证）
+- 可选插件：Midas 本地记忆（零 LLM 成本）— `npm i -g midas-memory-mcp` + `dsh plugin --profile web add @deepseek-ai/dsh-mcp-client`，然后在设置页把「记忆后端」选成 `Midas` 并重启 `dsh web`。它是本机 MCP stdio 服务（本地 SQLite，写入/召回不花 token），**不做整会话摘要**（设计取舍）；记忆文件在 `$DSH_HOME/storages/midas/memory.sqlite3`。不装不影响任何既有功能（默认后端仍是 Hindsight）
+- 测试：90 个测试文件（`npm run test:all`，零依赖、无需 `install`），含 170 条变异目录与多组棘轮（ratchet）测试（变异目录在 CI 里只校验形状；变异体需手动注入验证）
 - 写侧门禁：`write`/`edit` 通道有工件归属硬门禁（`tools/pre-execute`；创建放行、覆写他人工件当场拒绝；持 `bash` 的角色仍可能绕过）
-- 设置页：官方 `设置 →「专家团」`（宿主命名空间 `expert-team`，改动即时生效，随插件市场备份/恢复）
+- 设置页：官方 `设置 →「专家团」`（宿主命名空间 `expert-team`，改动即时生效，随插件市场备份/恢复）。**唯一例外**是「记忆 → 记忆后端」：它要把 dsh profile 的补丁文件（`$DSH_HOME/profiles/<profile>/cordis.patch.yml`）改成一致，而 profile 是**加载时**读的 ⇒ **需重启 `dsh web`**（设置页会把这条重启要求显示出来）
 - 会改宿主 GUI 的**一处展示顺序**（默认开，可关）：装上后**子代理列表按最新在上**显示。只改展示顺序——插件遮蔽宿主把目录送到浏览器的那一个 remote 方法（`subagents/list` → `remoteExportList`）并反转数组；服务端 `listChildren` 的契约（按 createdAt 升序）**原样不动**，模型侧 `list_agents` 与本插件 `/state` 不受影响。设置项 `display.subagentListNewestFirst` 可关；宿主结构不匹配时**自动退回宿主默认顺序**并在设置页如实显示「未生效」
 - 故障排查：角色子代理报 `does not support reasoning effort` ⇒ 会话路由的模型需在 `~/.dsh/settings.yaml` 的 `agent-default-model` 条目声明 `reasoningEfforts`（`off/low/high/max`）；插件加载时会预检并告警一行（只告警、不阻断）
-- 记忆后端诊断（**只读**）：`设置 →「专家团」→「记忆后端（Hindsight）· 只读诊断」` —— 配置路径 / 形态（`cloud`·`self-hosted`·`daemon`）/ 地址 / **token 是否已配置（值不显示）** / 最近一条失败的分类，并**与它之后的成功作比较**：有后续成功 ⇒ 中性标为「历史 · 已恢复」（并给出此后成功次数与最近一次耗时），无后续成功 ⇒ 才按当前故障告警；分类名只描述观察到的现象（`http-403-html` = 应用层返回了 403 的 HTML 页；`server-shm-or-disk` = PG 共享内存/磁盘）—— 403+HTML **不等于** WAF，插件不给未经证实的整改动作；「读不到日志」「日志读不懂」「确实没有失败」是三种不同说法，可按需探测一次连通性（**连通 ≠ 鉴权**：401/403 也算可达）
+- 记忆后端（**三选一** + 五态就绪 + 诊断 + 配置）：`设置 →「专家团」→「记忆后端（Hindsight）· 诊断与配置」` —— 三选一 = `hindsight`（默认，走 Hindsight）/ `midas`（本地 SQLite、零 LLM，写入/召回不花 token，**不做整会话摘要**）/ `off`（真的关掉：插件往 profile 补丁写 `- id: hindsight` + `disabled: true`）；改它**需重启 `dsh web`**。选 `midas` 时给出**五态就绪结论**：`midas-ready`（已接通：二进制 + dsh 的 MCP 客户端 + profile 补丁里 `- insert:` 包裹的 `mcp-midas` 行都在）/ `midas-needs-mcp-client`（差一步：二进制在、客户端没装进 profile ⇒ 补丁那一行会被 dsh 静默跳过）/ `midas-not-installed`（没装：按 5 层顺序找过 `MIDAS_MCP_BIN` → `npm prefix -g`/bin → `$DSH_HOME/midas` 等显式位置 → `PATH` → `require.resolve`，并逐条列出找过哪里）/ `midas-start-failed`（装了但起不来：用户点「探测一次启动」后真的 spawn 一次并做 MCP 握手，失败时附截断的 stderr 摘要）/ `unknown`（探测不可用 ⇒ **不给结论**）。未就绪的每一态都**明说**"记忆此刻仍走 Hindsight、仍按 token 计费"，并给出**首装引导**（三步：装本体 / 装 MCP 客户端 / 回来选 + 重启；命令由服务端下发、可一键复制）。同一块还显示**实际生效状态**（补丁到底有没有禁用 Hindsight、设置与实际是否一致）——「你选了不使用」与「你选了 Hindsight 但连不上」是**两种不同的说法**（后者是故障，处置动作正好相反）。诊断部分：配置路径 / 形态（`cloud`·`self-hosted`·`daemon`）/ 地址 / **token 是否已配置（值不显示）** / 最近一条失败的分类，并**与它之后的成功作比较**：有后续成功 ⇒ 中性标为「历史 · 已恢复」（并给出此后成功次数与最近一次耗时），无后续成功 ⇒ 才按当前故障告警；分类名只描述观察到的现象（`http-403-html` = 应用层返回了 403 的 HTML 页；`server-shm-or-disk` = PG 共享内存/磁盘）—— 403+HTML **不等于** WAF，插件不给未经证实的整改动作；「读不到日志」「日志读不懂」「确实没有失败」是三种不同说法，可按需探测一次连通性（**连通 ≠ 鉴权**：401/403 也算可达）
 - 关键词：dsh 插件 · DeepSeek Harness · 多智能体 · multi-agent · agent team · orchestration · 角色化 subagent · 依赖 DAG 并行 · 阶段门控 · 质量门禁 · 工件留痕 · role-based subagents
 
 ## 文档

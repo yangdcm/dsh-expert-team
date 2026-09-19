@@ -29,18 +29,19 @@ console.log('# F 线 · 设置控制台\n');
 console.log('① spec 与默认值（UI 表单结构也由它生成 ⇒ 新增设置项只改一处）');
 {
   const d = defaultSettings();
-  check(SETTINGS_GROUPS.join(',') === 'identity,roster,display,gates', '四组：身份 / 编制 / 显示 / 门禁', SETTINGS_GROUPS.join(','));
-  check(Object.keys(flatSpec()).length === 19, '共 19 个设置项（4+5+5+5；原 4+5+4+7 里的两条台账/规格边界开关已删除 —— 它们的行为本就无条件强制，做成开关是安全回退）', String(Object.keys(flatSpec()).length));
+  check(SETTINGS_GROUPS.join(',') === 'identity,roster,display,gates,memory', '五组：身份 / 编制 / 显示 / 门禁 / 记忆', SETTINGS_GROUPS.join(','));
+  check(Object.keys(flatSpec()).length === 20, '共 20 个设置项（4+5+5+5+1；原 4+5+4+7 里的两条台账/规格边界开关已删除 —— 它们的行为本就无条件强制，做成开关是安全回退；`memory.backend` 是 2026-09-17 新增）', String(Object.keys(flatSpec()).length));
   check(d.roster.maxTasks === 200 && d.gates.tierGate === 'soft' && d.identity.profile === 'developer', '默认值符合既有行为（maxTasks=200 / 档位门 soft / 身份 developer）');
   const schema = settingsSchema();
-  check(schema.length === 4 && schema.every((g) => g.label && g.hint && g.items.length), 'schema 每组都有中文标签与说明', schema.map((g) => `${g.group}:${g.items.length}`).join(' '));
+  check(schema.length === 5 && schema.every((g) => g.label && g.hint && g.items.length), 'schema 每组都有中文标签与说明', schema.map((g) => `${g.group}:${g.items.length}`).join(' '));
   check(schema.flatMap((g) => g.items).every((i) => i.path.includes('.') && i.label && typeof i.default !== 'undefined'), '每个设置项都有 path/label/default（UI 直接渲染）');
   check(getSetting(d, 'roster.maxTasks') === 200 && getSetting(d, 'nope.nope') === undefined, 'getSetting 取默认、未知项 undefined');
+  check(d.memory.backend === 'hindsight', '`memory.backend` 的默认值 = 本功能上线前的行为（Hindsight）', String(d.memory.backend));
 
   // 1.3.2：枚举项的**中文标签**（规格层单一真源）。标签只影响可读性 ⇒ **值域/类型/默认值不许变**，
   // 但必须"每个值都有标签"，否则下拉里会露出英文标识（这正是本次要修的）。
   const enums = schema.flatMap((g) => g.items).filter((i) => i.type === 'enum');
-  check(enums.length === 5, '恰好 5 个枚举项（新增枚举项时这条会提醒你同时补标签断言面）', String(enums.length));
+  check(enums.length === 6, '恰好 6 个枚举项（新增枚举项时这条会提醒你同时补标签断言面）', String(enums.length));
   for (const it of enums) {
     const vals = (it.values || []).slice().sort();
     const keys = Object.keys(it.labels || {}).sort();
@@ -111,7 +112,7 @@ const call = async (method, body) => {
 {
   const g = await call('GET');
   check(g.code === 200 && g.json.ok && g.json.settings.roster.maxTasks === 200, 'GET 返回当前设置', JSON.stringify(g.code));
-  check(Array.isArray(g.json.schema) && g.json.schema.length === 4, 'GET 同时返回 schema（UI 不必自己写死表单）');
+  check(Array.isArray(g.json.schema) && g.json.schema.length === 5, 'GET 同时返回 schema（UI 不必自己写死表单）');
   check(g.json.path === settingsFile, 'GET 如实告知设置文件路径（可审计）');
 
   const p = await call('POST', { roster: { maxTasks: 12 } });

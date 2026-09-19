@@ -194,7 +194,47 @@ console.log('\n⑦ 纪律的源码级守卫（诊断模块只读 / 写模块原�
   check(cmdSrc.slice(at - 400, at).includes('registerLocal({'), '走 registerLocal（本机来源守卫；棘轮也盯着这条）', '');
 
   const cliSrc = readFileSync(join(here, 'client.js'), 'utf8');
-  check(/h\(HindsightBlock\)/.test(cliSrc), '设置页里渲染了这个块', '');
+  // `cliSrc` 是**原文**（没有剥注释），下面两条判据都基于剥注释后的 `cliCode`（helper 的写法与
+  // `memory-backend.test.mjs:295` 逐字相同 —— 那条注释陷阱在那里已经踩过一次）。
+  const withoutComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const cliCode = withoutComments(cliSrc);
+
+  // 2026-09-17 纠错：HEAD 的判据是**零参调用** `/h\(HindsightBlock\)/`，而 1.3.21 起这个块**带 props
+  // 渲染**（`onSettings` 回调，让块里的「记忆后端」三选一改完之后能把上面那张设置表单同步到新值
+  // —— 见 `HindsightBlock` 定义与 `client.js:2219` 的调用点）⇒ 旧判据被**正确代码**证伪，
+  // 所以必须放宽：不再钉"零参"。
+  //
+  // 但直接放宽成 `/h\(HindsightBlock[,)]/`（"有调用、参数可省略"）会**悄悄丢掉覆盖**：它同时接受
+  //   · `h(HindsightBlock,)` —— 合法 JS，但**零参**调用 ⇒ `props` 是 `undefined` ⇒ 定义里那两行
+  //     `(props && props.onSettings)` / `(props && props.memoryBackend)` 双双退回 null / `''`
+  //     ⇒ 设置表单与三选一之间的同步、以及"另一处改完重新拉状态"的刷新信号**静默失效**；
+  //   · `// h(HindsightBlock,` —— 注释里的调用；
+  //   · `h(HindsightBlock)` —— 就是被证伪的那个旧形态本身。
+  // 而**没有别的测试钉这个挂点**：`memory-backend.test.mjs` 里 `h(HindsightBlock` 一处都搜不到，
+  // 那份断言切的是**函数体**，所以挂点被整个删掉它照样绿；`onSettings` 这条接线此前**零覆盖**。
+  // ⇒ 收紧成"必须真的跟一个 props **对象字面量**（`{`）"，且判据先剥注释（否则注释里的调用也能过）。
+  check(/h\(HindsightBlock,\s*\{/.test(cliCode),
+    '设置页里渲染了这个块，且**确实带 props 对象**（`h(HindsightBlock,)` / `h(HindsightBlock)` / 注释里的调用都不算）', '');
+
+  // 上一条只证明"传了 props 对象"，证明不了**这个对象真的在接线**（写成 `h(HindsightBlock, {})`
+  // 一样过）。所以把 1.3.21 新加的这条 `onSettings` 通路钉住 —— 它此前**全仓零覆盖**：
+  // ① 定义侧真的从 `props` 上读（`function HindsightBlock(props)` 起、下一处 `\n    function ` 止的
+  //    函数体里，`props.onSettings` 与 `props.memoryBackend` 都在 —— 删掉任一行，三选一的同步/
+  //    刷新信号就断了，而 `node --check` 仍绿）；
+  // ② 两个渲染位点（`!d` 的加载分支 + 主分支）都把 `onSettings` 原样交给三选一
+  //    （`h(MemoryBackendBlock, { onSettings: onSettings, refresh: memoryBackend })`）—— 少传一处，
+  //    那个分支里的"改完同步上方表单"就没了。用 `matchAll` 数**恰好两处且两处都传**，
+  //    顺带钉住"位点数量没有被复制/漏掉"。
+  const hsDefAt = cliCode.indexOf('function HindsightBlock(props) {');
+  const hsDefEnd = hsDefAt < 0 ? -1 : cliCode.indexOf('\n    function ', hsDefAt + 1);
+  const hsDef = (hsDefAt < 0 || hsDefEnd < 0) ? '' : cliCode.slice(hsDefAt, hsDefEnd);
+  check(hsDef.length > 0, '能切出 `HindsightBlock` 的定义体（反空转：切不出来就必须红，不许静默通过）', `len=${hsDef.length}`);
+  check(/props\.onSettings/.test(hsDef) && /props\.memoryBackend/.test(hsDef),
+    '定义体里**真的从 props 读** `onSettings` / `memoryBackend`（不是收了 props 却不用）', '');
+  const mbThreaded = [...cliCode.matchAll(/h\(MemoryBackendBlock,\s*\{[^}]*\}/g)].map((m) => m[0]);
+  check(mbThreaded.length === 2 && mbThreaded.every((s) => /onSettings:\s*onSettings/.test(s)),
+    '两个渲染位点都把 `onSettings` 原样交给三选一（漏传一处 ⇒ 那个分支里"改完同步上方表单"静默失效）',
+    `命中 ${mbThreaded.length} 处，其中带 onSettings 的 ${mbThreaded.filter((s) => /onSettings:\s*onSettings/.test(s)).length} 处`);
   const cAt = cliSrc.indexOf("'/plugins/dsh-expert-team/hindsight-config'");
   check(cAt !== -1, '客户端确实打这条路由', '');
   check(/'password'/.test(cliSrc) && /autoComplete: 'off'/.test(cliSrc), 'token 输入框是 password 且关自动填充', '');

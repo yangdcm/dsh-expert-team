@@ -218,6 +218,12 @@ window.__ModuleLoader__.load({
       '.exp-settings-label{flex:0 0 188px;max-width:188px;font-size:12.5px;line-height:1.5}' +
       '.exp-settings-ctl{flex:none;display:flex;align-items:center;min-height:20px}' +
       '.exp-settings-note{flex:1;min-width:0;font-size:11px;line-height:1.5;color:var(--dsw-alias-label-secondary,var(--text,#57606a))}' +
+      // 长说明（spec hint 里有两条：记忆后端 296 字、子代理列表顺序 221 字）挤在「控件右边剩下的
+      // 那点宽度」里会被压成一条又窄又高的文字柱 —— 控件列是 `flex:none`，宽度先被它吃掉。
+      // ⇒ 说明过长时让该行换行、说明独占一行（`flex-basis:100%`）。判据在 JS 里（阈值见行渲染处），
+      // 只影响真正过长的两行，其余行的版面一个像素都不动。
+      '.exp-settings-row-wide{flex-wrap:wrap}' +
+      '.exp-settings-row-wide .exp-settings-note{flex:1 1 100%;margin-top:2px}' +
       '.exp-settings-msg{margin-top:10px;padding:6px 0;font-size:11.5px;font-weight:700;color:#1a7f5a}' +
       '.exp-settings-msg.bad{color:#b3291e;font-weight:600}' +
       '.exp-settings-retry{margin-top:10px;padding:4px 12px;border:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));border-radius:8px;background:var(--dsw-alias-bg-layer-3,var(--bg,#fff));color:inherit;cursor:pointer;font-size:12px}' +
@@ -227,9 +233,24 @@ window.__ModuleLoader__.load({
       '.exp-hs-kv{display:flex;align-items:flex-start;gap:10px;padding:6px 0;border-top:1px solid var(--dsw-alias-border-l1,var(--border,#eef1f4))}' +
       '.exp-hs-k{flex:0 0 152px;max-width:152px;font-size:12.5px;line-height:1.5}' +
       '.exp-hs-v{flex:1;min-width:0;font-size:12px;line-height:1.5;word-break:break-all}' +
+      // ⚠️ 值列的 `word-break:break-all` 只对「长而不可断的 ASCII 串」（profile 补丁的路径）是**必要**的；
+      // 对「实际状态」那句中英混排的句子，它会把 `disabled:`、`Hindsight` 这类拉丁词从**词中间**劈开。
+      // 所以只给状态那一列挂专用类退回正常断词（CJK 本来就能在任意字间断），并用 `overflow-wrap:break-word`
+      // 兜住万一出现的超长不可断 token。**不动** `.exp-hs-v` 本身：「profile 补丁」那行的路径正靠它不撑破列。
+      '.exp-hs-v.exp-hs-v-status{word-break:normal;overflow-wrap:break-word}' +
       '.exp-hs-v code{font-size:11.5px;background:var(--dsw-alias-bg-layer-2,var(--bg-subtle,#f6f8fa));padding:1px 4px;border-radius:4px}' +
       '.exp-hs-ok{color:#1a7f5a;font-weight:700}' +
       '.exp-hs-bad{color:#b3291e;font-weight:700}' +
+      // ⚠️ 状态**文字**的琥珀色档（2026-09-17 用户真机截图：三选一的「实际状态」行渲染成一个**缺边的破框**）：
+      // 那一行的状态文字曾直接复用下面的 `.exp-hs-warn` —— 可它**根本不是一个文字色类**，而是一整个告警
+      // **框**（margin/padding/1px 边/3px 左重条/圆角/渐变背景）。同一个类名挂在内联 <span>（在 `.exp-hs-v`
+      // 这个 flex 值列里）上，就把边框、左重条与渐变背景画在了文字周围 ⇒ 于是出现"琥珀色小框缺两条边、
+      // 文字在框里折行"的怪样子。`.exp-hs-ok`/`.exp-hs-bad` 本来就只有 color+font-weight，**只有 warn 这档**
+      // 把"文字色"和"告警框"混成了一个类名 —— 这就是缺陷的全部根因。
+      // 处置：把两种用途**拆成两个类**。状态文字用这一条（只有颜色与字重，永不带任何盒子）；
+      // `.exp-hs-warn` 保持原样，它仍是重启提示（见下）与 HindsightBlock 诊断里那处**真**·告警框的样式。
+      // 色值取自本文件既有的"琥珀色墨水"（`.exp-hs-tag{color:#8a6100}`）—— 不新造一个色。
+      '.exp-hs-warn-text{color:#8a6100;font-weight:700}' +
       '.exp-hs-warn{margin:8px 0;padding:8px 10px;border:1px solid #f0c36d;border-left:3px solid #e0a83c;border-radius:8px;background:linear-gradient(180deg,rgba(224,168,60,.12),transparent);font-size:11.5px;line-height:1.6}' +
       // ⚠️ 中性「历史 / 已恢复」样式（2026-09-16）：失败之后**已有成功**时不许再挂告警框。
       // 灰蓝细边、无渐变、无左侧重色条 —— 与 `.exp-hs-warn` 视觉上明确区分。
@@ -244,12 +265,79 @@ window.__ModuleLoader__.load({
       '.exp-hs-row{display:flex;align-items:center;gap:8px;padding:3px 0}' +
       '.exp-hs-label{flex:0 0 104px;max-width:104px;font-size:12px}' +
       '.exp-hs-input,.exp-hs-select{flex:1;min-width:0;padding:3px 6px;border:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));border-radius:6px;background:var(--dsw-alias-bg-layer-3,var(--bg,#fff));color:inherit;font-size:12px}' +
+      // ── 记忆后端三选一的**版式**（2026-09-17 用户截图：下拉被 `flex:1` 拉到 ~620px）──
+      // 症状：标签只占 104px，控件横贯一整行（选中的那句中文只占 ~200px ⇒ 右边一大片空白，
+      // 读起来像"控件被拉坏了"），而下方 `.exp-hs-kv` 的键列是 152px ⇒ 同一块里出现**两条不
+      // 对齐的竖线**。处置只做两件事，且**都作用在元素自己的类上**：
+      //   ① 标签列与键列对齐到 152px —— 用**复合选择器 + 专用类**（不是 `.exp-hs-mb .exp-hs-label`
+      //      这种靠祖先关系的写法）：`HindsightBlock` 里那张配置表单的三个标签（部署形态 / 服务地址 /
+      //      访问令牌）用的是同一个共享类 `.exp-hs-label`，一旦有人把那张表单搬进三选一这块，
+      //      后代选择器会让它们**静默**变 152px 而没有任何断言会红。挂在自己的类上就没有这个隐患；
+      //   ② 只给这一个下拉设上限（320px 够放下最长那条中文标签，实测 ~237px）。
+      '.exp-hs-label.exp-hs-label-mb{flex:0 0 152px;max-width:152px}' +
+      '.exp-hs-select.exp-hs-select-narrow{flex:0 1 320px;max-width:340px}' +
+      // ⚠️ 这条是**全局**的：`.exp-settings-ctl` 里所有的 <select> 都吃到这个上限 —— 也就是设置页
+      // **每一个 enum 行的控件**（identity.profile / roster.deliverable / display.defaultTab /
+      // gates.tierGate / gates.leadToolFace / memory.backend），不只记忆后端那一行。
+      // 为什么可以全局：这些行的固有宽度由最长选项文本决定（真机量过：89 / 142 / 89 / 142 / 188 /
+      // 248 px，最大 248 < 340 ⇒ 今天**一个都没被裁**，等于给未来留的护栏，而不是当前的必要约束）；
+      // 为什么需要它：`.exp-settings-ctl` 是 `flex:none`，控件按内容撑开、先把宽度吃掉 ⇒
+      // 选项文案一长，右边那列说明（`.exp-settings-note`，`flex:1`）就被挤扁，而**说明那列才是给人读的**。
+      // 超长说明另有出路：`.exp-settings-row-wide` 让它整行换到下一行（见上）。
+      '.exp-settings-ctl select{max-width:340px}' +
+      // 重启提示（`MemoryBackendBlock` 顶部那块）：复用 `.exp-hs-warn` 的琥珀色重条 —— 本仓
+      // "需要你看一眼"的既有视觉语言 —— 再放大字号、加粗标题，让它在满屏灰字里第一眼被看到
+      // （用户原话：「重启提示出现了 但是在最下面 用户可能看不到 需要有明显提示」）。
+      '.exp-hs-warn.exp-hs-restart{margin:10px 0 2px;font-size:12px}' +
+      '.exp-hs-restart-h{font-weight:700;margin-bottom:2px}' +
+      // Midas 首装引导（2026-09-19 一期）：**刻意不用** `.exp-hs-warn`。
+      // 两条理由：① 那是一个"告警框"类（`memory-backend.test.mjs` ⑦d 把它钉在**恰好两处**：
+      // 重启提示 + 诊断块的当前故障）—— 首装引导不是告警，占用它会把那条计数守卫撑坏；
+      // ② 它是个**块级**容器（步骤是有序列表 + 代码块 + 复制按钮），与"内联文字色"必须分开
+      // —— 这正是用户截图里那个"缺边的破框"的根因，所以这里另起一个块级类，边界清楚。
+      '.exp-hs-midas-guide{margin:8px 0 2px;padding:8px 10px;border:1px dashed var(--dsw-alias-border-l2,var(--border,#d0d7de));border-radius:8px;font-size:11.5px;line-height:1.6}' +
+      '.exp-hs-midas-guide-h{font-weight:700;margin-bottom:2px}' +
+      '.exp-hs-midas-steps{margin:6px 0 0;padding-left:18px}' +
+      '.exp-hs-midas-steps li{margin-bottom:4px}' +
+      '.exp-hs-midas-steps code{font-size:11px;word-break:break-all}' +
       '.exp-hs-actions{display:flex;flex-wrap:wrap;gap:6px;padding-top:6px}' +
       '.exp-hs-btn{padding:3px 10px;border:1px solid var(--dsw-alias-border-l2,var(--border,#d0d7de));border-radius:6px;background:var(--dsw-alias-bg-layer-3,var(--bg,#fff));color:inherit;cursor:pointer;font-size:11.5px}' +
       '.exp-hs-btn:disabled{opacity:.55;cursor:default}' +
       '.exp-hs-btn.danger{color:#b3291e;border-color:#e3b0aa}' +
       '.exp-hs-msg{margin-top:6px;font-size:11.5px;font-weight:700;color:#1a7f5a}' +
       '.exp-hs-msg.bad{color:#b3291e;font-weight:600}' +
+      // ── 深色主题覆写：宿主用的是 `body[data-ds-dark-theme]`，**不是** OS 的 prefers-color-scheme ──
+      // 为什么本文件原来的机制是**错的**：宿主 `packages/client/ui-theme/src/boot-theme.ts` 把深色写成
+      //   `document.body.toggleAttribute('data-ds-dark-theme', dark)`，而 `dark` 来自**三选一偏好**
+      //   `light | dark | system`（只有 `system` 那一档才去读 `matchMedia('(prefers-color-scheme: dark)')`）。
+      //   ⇒「宿主里选 Dark、操作系统仍是浅色」的用户：宿主调色板已经变深，而本插件那 4 个
+      //   `@media (prefers-color-scheme:dark)` 块（.exp-warming / .exp-scope / .etv-* / .etc-*）一条都不生效。
+      //   所以下面是**新增的**一处深色覆写，判据改用宿主真正写下的那个属性 —— 与 OS 无关。
+      // 为什么只**增**、不动那 4 个块：它们是「机制选错」的历史包袱，但删除/迁移属于另一轮（要连带重写
+      //   `dag-status.test.mjs` 的 `stripDark()` 花括号配平口径与两条「浅/深取值必须不同」的 NEGATIVE）——
+      //   本轮只做最小新增，历史块一个字不动（⑦e 有断言钉住它们恰好 4 个）。
+      // 对比度理由（数字按 WCAG 相对亮度公式、对宿主深色底 `--dsw-alias-bg-base` = `rgb(21,21,23)` 算得）：
+      //   `.exp-hs-warn-text` 自 2026-09-17 起**直接贴在面板底上**（不再有浅色底衬的 callout 盒）⇒ 基规则的
+      //   琥珀墨水 `#8a6100` 在深色底上只剩 **3.29:1**（绿 `#1a7f5a` 3.67:1、红 `#b3291e` 2.82:1 同理），
+      //   低于 WCAG AA 正文 4.5:1。换成 `#f7ad31` 后是 **9.53:1**（`#4ed17e` 9.33:1、`#ff7b7b` 7.27:1）。
+      //   `#f7ad31` 不是新造色：本文件 `.etv-*` 与 `.etc-*` 两处深色块已经在用它，数值上等于宿主
+      //   `--dsw-static-amber-400`（`rgb(247,173,49)`）；`#4ed17e` / `#ff7b7b` 正是那两处的 `--etc-ok` / `--etc-fail`。
+      //   底衬（半透明 wash）不动也够：`#f7ad31` 压在 `.exp-hs-tag` 的 `rgba(224,168,60,.18)` 上仍有 6.84:1，
+      //   `#4ed17e` 压在「历史 · 已恢复」那层 `rgba(26,127,90,.14)` 上仍有 8.22:1 —— 都在 AA 之上。
+      // ⚠️ 不能拿 `--dsw-alias-state-warn-secondary` / `state-success-*` 来「自动适配」：这两族令牌在明暗两套
+      //   调色板里**取值相同**（本来就不随主题翻转）⇒ 深色下确实需要**另一个**琥珀色时，只能像本文件既有
+      //   做法那样写显式字面量。反过来 `.exp-hs-hist .exp-hs-tag` 用的是 `--dsw-alias-label-secondary`，
+      //   那一族**真的**随主题翻转 ⇒ 不需要覆写（这正是本块只列 8 条的原因）。
+      // 只覆写 `color`（墨水）：半透明底衬（rgba wash）与非文字边框在深色下不构成对比度缺陷，动它们会越出
+      //   「最小新增」的范围（`.exp-hs-btn.danger` 的浅粉描边同理：它是边框不是文字）。
+      'body[data-ds-dark-theme] .exp-hs-warn-text{color:#f7ad31}' +
+      'body[data-ds-dark-theme] .exp-hs-tag{color:#f7ad31}' +
+      'body[data-ds-dark-theme] .exp-hs-ok{color:#4ed17e}' +
+      'body[data-ds-dark-theme] .exp-hs-hist .exp-hs-tag-ok{color:#4ed17e}' +
+      'body[data-ds-dark-theme] .exp-hs-msg{color:#4ed17e}' +
+      'body[data-ds-dark-theme] .exp-hs-bad{color:#ff7b7b}' +
+      'body[data-ds-dark-theme] .exp-hs-msg.bad{color:#ff7b7b}' +
+      'body[data-ds-dark-theme] .exp-hs-btn.danger{color:#ff7b7b}' +
       '.exp-viol{color:#fff;background:linear-gradient(90deg,#c62828,#e53935);font-size:12px;font-weight:600;padding:7px 10px;border-radius:8px;margin:0 0 8px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
       '.exp-decision{margin:8px 0;padding:12px 14px;border:1px solid var(--dsw-alias-state-business-primary,#0969da);border-radius:10px;background:linear-gradient(180deg,#f6f9ff,var(--dsw-alias-bg-layer-1,#fff))}' +
       '.exp-decision-title{font-weight:700;font-size:13px;color:var(--dsw-alias-state-business-primary,#0969da)}' +
@@ -1963,6 +2051,64 @@ window.__ModuleLoader__.load({
      * 下方出红字，**不把已经填好的表单整页换掉**，控件始终回滚到服务端的值 ——
      * "界面显示 A、服务端是 B"是最难排查的状态，宁可回滚也不装作成功。
      */
+    /**
+     * 面板把文案**原样渲染**（没有 markdown 渲染器）⇒ 服务端来的说明性文本要先去掉标记。
+     * 客户端自己的字面量有一条 lint 盯着（`hindsight-config.test.mjs` 第⑨节），但**服务端塞进
+     * 这些容器的文案**（notes / display / restartReason）不过那条 lint —— 所以在这里做一次收口，
+     * 否则用户会看到 `**加载 profile 时**` 这种原文。
+     */
+    function plainText(s) {
+      return String(s == null ? '' : s)
+        .replace(/\*\*/g, '')
+        .replace(/`/g, '')
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    }
+
+    /**
+     * 记忆后端改动后的回执文案（**重启要求必须如实说**）。单一实现，两个调用点共用
+     * （设置表单里那一行 / Hindsight 块里的三选一）—— 两处各写一套必然分叉。
+     *
+     * 四件事分得开（服务端的回执就是这么给的）：
+     *   saved：这次有没有真的写盘（没有改动时**不假报已保存**）；
+     *   notWired：`midas` 这次**没接通**（只记住了选择，实际仍走 Hindsight）—— 一期起它只在
+     *     "二进制没找到 / 补丁那一行没落地"时为真，而不是"这个功能没做"；
+     *   needsRestart：**只有真的改了 profile 补丁**才为 true（一次性动作，不是"永远要重启"）；
+     *   restartReason：为什么（profile 在**加载时**读那份补丁）。
+     *
+     * ⚠️ 2026-09-17 拆出**分段**版本（`memoryBackendParts`）**不是**为了多一套文案：三选一那块要把
+     * "需重启"单独提成显眼的告警框（用户原话：提示在最下面，可能看不到），又不能因此另写一句同义的
+     * 话。所以句子仍由**这一个函数**产出，`memoryBackendMsg` 对外输出与拆分前**逐字相同**（两个调用
+     * 点不用改），三选一那处只是把同一份分段拿去自己排版。
+     */
+    function memoryBackendParts(d) {
+      var r = d && typeof d === 'object' ? d : {}
+      var needRestart = !!r.needsRestart
+      var saved = r.saved ? t('已保存', 'Saved') : t('没有改动、未写盘', 'No change — nothing written')
+      var notWired = r.notWired ? t('Midas 未接通：这次只记住了选择，实际记忆仍走 Hindsight（profile 补丁里没有那一行，原因见下方引导）。', 'Midas is NOT connected: only the choice was stored; memory still goes through Hindsight (the patch has no such row — see the guide below).') : ''
+      var restartHead = ''
+      var restartWhy = ''
+      if (needRestart) {
+        restartHead = t('需重启 dsh web 才生效', 'restart dsh web to take effect')
+        restartWhy = r.restartReason ? plainText(r.restartReason) : ''
+      }
+      // `receipt` = 告警框**没有**说的那半句（改动到底落盘没有 / 选的后端接通没有）；
+      // `restart` = 完整那一句（含原因，与拆分前的整句逐字相同）。
+      // 两段都由上面这几个字面量拼出 —— 没有任何一处再另写一句同义的话。
+      var receipt = notWired ? saved + ' · ' + notWired : saved
+      return {
+        saved: saved,
+        notWired: notWired,
+        restartHead: restartHead,
+        restartWhy: restartWhy,
+        receipt: receipt,
+        restart: restartHead ? restartHead + (restartWhy ? t('（', ' (') + restartWhy + t('）', ')') : '') : '',
+      }
+    }
+    function memoryBackendMsg(d) {
+      var p = memoryBackendParts(d)
+      return p.restart ? p.receipt + ' · ' + p.restart : p.receipt
+    }
+
     function SettingsSection() {
       var sS = useState(null); var data = sS[0], setData = sS[1]
       var mS = useState(''); var msg = mS[0], setMsg = mS[1]
@@ -1987,6 +2133,13 @@ window.__ModuleLoader__.load({
         return function () { alive = false }
       }, [retry])
       function save(patch) {
+        // ⚠️ `memory.backend` **不走** `/settings`（2026-09-17 更正）：选 `off` 时还要把 dsh profile 的
+        // 补丁文件改成一致（给 `hindsight` 行加/去 `disabled: true`），而那份补丁是 profile **加载时**
+        // 才读的 ⇒ 改它**需要重启 `dsh web`**。所以这一个键走专用路由
+        // `/plugins/dsh-expert-team/memory-backend`，并由那条路由的回执如实给出重启要求。
+        // （此前这里挂着「没有任何设置需要重启 ⇒ 死分支已删」—— 对这一个键它已不成立，那句话不能再留。）
+        var mb = patch && typeof patch === 'object' ? patch['memory.backend'] : undefined
+        if (typeof mb === 'string') { saveMemoryBackend(mb); return }
         setErr(''); setMsg('保存中…')
         fetch('/plugins/dsh-expert-team/settings', {
           method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch),
@@ -1998,7 +2151,22 @@ window.__ModuleLoader__.load({
           }
           setData(function (prev) { return { schema: (prev && prev.schema) || [], settings: res.d.settings, ok: true } })
           applyDisplaySettings(res.d.settings)   // 1.3.4：设置页改完 display 四项**当场生效**（不必重启/刷新）
-          setMsg('已保存')   // 1.3.2：经逐项核查，没有任何设置需要重启（见 lib/command.js 的 needsRestart 注释）⇒ 死分支已删
+          setMsg('已保存')   // 除「记忆 → 记忆后端」外，没有任何设置需要重启（那一项走专用路由，见 saveMemoryBackend）
+        }).catch(function (e) { setErr(String(e && e.message ? e.message : e)); setMsg('') })
+      }
+      /** 记忆后端：走 `/memory-backend`（同一次调用里**落地 profile 补丁** + **存值**，并如实回 `needsRestart`）。 */
+      function saveMemoryBackend(v) {
+        setErr(''); setMsg('保存中…')
+        fetch('/plugins/dsh-expert-team/memory-backend', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: v }),
+        }).then(function (r) { return r.json().catch(function () { return null }).then(function (d) { return { ok: r.ok, d: d } }) }).then(function (res) {
+          if (!res.ok || !res.d || !res.d.ok) {
+            setErr(((res.d && (res.d.errors || [res.d.error])) || ['保存失败']).join('；'))
+            setMsg('')
+            return
+          }
+          setData(function (prev) { return { schema: (prev && prev.schema) || [], settings: res.d.settings || (prev && prev.settings) || {}, ok: true } })
+          setMsg(memoryBackendMsg(res.d))
         }).catch(function (e) { setErr(String(e && e.message ? e.message : e)); setMsg('') })
       }
       if (loading) return h('div', { className: 'exp-settings' }, h('div', { className: 'exp-empty' }, t('（正在读取设置…）', '(loading settings…)')))
@@ -2030,28 +2198,41 @@ window.__ModuleLoader__.load({
             ctl = h('input', { type: 'text', value: String(r.value), placeholder: t('留空 = 按档位默认', 'empty = tier default'), style: { width: 168 },
               onBlur: function (e) { var v = e.target.value.trim(); save({ [r.path]: v === '' ? null : v.split(',').map(function (x) { return x.trim() }).filter(Boolean) }) } })
           }
-          rows.push(h('div', { key: r.path, className: 'exp-settings-row' },
+          // 说明过长（>120 字）就让这一行换行、说明独占一行 —— 否则它会被控件列挤成一条
+          // 又窄又高的文字柱（真机截图里「记忆后端」那行就是这样）。阈值取 120：spec 里现存的
+          // hint 只有两条超过它，其余行（≤83 字）照旧排在控件右边，版面不受影响。
+          rows.push(h('div', { key: r.path, className: 'exp-settings-row' + (String(r.hint || '').length > 120 ? ' exp-settings-row-wide' : '') },
             h('span', { className: 'exp-settings-label', title: r.hint }, esc(r.label)),
             h('span', { className: 'exp-settings-ctl' }, ctl),
             h('span', { className: 'exp-settings-note', title: r.hint }, r.hint ? esc(r.hint) : null)))
         })
       })
       return h('div', { className: 'exp-settings' },
-        // 这句必须按**事实**说（2026-09-15 审核逐项查过消费者后定的口径）：
+        // 这句必须按**事实**说（2026-09-15 审核逐项查过消费者后定的口径；2026-09-17 加了一条例外）：
         //   ① 上限 / 轮次 / 档位门 / 振荡检测开关 ⇒ `reapplySettingsDerived()` 在**进程内即时重算**；
         //   ② `身份`、`班底` 等 ⇒ 下一次 `/team` 建 run 时现读；
-        //   ③ **没有任何一项需要重启** ⇒ 回执只说"已保存"（`needsRestart` 恒 false）。
+        //   ③ 除「记忆 → 记忆后端」外**没有任何一项需要重启** ⇒ 回执只说"已保存"（`needsRestart` 恒 false）。
+        //      ⚠️ 例外：`memory.backend` 走专用路由（`/memory-backend`），它要改 dsh profile 的补丁文件，
+        //      而 profile 是**加载时**读的 ⇒ **需要重启 dsh web**。那句话由那条路由给（见 MemoryBackendBlock），
+        //      所以这里的 headline 必须点明这一条例外，不能笼统写"全部即时生效"。
         //   ④ 标着「暂未生效」的项 = **还没接线**（`INERT_SETTINGS`，见 lib/settings.js）：写在这里
         //      不是承诺，而是如实告知；逐项标记由 per-item hint 携带，不在这里重复。
         // 「暂未生效」那句**只在真有这种项时**才渲染（1.3.5）：INERT_SETTINGS 现在是空的，
         // 无条件渲染会让用户去找一个不存在的标注。判据直接取 hint 里的标记 ⇒ 与后端单一真源一致。
         h('div', { className: 'exp-settings-head' }, esc(hasInertMark
-          ? t('改动即保存并即时生效（上限 / 轮次 / 档位门 / 振荡检测开关在进程内重算）。标着「暂未生效」的项尚未接线，改了不会有作用。', 'Saved on change and applied immediately (caps, rounds, the tier gate and the oscillation switch are recomputed in-process). Items marked as not yet in effect are not wired up — changing them does nothing.')
-          : t('改动即保存并即时生效（上限 / 轮次 / 档位门 / 振荡检测开关在进程内重算）。', 'Saved on change and applied immediately (caps, rounds, the tier gate and the oscillation switch are recomputed in-process).'))),
+          ? t('改动即保存并即时生效（上限 / 轮次 / 档位门 / 振荡检测开关在进程内重算）。唯一例外是「记忆 → 记忆后端」：它要改 dsh profile 的补丁文件，需重启 dsh web 才生效（那一行会自己告诉你）。标着「暂未生效」的项尚未接线，改了不会有作用。',
+            'Saved on change and applied immediately (caps, rounds, the tier gate and the oscillation switch are recomputed in-process). The one exception is "Memory → backend": it edits dsh\u2019s profile patch, so it needs a dsh web restart (that row says so itself). Items marked as not yet in effect are not wired up — changing them does nothing.')
+          : t('改动即保存并即时生效（上限 / 轮次 / 档位门 / 振荡检测开关在进程内重算）。唯一例外是「记忆 → 记忆后端」：它要改 dsh profile 的补丁文件，需重启 dsh web 才生效（那一行会自己告诉你）。',
+            'Saved on change and applied immediately (caps, rounds, the tier gate and the oscillation switch are recomputed in-process). The one exception is "Memory → backend": it edits dsh\u2019s profile patch, so it needs a dsh web restart (that row says so itself).'))),
         rows,
         h(SubagentOrderBlock),
         h(PresetLayBlock),
-        h(HindsightBlock),
+        h(HindsightBlock, {
+          onSettings: function (s) { setData(function (prev) { return { schema: (prev && prev.schema) || [], settings: s, ok: true } }) },
+          // 块里的「记忆后端」三选一与上面表单里那一行是**同一个键**：把当前值当刷新信号传下去，
+          // 任一处改完，另一处都会重新拉服务端状态（否则界面会自相矛盾）。
+          memoryBackend: String((((data.settings || {}).memory) || {}).backend || ''),
+        }),
         h('div', { className: 'exp-settings-msg' + (err ? ' bad' : '') }, esc(err ? '✗ ' + err : (msg || ''))))
     }
 
@@ -2171,7 +2352,159 @@ window.__ModuleLoader__.load({
         err ? h('div', { className: 'exp-hs-msg bad' }, esc('✗ ' + err)) : null)
     }
 
-    function HindsightBlock() {
+    /**
+     * 记忆后端**三选一**（hindsight / midas / off）—— 就放在 Hindsight 那个块里（用户看诊断的地方）。
+     *
+     * 为什么不能只靠设置表单里那个下拉（`memory.backend` 由 schema 自动生成，确实能改）：
+     *   ① 设置项的值只回答"用户想选什么"；这一块回答"**现在到底走哪个后端**"（profile 补丁有没有真的禁用
+     *      Hindsight、设置与实际是否一致）。两者会分叉（改了没落地 / 补丁被别的工具改回去），界面必须说出来；
+     *   ② **"你选了不使用"与"你选了 Hindsight 但不通"绝不能渲染成同一个灰掉的东西** ——
+     *      前者是你的选择，后者是故障（要去看下面的诊断），处置动作正好相反；
+     *   ③ `midas` 本轮**未接通** ⇒ 明说"只记住了选择、实际仍走 Hindsight"（静默 no-op 是本仓最忌讳的形态）；
+     *   ④ 改这一项**需要重启 dsh web**（profile 补丁在加载 profile 时读）⇒ 回执里的 `needsRestart` 必须显示。
+     *
+     * 三选一的候选值与中文标签都**来自服务端**（`lib/settings.js` 的 spec 是唯一真源）——
+     * 客户端不另写一份值域，也就不可能与设置表单里那一行分叉。
+     *
+     * ⚠️ `refresh`：同一个键有**两个入口**（设置表单里那一行 / 这里的三选一）。在任一处保存后，
+     * 另一处必须重新拉一次服务端状态 —— 否则会出现"上面那一行已经是 off，这一块还写着 Hindsight"的
+     * 界面不一致（本仓名为最难排查的状态）。父组件把当前设置里的值当 `refresh` 传下来，它就是判据。
+     */
+    function MemoryBackendBlock(props) {
+      var onSettings = (props && props.onSettings) || null
+      var refresh = props && props.refresh
+      var sS = useState(null); var st = sS[0], setSt = sS[1]
+      var eS = useState(''); var err = eS[0], setErr = eS[1]
+      var mS = useState(''); var msg = mS[0], setMsg = mS[1]
+      // 结构化回执：只用来把"需重启"提到顶部那块显眼的告警框里（分段文案仍出自 `memoryBackendParts`）。
+      var rcS = useState(null); var receipt = rcS[0], setReceipt = rcS[1]
+      var bS = useState(false); var busy = bS[0], setBusy = bS[1]
+      function load(withProbe) {
+        // `?probe=1` 只有用户点「探测一次启动」时才带：那会在服务端**真的启动一次** Midas 进程做 MCP 握手，
+        // 与 Hindsight 那条连通性探测同一口径（进页面不发任何探测请求）。
+        return fetch('/plugins/dsh-expert-team/memory-backend' + (withProbe ? '?probe=1' : ''))
+          .then(function (r) { return r.json().catch(function () { return null }) })
+          .then(function (dd) { setSt(dd && dd.ok ? dd : null) })
+          .catch(function () { setSt(null) })
+      }
+      useEffect(function () { load() }, [refresh])
+      if (!st) return null   // 读不到状态就不占位、也不假报（与 SubagentOrderBlock 同口径）
+      var values = (st.backends && st.backends.length) ? st.backends : ['hindsight', 'midas', 'off']
+      var labels = st.labels || {}
+      var cur = String(st.stored || 'hindsight')
+      /** 复制一段命令：与「复制路径」同一套（`try/catch` 兜住没有 clipboard 的环境，复制失败不影响任何事）。 */
+      function copyText(s) {
+        try { navigator.clipboard.writeText(String(s == null ? '' : s)) } catch (e) { /* 复制失败不阻断 */ }
+      }
+      function apply(v) {
+        setBusy(true); setErr(''); setMsg(''); setReceipt(null)   // 开新一轮就撤掉旧告警：绝不让人看着上一次的重启要求做这一次的决定
+        fetch('/plugins/dsh-expert-team/memory-backend', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: v }),
+        }).then(function (r) { return r.json().catch(function () { return null }).then(function (dd) { return { ok: r.ok, d: dd } }) }).then(function (res) {
+          setBusy(false)
+          if (!res.ok || !res.d || !res.d.ok) { setErr(((res.d && (res.d.errors || [res.d.error])) || ['保存失败']).join('；')); return }
+          // 让上面那张设置表单同步到新值（"界面显示 A、服务端是 B"是最难排查的状态）。
+          // 有 `onSettings` 时父组件会回传新设置 ⇒ `refresh` 变化 ⇒ 上面的 effect 自己重新拉一次；
+          // 没有的话（本块被单独渲染）就这里自己拉，两种路径都不会停在旧状态。
+          if (res.d.settings && onSettings) onSettings(res.d.settings)
+          else load()
+          setMsg(memoryBackendMsg(res.d))          // 整句回执（含重启那句）—— 与拆分前的输出逐字相同
+          setReceipt(memoryBackendParts(res.d))    // 同一份字面量的分段版：顶部告警框排版用
+        }).catch(function (e) { setBusy(false); setErr(String(e && e.message ? e.message : e)) })
+      }
+      var disp = st.display || {}
+      // 状态文字走**文本级**三档类（ok / bad / warn-text）。⚠️ 这里**必须**是 `exp-hs-warn-text` 而不是
+      // `exp-hs-warn`：后者是一个告警**框**（margin/padding/边框/左重条/渐变背景），挂在这个内联 <span>
+      // 上就会画出用户截图里那个"缺边的破框"—— 三档里**只有 warn 这一档**会这样（ok/bad 本来就只是文字色）。
+      // `.exp-hs-warn` 只允许挂在块级容器上：本块顶部的重启提示、HindsightBlock 里那处当前故障告警框。
+      var cls = disp.level === 'ok' ? 'exp-hs-ok' : (disp.level === 'bad' ? 'exp-hs-bad' : 'exp-hs-warn-text')
+      var unreachableish = st.statusKind === 'on-failing' || st.statusKind === 'on-unconfigured'
+      // ⚠️ 重启提示**必须显眼且靠上**（2026-09-17 用户原话：「重启提示出现了 但是在最下面 用户可能
+      // 看不到 需要有明显提示」）。此前它只是最底下那行绿色回执里的一段 ⇒ 改完一屏之内看不到。
+      // 现在复用本块既有的琥珀色重条（`.exp-hs-warn`）并加粗标题，紧跟在三选一**正下方**。
+      // 文案一个字都不新写：整句仍由 `memoryBackendParts` 产出（标题 = restartHead，原因 = restartWhy）。
+      var restartNotice = (receipt && receipt.restart)
+        ? h('div', { className: 'exp-hs-warn exp-hs-restart', role: 'status' },
+            h('div', { className: 'exp-hs-restart-h' }, esc('⚠ ' + receipt.restartHead)),
+            receipt.restartWhy ? h('div', null, esc(t('原因：', 'Why: ') + receipt.restartWhy)) : null)
+        : null
+      // 底部回执只说告警框**没说**的那半句：重启要求已经显著提示过，同一句话印两遍会让人以为发生了两件事。
+      var bottomMsg = err ? '✗ ' + err : String(msg || '')
+      if (!err && receipt && receipt.restart) bottomMsg = receipt.receipt
+
+      // ── Midas 首装引导（2026-09-19 一期）──────────────────────────────────────────────
+      // 只在**用户真的选了 midas 且还没就绪**时渲染：一个块级 section（不是内联 span —— 内联挂盒子类
+      // 就是 2026-09-17 那个"缺边的破框"的成因）。它是这一期的主要交付物：任何人装上本插件后，
+      // 在这里就能看懂 Midas 是什么、现在卡在哪一步、下一步该敲哪条命令。
+      //
+      // 三条纪律：
+      //   ① **结论在上、动作在下**：状态句仍由上面那一行「实际状态」给（`display`），这里不重写同义句；
+      //   ② **命令全部来自服务端**（`midasSetup.steps`）—— 客户端是手写 bundle、不能 `import lib/`，
+      //      硬编一份就等于"同一件事两个家"，profile 名一变就分叉（中文标签就是这样传过来的）；
+      //   ③ **`unknown` 不给结论也不给命令清单的假安慰**：服务端在那一档会把"探测不可用"说清楚，
+      //      这里照原样呈现（同一份 `steps` 仍在，因为"怎么装"在任何一档都是有用的事实）。
+      var midasSetup = cur === 'midas' ? (st.midasSetup || null) : null
+      var midasGuide = (midasSetup && !midasSetup.ready)
+        ? h('div', { className: 'exp-hs-midas-guide', role: 'status' },
+            h('div', { className: 'exp-hs-midas-guide-h' }, esc(t('Midas 还没接通 —— 按下面三步装好它', 'Midas is not connected yet — three steps to make it work'))),
+            h('div', { className: 'exp-settings-note' }, esc(plainText(t(String((midasSetup.why || {}).zh || ''), String((midasSetup.why || {}).en || (midasSetup.why || {}).zh || ''))))),
+            // 代价说在前面（不吹）：它不做整会话摘要 —— 这是它的设计取舍，不是缺陷，但必须让人知道。
+            h('div', { className: 'exp-settings-note' }, esc(plainText(t(String((midasSetup.tradeoff || {}).zh || ''), String((midasSetup.tradeoff || {}).en || (midasSetup.tradeoff || {}).zh || ''))))),
+            h('ol', { className: 'exp-hs-midas-steps' },
+              (midasSetup.steps || []).map(function (sp, i) {
+                return h('li', { key: 'midas-step-' + i },
+                  h('span', null, esc(plainText(t(String(sp.zh || ''), String(sp.en || sp.zh || ''))))),
+                  sp.command ? h('code', null, esc(String(sp.command))) : null,
+                  sp.command ? h('button', { className: 'exp-hs-copy', onClick: function () { copyText(sp.command) } }, esc(t('复制', 'Copy'))) : null)
+              })),
+            // 找过哪里（诚实：结论从哪来）——`lookedAt` 是服务端截断好的**纯文本**，客户端不拼路径。
+            midasSetup.lookedAt ? h('div', { className: 'exp-settings-note' }, esc(t('已经找过：', 'Already looked in: ') + plainText(midasSetup.lookedAt))) : null,
+            // 探测（用户点了才真的启动一次进程）：这一档才区分得出"装了但起不来"。
+            h('div', { className: 'exp-hs-actions' },
+              h('button', { className: 'exp-hs-btn', disabled: busy, onClick: function () { setBusy(true); load(true).then(function () { setBusy(false) }) } },
+                esc(t('探测一次启动（会真的启动一次 Midas）', 'Probe startup once (really starts Midas once)')))),
+            (midasSetup.start && midasSetup.start.ok === false)
+              ? h('div', { className: 'exp-hs-msg bad' }, esc(t('探测失败：', 'Probe failed: ') + plainText(String(midasSetup.start.error || '')) + (midasSetup.start.stderr ? t('；stderr 摘要：', '; stderr: ') + plainText(String(midasSetup.start.stderr)) : '')))
+              : null,
+            (midasSetup.start && midasSetup.start.ok === true)
+              ? h('div', { className: 'exp-hs-msg' }, esc(t('探测成功：MCP 握手已通过（记忆要重启 dsh web 后才真的走它）。', 'Probe succeeded: the MCP handshake went through (memory only switches after a dsh web restart).')))
+              : null)
+        : null
+
+      return h('div', { className: 'exp-hs-form' },
+        h('div', { className: 'exp-settings-group' }, esc(t('记忆后端 · 三选一', 'Memory backend · choose one'))),
+        h('div', { className: 'exp-hs-row' },
+          h('span', { className: 'exp-hs-label exp-hs-label-mb' }, esc(t('写哪个后端', 'Which backend'))),
+          h('select', { className: 'exp-hs-select exp-hs-select-narrow', value: cur, disabled: busy, onChange: function (e) { apply(e.target.value) } },
+            values.map(function (v) { return h('option', { key: v, value: v }, esc(labels[v] || v)) }))),
+        restartNotice,
+        h('div', { className: 'exp-hs-kv' },
+          h('span', { className: 'exp-hs-k' }, esc(t('实际状态', 'Actual state'))),
+          // `exp-hs-v-status` 只挂这一列：状态是一句中英混排的话，不需要共享的 `word-break:break-all`
+          // （它会把拉丁词从中间劈开）；下一行「profile 补丁」的路径仍用共享的值列规则。
+          h('span', { className: 'exp-hs-v exp-hs-v-status' }, h('span', { className: cls }, esc(plainText(t(String(disp.zh || ''), String(disp.en || disp.zh || ''))))))),
+        h('div', { className: 'exp-hs-kv' },
+          h('span', { className: 'exp-hs-k' }, esc(t('profile 补丁', 'Profile patch'))),
+          h('span', { className: 'exp-hs-v' },
+            h('code', null, esc(String(st.patchPath || ''))),
+            h('span', { className: 'exp-settings-note' }, esc(st.patchExists
+              ? (st.hindsightDisabled ? t('（Hindsight 行已禁用）', ' (the hindsight row is disabled)') : t('（Hindsight 行未禁用）', ' (the hindsight row is not disabled)'))
+              : t('（文件不存在）', ' (file absent)'))))),
+        // Midas 首装引导：摆在「实际状态」那句实话**正下方**（先看到"现在没接通"，紧接着就是"怎么接通"）。
+        midasGuide,
+        // ⚠️ 这一句是这块界面存在的理由之一：把"故障"与"你的选择"分开说，别让人去关一个本来该开的开关。
+        unreachableish
+          ? h('div', { className: 'exp-settings-note' }, esc(t('注意：这与「你选了不使用」不是一回事 —— 你的选择是 Hindsight，只是它可能不通；先看下面的诊断，不要用「不使用」来绕过故障。',
+            'Note: this is NOT the same as choosing "off" — Hindsight IS your selection, it just may be unreachable; read the diagnostics below instead of turning memory off to hide the failure.')))
+          : null,
+        (st.notes && st.notes.length) ? h('ul', { className: 'exp-hs-notes' }, st.notes.map(function (n, i) { return h('li', { key: 'mb' + i }, esc(plainText(n))) })) : null,
+        h('div', { className: 'exp-hs-msg' + (err ? ' bad' : '') }, esc(bottomMsg)))
+    }
+
+    function HindsightBlock(props) {
+      var onSettings = (props && props.onSettings) || null
+      // 当前设置里的后端值 —— 只当"要不要重新拉状态"的刷新信号用（见 MemoryBackendBlock 注释）。
+      var memoryBackend = (props && props.memoryBackend) || ''
       var dS = useState(null); var d = dS[0], setD = dS[1]
       var pS = useState(null); var probed = pS[0], setProbed = pS[1]
       var eS = useState(''); var err = eS[0], setErr = eS[1]
@@ -2256,6 +2589,8 @@ window.__ModuleLoader__.load({
       if (!d) {
         return h('div', { className: 'exp-hs' },
           h('div', { className: 'exp-settings-group' }, esc(t('记忆后端（Hindsight）· 诊断与配置', 'Memory backend (Hindsight) · diagnostics & settings'))),
+          // 三选一自己从 `/memory-backend` 取状态 ⇒ 诊断读不到时**仍然**能选后端（两条路互不阻塞）。
+          h(MemoryBackendBlock, { onSettings: onSettings, refresh: memoryBackend }),
           h('div', { className: 'exp-settings-note' }, esc(err || t('（正在读取记忆后端配置…）', '(loading memory backend…)')))
         )
       }
@@ -2400,10 +2735,21 @@ window.__ModuleLoader__.load({
         h('div', { className: 'exp-hs-msg' + (err ? ' bad' : '') }, esc(err ? '✗ ' + err : (msg || ''))))
       return h('div', { className: 'exp-hs' },
         h('div', { className: 'exp-settings-group' }, esc(t('记忆后端（Hindsight）· 诊断与配置', 'Memory backend (Hindsight) · diagnostics & settings'))),
+        // 三选一摆在最上面：它是"要不要用记忆"这个更上位的问题，诊断回答的是"配好了没有/通不通"。
+        h(MemoryBackendBlock, { onSettings: onSettings, refresh: memoryBackend }),
         rows,
-        h('div', { className: 'exp-settings-note' },
-          esc(t('重启语义：改 serverMode / apiUrl 需重启 dsh web；只改 apiToken 免重启（401 时会重读）。保存前会先校验，并保留文件里其它键；写入是 0600 权限的原子替换；token 的值在任何地方都不会回显（输入框也不预填）。',
-            'Restart semantics: changing serverMode / apiUrl needs a dsh web restart; apiToken alone does not (re-read on 401). Writes are validated first, keep every other key in the file, and replace it atomically with mode 0600. The token value is never echoed anywhere (the field is never pre-filled).'))),
+        // 这段以前是**一整块文字**（用户读不到重点，一屏之内也找不到"要不要重启"）。
+        // 拆成一屏可扫的条目：每条只讲一件事。与三选一顶部那条琥珀色告警**分工明确** ——
+        // 那条是**事件**（这一次真的改了补丁），这里是**一直成立的规则**，所以读起来不重复。
+        h('ul', { className: 'exp-hs-notes' },
+          h('li', null, esc(t('重启语义：改 serverMode / apiUrl 需要重启 dsh web；只改 apiToken 不需要（401 时会重读）。',
+            'Restart semantics: changing serverMode / apiUrl needs a dsh web restart; changing apiToken alone does not (it is re-read on 401).'))),
+          h('li', null, esc(t('上面的「记忆后端」若真的改了 profile 补丁，同样必须重启才生效（改完会在选择器正下方显著提示）。',
+            'If the backend selector above actually changed the profile patch, that also needs a restart (you get a prominent notice right under the selector).'))),
+          h('li', null, esc(t('保存前先校验；写入保留文件里其它键，并以 0600 权限原子替换。',
+            'Writes are validated first, keep every other key in the file, and replace it atomically with mode 0600.'))),
+          h('li', null, esc(t('token 的值在任何地方都不会回显（输入框也不预填）。',
+            'The token value is never echoed anywhere (the field is never pre-filled).')))),
         form,
         h('button', { className: 'exp-settings-retry', onClick: function () { load(true) }, disabled: busy },
           esc(busy ? t('探测中…', 'probing…') : t('检测连通性', 'Check connectivity'))),

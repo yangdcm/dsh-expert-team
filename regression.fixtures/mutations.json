@@ -2163,6 +2163,71 @@
           "replace": "  if (false) { return; } // MUTANT: 去掉「跨工作区不写」守卫"
         }
       ]
+    },
+    {
+      "id": "M166-memory-backend-hindsight-stays-disabled",
+      "title": "记忆后端：选了 `hindsight`/`midas` 时不再清除 `- id: hindsight` 的禁用 ⇒ 设置页说记忆开着，实际整条后端是死的",
+      "why": "2026-09-17 新增（本轮「记忆后端三选一」的判别变异）。`off` 的落地方式就是往 dsh profile 补丁里写 `- id: hindsight` + `disabled: true`；反方向的唯一正确动作是把那一行去掉（当它是我们的规范形态时）或把那个值改成 `disabled: false`。变异让这个分支恒不成立（改成 `if (true)`）⇒ 用户从「不使用」切回「Hindsight」时，补丁文件**原样保留禁用**，而设置页显示「Hindsight」：界面上记忆是开的、实际一条都不会写。这个缺陷**只有测试能抓住** —— `planMemoryBackendPatch()` 出口那道自检只审『这次生成的新文本』，而变异走的是 `changed:false` 的早退分支，压根不经过自检。预期红（**2026-09-17 用注入法逐条数过，实际是 5 项，不是最初写的 3 项**）：`非规范形态的 disabled:true ⇒ 改成 false（恢复启用）`、`hindsight ⇒ 删掉本插件追加的那一行，文件逐字回到原样`、`midas ⇒ 清除禁用（本轮未接线，实际记忆仍要走 Hindsight）`，以及**计划层之外**那两条：`hindsight ⇒ 恢复原样（逐字）`（`applyMemoryBackend` 真的写盘那一段也走同一个分支 ⇒ 文件不会被恢复）与 `真的有改动时才 needsRestart:true`（`changed:false` ⇒ `needsRestart:false`，用户不会被提示重启）。**必须仍然绿**：`off（首次）⇒ ok + changed` 与 `off（第二次）⇒ changed:false 且文本逐字不变（幂等）`（`off` 方向不受影响）。",
+      "test": "memory-backend.test.mjs",
+      "edits": [
+        {
+          "file": "lib/memory-backend.js",
+          "find": "  if (!hit || hit.disabled !== true) {",
+          "replace": "  if (true) { // MUTANT: 选 hindsight/midas 时不再清除「禁用 Hindsight」那一行"
+        }
+      ]
+    },
+    {
+      "id": "M167-memory-backend-selector-missing-from-main-branch",
+      "title": "记忆后端三选一被从**主分支**的渲染里删掉 ⇒ 设置页只剩只读诊断、用户没有入口去选后端（`MemoryBackendBlock` 变成死代码）",
+      "why": "2026-09-17 新增（独立只读核验指出：本轮最要紧的那块 UI 当时**零断言覆盖**，因此补了 ⑦b 一节源码级接线断言，并按本仓纪律给这条棘轮配一个能与它对应的判别变异）。变异把**主分支**里那一次 `h(MemoryBackendBlock, …)` 删掉（只留 `rows,`）。后果不是崩溃，而是**静默降级**：`!d` 的加载分支仍会渲染它，但正常路径（诊断读到的绝大多数时候）走的是主分支 ⇒ 用户看到的是一块没有后端选择器的诊断面板，而**没有任何测试会红** —— 函数还在、`node --check` 绿、纯函数断言全绿。预期红：`两个分支各渲染一次（!d 的加载分支 + 主分支 —— 诊断读不到时**仍然**能选后端）`（命中从 2 变 1）与 `两个分支的渲染顺序断言（因为上面没命中 2 处渲染，这一节无法成立）`（共 2 项；顺序断言依赖切片，切片不成立时**显式记一条红**而不是静默跳过）。**必须仍然绿**：`三选一组件真的被渲染（不是只定义了函数）`（加载分支那一处仍在 —— 这正是「只查存在」抓不住这个缺陷的证明）与 `候选值首选服务端给的 st.backends`。",
+      "test": "memory-backend.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "        h(MemoryBackendBlock, { onSettings: onSettings, refresh: memoryBackend }),\n        rows,",
+          "replace": "        rows,"
+        }
+      ]
+    },
+    {
+      "id": "M168-memory-backend-restart-callout-loses-role-status",
+      "title": "重启告警框丢了 `role: status` ⇒ 看起来还是那块琥珀色告示，但它不再是**可被读屏/自动化识别的状态区**",
+      "why": "2026-09-17 新增（判别变异，护航 ⑦c）。起因是**用户真机截图报的事故**：「重启提示出现了 但是在最下面 用户可能看不到 需要有明显提示」—— 修复把重启要求从块底那行绿字提成了选择器正下方的琥珀色告警框。这条框是**有条件**渲染的运行时状态（只在这一次真的改了 profile 补丁、因而需要重启时出现），所以它必须自报身份：`role: status` 让读屏软件与自动化在它出现时能读到，而不是只能靠肉眼扫到一个色块。变异只删掉这个属性：**没有任何测试会红** —— 选择器、类名、文案、位置、样式全在，`node --check` 绿，肉眼看起来一模一样。预期红（`--only M168` 实测 1 项）：`重启提示渲染成 .exp-hs-warn.exp-hs-restart 且带 role: status`。**必须仍然绿**：`告警框有条件渲染（判据 receipt && receipt.restart）`、`告警框是返回树里与选择器那一行平级的兄弟节点`、`需重启 dsh web 才生效 在**这条回执链**里只有一处` —— 它们证明抓住这条变异靠的是**属性级**断言，不是位置或文案断言顺手命中的。",
+      "test": "memory-backend.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "className: 'exp-hs-warn exp-hs-restart', role: 'status'",
+          "replace": "className: 'exp-hs-warn exp-hs-restart'"
+        }
+      ]
+    },
+    {
+      "id": "M169-memory-backend-label-width-back-to-ancestor-selector",
+      "title": "三选一的标签宽度退回**祖先选择器**（`.exp-hs-mb .exp-hs-label`）⇒ 标签退回 104px、又与下方 152px 键列错开（用户截图里那两条竖线的缺陷原样复现）",
+      "why": "2026-09-17 新增（**独立核验指出的结构性风险**，不是假想）：第一版修复图省事写成 `.exp-hs-mb .exp-hs-label{flex:0 0 152px}`，只因为 `MemoryBackendBlock` 现在恰好只渲染一个 `.exp-hs-label` 才没问题 —— 而 `HindsightBlock` 里那张配置表单（部署形态 / 服务地址 / 访问令牌）用的是**同一个共享类**、是兄弟节点；一旦那张表单被搬进三选一这块，三个无关标签会**静默**变宽。变异把规则改回那种写法（元素上的专用类 `exp-hs-label-mb` 仍在，但 CSS 不再匹配它）⇒ 标签退回 104px、与下方 152px 键列不再对齐，而**没有任何断言会红** —— 规则在场、类名在场、`node --check` 绿、渲染不报错。预期红（`--only M169` 实测 3 项）：`.exp-hs-label-mb 恰好 2 处（1 条 CSS + 1 个 JSX 挂点）`（2 → 1）、`样式表里**逐字**有这条规则：.exp-hs-label.exp-hs-label-mb`、`样式表里没有 .exp-hs-mb 这类**祖先依赖**的选择器（版式不靠 JSX 结构碰巧成立）`。**必须仍然绿**：`配置表单那三行仍是**裸** .exp-hs-label ⇒ 宽度 104px 不变`（本变异只动 CSS，JSX 侧那个计数不受影响 —— 这条断言红不红，说明的是「变异有没有碰到 JSX」，不是「缺陷抓没抓住」）与 `共享的 .exp-hs-label 基础规则逐字未动`。",
+      "test": "memory-backend.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "'.exp-hs-label.exp-hs-label-mb{flex:0 0 152px;max-width:152px}' +",
+          "replace": "'.exp-hs-mb .exp-hs-label{flex:0 0 152px;max-width:152px}' +"
+        }
+      ]
+    },
+    {
+      "id": "M170-memory-backend-restart-callout-title-not-bold",
+      "title": "重启告警框的标题**不再加粗**（`font-weight:700` 被删）⇒ 框还在、位置还在，但「第一眼读到要不要重启」这个修复目的落空",
+      "why": "2026-09-17 新增（判别变异 —— 刻意说明：这一条守的是**覆盖度**，不是「已发生过的 bug」，不是假想事故，写清楚免得后人误读）。用户的要求是「需要有明显提示」，而「明显」落到实现上是两件事：**位置**（选择器正下方，已有断言）与**视觉重量**（琥珀色重条 + 加粗标题 + 比正文大一档的字号）。变异只删掉 `.exp-hs-restart-h` 的 `font-weight:700` ⇒ 告警框仍在原位、文案一字不差、`node --check` 绿，只有「第一眼」没了。这正是 ⑦c 那一节最初只查**选择器文本存在**（`css.includes('.exp-hs-restart-h{')`）时**抓不住**的缺陷（独立核验用同一个反例证明过）⇒ 断言因此改成钉**逐字声明**。预期红（`--only M170` 实测 1 项）：`样式表里**逐字**有这条规则：.exp-hs-restart-h（加粗标题 ——「第一眼读到要不要重启」就靠这一条）`。**必须仍然绿**：`样式表里逐字有 .exp-hs-warn.exp-hs-restart` 与 `client-css-integrity.test.mjs` 的 `10 条曾静默丢失的规则全部在场` —— 后者只审「片段有没有进样式表」、不审声明内容，这正是本变异需要 ⑦c 这种**声明级**断言的原因。",
+      "test": "memory-backend.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "'.exp-hs-restart-h{font-weight:700;margin-bottom:2px}' +",
+          "replace": "'.exp-hs-restart-h{margin-bottom:2px}' +"
+        }
+      ]
     }
   ]
 }
