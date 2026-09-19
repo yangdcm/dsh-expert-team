@@ -17,10 +17,13 @@
 //     这一节就是防"函数写出来了但没人调用"这个已发生过的缺陷类；
 //   · 读不到/跑不了的环境一律**显式跳过并打印原因**，绝不静默算通过。
 //
-// 变异验证：见 `regression.fixtures/mutations.json` 的 **M166**（选 hindsight/midas 时不再清除禁用）。
+// 变异验证：见 `regression.fixtures/mutations.json` 的 **M166**（`hindsight`/`off` 时不再把
+// `- id: hindsight` 那一行恢复成**启用**态 ⇒ 用户切回 `hindsight` 后补丁仍保留禁用：界面说一个后端、
+// 文件里编码的是另一个）与 **M172**（**已接线**的 `midas` 档不把 Hindsight 置为禁用 ⇒ 两个后端同时
+// 活着、而界面只说了一个 —— 正是二期要修的那个缺陷）。
 // 运行：node memory-backend.test.mjs
 
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +37,8 @@ import {
   MIDAS_INSTALL_COMMAND, midasDbPath, memoryProfileName, midasBinaryCandidates, midasInstallDir,
   midasPatchRowLines, findMidasInsertRow, discoverMidasBinary, probeMidasBinarySync,
   probeMidasStart, classifyMidasReadiness, midasOnboardingSteps, _resetMidasDiscoveryCache,
+  // ── ⑪ 「off 之后那一行还在」：纯函数规划器 + 落地动作（2026-09-19）────────────────────
+  planMidasRowRemoval, removeMidasRow,
 } from './lib/memory-backend.js';
 import { SETTINGS_SPEC, defaultSettings, validateValue } from './lib/settings.js';
 
@@ -187,10 +192,39 @@ console.log('\n③ planMemoryBackendPatch：三种后端 / 最小保真 / 幂等
   check(n1.ok && hindsightDisabledIn(n1.text) && (n1.text.match(/- id: hindsight/g) || []).length === 1,
     '行存在但没有 disabled 键 ⇒ 补一行 `disabled: true`（不制造第二个同名行）', JSON.stringify(n1.text));
 
-  // ⑥ midas：**不许**顺手把 Hindsight 关掉（否则用户同时失去两个后端），且要能反向恢复
+  // ⑥ midas：**没接线**时只许把 Hindsight 那一行恢复成启用（绝不许把它留在禁用态）。
+  // ⚠️ 这一格的期望在二期（三档都管两行的真二选一）**改写过**：旧写法（"midas ⇒ 清除禁用（本轮未接线）"）
+  // 描述的是**一期"只做加法"**的语义。二期的规则是条件性的：`midas` **没接线**（没传 `opts.midas`
+  // ⇒ 不会写 MCP 行）时**不许**把 Hindsight 关掉 —— 二进制没找到却顺手关了 Hindsight，用户就
+  // **同时失去两个后端**，那是最坏的结果。所以这一格的动作是"恢复启用"而不是"保持禁用"。
   const m1 = planMemoryBackendPatch(off.text, 'midas');
-  check(m1.ok && m1.changed && !hindsightDisabledIn(m1.text), 'midas ⇒ 清除禁用（本轮未接线，实际记忆仍要走 Hindsight）', '');
-  check(planMemoryBackendPatch(REAL_PATCH, 'midas').changed === false, 'midas（本来就没禁用）⇒ 无改动', '');
+  check(m1.ok && m1.changed && !hindsightDisabledIn(m1.text),
+    'midas（**未接线**）⇒ 把 Hindsight 那一行恢复成启用（安全不变量：没有 Midas 可接时绝不许两个后端一起没有）', JSON.stringify(m1.text));
+  check(m1.ok && m1.text === REAL_PATCH,
+    'midas（未接线）⇒ 删掉的是**本模块自己的规范形态**那一行，文件逐字回到原样（不碰无关内容）', JSON.stringify(m1.text));
+  check(m1.text !== null && !midasRowInText(m1.text),
+    'midas（未接线）⇒ **不写** MCP 行（写一条指向不存在命令的行 = 假接通），所以这里不可能有 `- insert:` 包裹的 mcp-midas', '');
+  // 安全不变量的**幂等面**：本来就"没有禁用"时，这一档一个字都不该动（否则设置页每保存一次就写一次盘）。
+  const m1b = planMemoryBackendPatch(REAL_PATCH, 'midas');
+  check(m1b.ok && m1b.changed === false && m1b.text === REAL_PATCH,
+    'midas（未接线 + 本来就没禁用）⇒ 无改动（幂等，也不假报已保存）', '');
+
+  // ⑥b midas **已接线**（传了 `opts.midas`）= 新语义下"两件一起写"的**健康格**：
+  // Hindsight 那一行变 `disabled: true` ∧ `- insert:` 包裹的 mcp-midas 行**在**。
+  // 与 ⑥ 合起来才盖住新契约的**条件性**：同一个 `midas` 目标、两种接线状态，结论必须**相反** ——
+  // 只钉其中一边就会让另一边（"未接线却把 Hindsight 关了"这个最坏结果）偷偷溜过去。
+  const wiredOpts = { midas: { binPath: '/fake/midas-memory-mcp/dist/bin/midas-mcp.js', installDir: '/fake/midas-memory-mcp', dbPath: '/u/.dsh/storages/midas/memory.sqlite3' } };
+  const m2 = planMemoryBackendPatch(REAL_PATCH, 'midas', wiredOpts);
+  check(m2.ok && m2.changed && hindsightDisabledIn(m2.text),
+    'midas（**已接线**）⇒ Hindsight 那一行被写成 `disabled: true`（这一档是**真二选一**，不是加法）', JSON.stringify(m2.text));
+  check(m2.text !== null && midasRowInText(m2.text),
+    'midas（已接线）⇒ 同时插入 `- insert:` 包裹的 mcp-midas 行（"两件一起写"缺一不可）', '');
+  check(m2.text !== null && m2.text.startsWith(REAL_PATCH) && !topLevelMidasRowInText(m2.text),
+    'midas（已接线）⇒ 原有内容逐字保留在前，且**不产生**裸顶层行（那种写法 dsh 会静默跳过）', '');
+  // 从"已经是禁用态"的补丁出发：已接线这一档**保留**禁用 —— 这正是上面那条"条件性"的判别点。
+  const m3 = planMemoryBackendPatch(off.text, 'midas', wiredOpts);
+  check(m3.ok && m3.changed && hindsightDisabledIn(m3.text) && midasRowInText(m3.text),
+    'midas（已接线）+ 补丁本来已禁用 ⇒ 禁用**保留**、MCP 行插入（"未接线 ⇒ 恢复启用 / 已接线 ⇒ 保留禁用"的判别点）', JSON.stringify(m3.text));
 
   // ⑦ 嵌套 `insert:` 里的 disabled 属于**内层**，不许被当成顶层那一行的状态
   const nested = '- insert:\n    - id: hindsight\n      disabled: true\n';
@@ -207,6 +241,151 @@ console.log('\n③ planMemoryBackendPatch：三种后端 / 最小保真 / 幂等
     const r = planMemoryBackendPatch(REAL_PATCH, bad);
     check(r.ok === false && r.text === null && r.errors.length > 0, `非法后端 ${JSON.stringify(bad)} ⇒ ok:false 且不产出文本`, r.errors[0] || '');
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────
+// ③b **新排他契约**（二期：三档都是"两行都管"的真二选一）—— 这一节是本次语义变更的**主要证据**。
+//
+// 为什么值得单独立一节：变更前 `midas` 是**加法**（只插 MCP 行、Hindsight 照旧活着），于是补丁里
+// 可以同时躺着两个后端，而设置页只说了一个 —— 那正是用户报的缺陷。新契约要求**每一档都把两行**
+// 写到一个确定状态，所以判据必须**两维同时**钉：`- id: hindsight` 的启用位 **×** `- insert:` 包裹的
+// mcp-midas 行在不在。只钉其中一维，另一半（"界面说一个、文件里两个"）就会悄悄回来。
+//
+// 四个格子（与 `planMemoryBackendPatch` 文档里的表逐字对应）：
+//   · `hindsight`        ⇒ Hindsight 行**启用** ∧ MCP 行**移除**
+//   · `midas` 已接线      ⇒ Hindsight 行**禁用** ∧ MCP 行**在**（新语义下的**健康形态**）
+//   · `midas` 未接线      ⇒ Hindsight 行**启用**（安全不变量） ∧ MCP 行**不写**
+//   · `off`              ⇒ Hindsight 行**禁用** ∧ MCP 行**移除**
+// ─────────────────────────────────────────────────────────────────────────────────────
+console.log('\n③b 新排他契约：三档都是"两行都管"的真二选一（两维同时钉）');
+{
+  const cOpts = { midas: { binPath: '/fake/midas-memory-mcp/dist/bin/midas-mcp.js', installDir: '/fake/midas-memory-mcp', dbPath: '/u/.dsh/storages/midas/memory.sqlite3' } };
+  const HEAD = '# a top-level YAML array of load-overrides, disables, and inserts\n- id: ui-workflow-run\n  disabled: true\n';
+  // 一份"两个后端都在"的起点：Hindsight 被禁用 + MCP 行在。三档各自要把它收敛到自己的目标态。
+  const BOTH_LIVE = HEAD + '- id: hindsight\n  disabled: true\n- insert:\n    - id: mcp-midas\n      command: node\n';
+  check(hindsightDisabledIn(BOTH_LIVE) && midasRowInText(BOTH_LIVE), '夹具前提成立：起点是"两行都在"（Hindsight 禁用 + MCP 行在）', '');
+
+  // ① `hindsight` ⇒ **移除**那个 `- insert:` 包裹的 mcp-midas 行（真二选一的另一半）
+  const t1 = planMemoryBackendPatch(BOTH_LIVE, 'hindsight');
+  check(t1.ok && t1.changed && !hindsightDisabledIn(t1.text), '`hindsight` ⇒ Hindsight 行**启用**（不再是禁用态）', JSON.stringify(t1.text));
+  check(t1.text !== null && !midasRowInText(t1.text) && !topLevelMidasRowInText(t1.text),
+    '`hindsight` ⇒ **移除** `- insert:` 包裹的 mcp-midas 行（含顶层写法一起审 —— 留着就是"文件里还有第二个后端"）', JSON.stringify(t1.text));
+
+  // ② `off` ⇒ 同样**移除**那一行（另一半与 `hindsight` 同形，只有 Hindsight 那一维不同）
+  const t2 = planMemoryBackendPatch(BOTH_LIVE, 'off');
+  check(t2.ok && t2.changed && hindsightDisabledIn(t2.text), '`off` ⇒ Hindsight 行**禁用**', JSON.stringify(t2.text));
+  check(t2.text !== null && !midasRowInText(t2.text) && !topLevelMidasRowInText(t2.text),
+    '`off` ⇒ **移除** `- insert:` 包裹的 mcp-midas 行（"关掉记忆"却留着 MCP 行 = 界面说关着、进程照样起来）', JSON.stringify(t2.text));
+
+  // ③ `midas` **已接线** ⇒ 新语义的**健康形态**：Hindsight 禁用 ∧ MCP 行在
+  const t3 = planMemoryBackendPatch(HEAD, 'midas', cOpts);
+  check(t3.ok && t3.changed && hindsightDisabledIn(t3.text) && midasRowInText(t3.text),
+    '`midas`（已接线）⇒ Hindsight 行 `disabled: true` **且** MCP 行在场（这是**健康**形态，不是矛盾）', JSON.stringify(t3.text));
+
+  // ④ `midas` **未接线** ⇒ 安全不变量：Hindsight 行**保持启用**（绝不许两个后端一起没有）
+  const t4 = planMemoryBackendPatch(BOTH_LIVE, 'midas');   // 未接线：起点两行都在
+  check(t4.ok === false || !hindsightDisabledIn(t4.text || ''),
+    '`midas`（**未接线**）⇒ 绝**不**把 Hindsight 留在禁用态（安全不变量：宁可保持 Hindsight 活着，也不许两个后端一起没有）',
+    t4.ok ? JSON.stringify(t4.text) : `ok:false（拒绝写入也是可接受的保守结局）：${(t4.errors || [])[0] || ''}`);
+  // 未接线 + 起点里**没有** MCP 行 ⇒ 这一档必须**恢复启用**且无副作用（最常见的那条路径）
+  const t4b = planMemoryBackendPatch(planMemoryBackendPatch(HEAD, 'off').text, 'midas');
+  check(t4b.ok && !hindsightDisabledIn(t4b.text) && !midasRowInText(t4b.text),
+    '`midas`（未接线）+ 补丁里只有我们自己那一行 ⇒ Hindsight **恢复启用**、不写 MCP 行', JSON.stringify(t4b.text));
+
+  // ⑤ 幂等：三档各跑两次 ⇒ 第二次 `changed:false` 且文本**逐字**不变（不许每保存一次就写一次盘）
+  for (const [name, opts] of [['hindsight', undefined], ['off', undefined], ['midas（已接线）', cOpts]]) {
+    const target = name === 'midas（已接线）' ? 'midas' : name;
+    const once = planMemoryBackendPatch(HEAD, target, opts);
+    const twice = planMemoryBackendPatch(once.text, target, opts);
+    check(once.ok && twice.ok && twice.changed === false && twice.text === once.text,
+      `幂等：\`${name}\` 跑第二次 ⇒ changed:false 且文本逐字不变`, `changed=${twice.changed}`);
+  }
+
+  // ⑥ 出口自检**两维都审**：`hindsight` / `off` 要求"没有 mcp-midas 行"，而**顶层**写法（缩进 0 的
+  // load-override，dsh 会静默跳过）**也算**违反契约 ⇒ 必须 ok:false / 一个字节都不落盘。
+  // ⚠️ 这条只对"这一档会真的改写文本"的夹具成立 —— `changed:false` 的早退**不经过**自检（见下面
+  // ⑦ 那条 TODO 旁边记的审计缺口），所以夹具必须让 Hindsight 那一维**真的**需要改（这里是 `off`：
+  // 起点没有禁用行 ⇒ 要追加 ⇒ changed:true ⇒ 自检运行）。
+  const topLevelOnly = '- id: mcp-midas\n  name: x\n';
+  const t6 = planMemoryBackendPatch(topLevelOnly, 'off');
+  check(t6.ok === false && t6.text === null && t6.changed === false,
+    '出口自检：`off` + 补丁里只剩**顶层** `- id: mcp-midas` ⇒ **拒绝写入**（顶层写法虽不生效，但"这一档要求没有 MCP 行"这句承诺必须是真的）',
+    (t6.errors || [])[0] || '');
+  check(/顶层/.test((t6.errors || []).join('')) && /拒绝写入/.test((t6.errors || []).join('')),
+    '出口自检的理由**点名**是"顶层写法"那一维（不是一句笼统的失败 —— 否则用户无从下手）', (t6.errors || [])[0] || '');
+
+  // ⑦ `effective`：由 `readMemoryBackendState` 算出的四格（与 `planMemoryBackendPatch` 的目标态对齐）
+  const wiredHome = await makeHome(HEAD + '- id: hindsight\n  disabled: true\n- insert:\n    - id: mcp-midas\n      command: node\n');
+  const unwiredHome = await makeHome(HEAD);
+  const eWired = await readMemoryBackendState({ settings: { memory: { backend: 'midas' } }, env: {}, home: wiredHome.root, midas: MIDAS_FOUND, mcpClientInstalled: true });
+  check(eWired.effective === 'midas' && eWired.notWired === false && eWired.statusKind === 'midas-ready',
+    '`effective`：midas 已接线（二进制 + MCP 客户端 + 补丁行都在）⇒ 真的在走 midas', `effective=${eWired.effective} kind=${eWired.statusKind}`);
+  const eUnwired = await readMemoryBackendState({ settings: { memory: { backend: 'midas' } }, env: {}, home: unwiredHome.root, midas: MIDAS_ABSENT, mcpClientInstalled: false });
+  check(eUnwired.effective === 'hindsight' && eUnwired.notWired === true,
+    '`effective`：midas 未接线 ⇒ 如实回 hindsight（"选了什么"≠"生效了什么"）', `effective=${eUnwired.effective}`);
+  const eOff = await readMemoryBackendState({ settings: { memory: { backend: 'off' } }, env: {}, home: wiredHome.root });
+  check(eOff.effective === 'off' && eOff.hindsightDisabled === true,
+    '`effective`：off + 补丁确实禁用 ⇒ off', `effective=${eOff.effective}`);
+  const eHs = await readMemoryBackendState({ settings: { memory: { backend: 'hindsight' } }, env: {}, home: unwiredHome.root });
+  check(eHs.effective === 'hindsight' && eHs.hindsightDisabled === false,
+    '`effective`：hindsight + 补丁没有禁用 ⇒ hindsight', `effective=${eHs.effective}`);
+
+  // ⑧ `consistent`：设置值 vs 补丁事实**是否已对齐**。
+  //
+  // ── 这一节的历史（必须留着，否则下一个人会把正确的判据"修"回去）────────────────────────
+  // 语义变更落地时，这句判据**没跟上**，旧式子是
+  //   `stored === 'off' ? hindsightDisabled === true : hindsightDisabled === false`
+  // —— 它把"非 `off` 就要求 Hindsight 那一行没被禁用"当成通则（旧语义下对：那时只有 `off` 会去
+  // 禁用它）。新语义下落地 `midas` 是**同时**写两件事（插 MCP 行 ∧ 把 Hindsight 行
+  // `disabled: true`），于是**配置正确的已接线 Midas 恰恰 `hindsightDisabled === true`** ⇒
+  // 健康态被旧式子判成"不一致"（实测：`statusKind='midas-ready'`、`display.level='ok'`、
+  // `effective='midas'` 全是健康值，而 `consistent` 回 `false`）。
+  // 那次**故意没有**写断言替缺陷背书（本仓纪律：绝不写与实现相反 / 给缺陷发绿卡的断言），
+  // 只留了一条类型断言 + TODO。生产代码随后**已修**（判据按 `stored` 分档，见 `lib/memory-backend.js`
+  // 里 `consistent` 那一段的摘要表）⇒ 下面把它按**正确行为**钉住：这正是"先报告、不背书、
+  // 修好再补断言"这条纪律收尾的样子。
+  check(eWired.effective === 'midas' && eWired.hindsightDisabled === true && eWired.consistent === true,
+    '`consistent`：midas 已接线 + Hindsight 确实被禁用 ⇒ **true**（这一格是健康态，不许被判成不一致 —— 旧式子在这里回 false）',
+    `consistent=${eWired.consistent}（期望 true）hd=${eWired.hindsightDisabled} eff=${eWired.effective}`);
+  // 与 `conflict` 那一档对照：`hindsight` + 行被禁用 ⇒ 不一致（这条一直对，留着防"把判据改成恒真"）。
+  const eConflictHome = await makeHome(HEAD + '- id: hindsight\n  disabled: true\n');
+  const eConflict = await readMemoryBackendState({ settings: { memory: { backend: 'hindsight' } }, env: {}, home: eConflictHome.root });
+  check(eConflict.statusKind === 'conflict' && eConflict.consistent === false,
+    '`consistent`：hindsight + 补丁把那一行禁用了 ⇒ **false**（`conflict` 那一档，两者必须同时成立）',
+    `consistent=${eConflict.consistent} kind=${eConflict.statusKind}`);
+  // `off` 未落地 ⇒ 不一致（判据的**另一头**，与上面那条一起说明它不是恒真/恒假）。
+  const eOffNotApplied = await readMemoryBackendState({ settings: { memory: { backend: 'off' } }, env: {}, home: unwiredHome.root });
+  check(eOffNotApplied.consistent === false && eOffNotApplied.statusKind === 'off-not-applied',
+    '`consistent`：off + 补丁还没禁用 ⇒ **false**（与上面两条合起来钉住"取值随事实变"，不是常量）',
+    `consistent=${eOffNotApplied.consistent} kind=${eOffNotApplied.statusKind}`);
+  // ⑨ `midas` **未接线**的两格（F/G）—— 判据在这里**刻意不看** Hindsight 那一行。
+  // 先说这段的历史，因为它差点变成一条"替未定决策背书"的断言：判据第一次修好时**注释**说 G 格该是
+  // `true`（理由：未接线时问"该不该禁用"仍回答"该"，只是我们**不代用户动手**），而当时的**代码**
+  // `(stored === 'off' || (stored === 'midas' && !notWired))` 把未接线归进 else 支 ⇒ 要求
+  // `hindsightDisabled === false` ⇒ 实测回 `false`（**注释与代码互相矛盾**）。
+  // 那一刻按纪律**没有**写任一边的断言 —— 写了就是替未定的产品决策发绿卡。生产代码随后把这个决策
+  // **定下来了**：未接线 ⇒ 该 flag 恒 `true`（"Midas 没接上"这一件事实只有一个家 `notWired`，
+  // `effective` 与 `consistent` 在它上面**结构对齐**）。所以下面按**已经定下来的行为**钉两格。
+  const eUnwiredEnabledHome = unwiredHome;                                   // Hindsight 行**没**被禁用
+  const eUnwiredEnabled = await readMemoryBackendState({ settings: { memory: { backend: 'midas' } }, env: {}, home: eUnwiredEnabledHome.root, midas: MIDAS_ABSENT, mcpClientInstalled: false });
+  const eUnwiredDisabledHome = await makeHome(HEAD + '- id: hindsight\n  disabled: true\n');   // 行**被**禁用
+  const eUnwiredDisabled = await readMemoryBackendState({ settings: { memory: { backend: 'midas' } }, env: {}, home: eUnwiredDisabledHome.root, midas: MIDAS_ABSENT, mcpClientInstalled: false });
+  check(eUnwiredEnabled.notWired === true && eUnwiredEnabled.hindsightDisabled === false && eUnwiredEnabled.consistent === true,
+    '`consistent`：midas **未接线** + Hindsight 行启用 ⇒ **true**（未接线这一格判据不看那一行：我们既不写 MCP 行、也不代用户关 Hindsight）',
+    `consistent=${eUnwiredEnabled.consistent} hd=${eUnwiredEnabled.hindsightDisabled}`);
+  check(eUnwiredDisabled.notWired === true && eUnwiredDisabled.hindsightDisabled === true && eUnwiredDisabled.consistent === true,
+    '`consistent`：midas **未接线** + Hindsight 行被禁用 ⇒ **true**（两格同值 —— 这一档的判据**刻意不看**那一行，`notWired` 才是判据）',
+    `consistent=${eUnwiredDisabled.consistent} hd=${eUnwiredDisabled.hindsightDisabled}`);
+  // ⚠️ 这条是上面两格的**判别力来源**：若有人把判据改回"看那一行"，这两格会变成 `true`/`false`
+  // 而本条恒真 —— 所以必须同时断言"两格同值"，光钉其中一格抓不住"判据又依赖上那一行了"。
+  check(eUnwiredEnabled.consistent === eUnwiredDisabled.consistent,
+    '反空转：未接线两格（行启用 / 行禁用）的 `consistent` **必须同值** —— 不同值就说明判据又偷偷依赖上 Hindsight 那一行了',
+    `${eUnwiredEnabled.consistent} vs ${eUnwiredDisabled.consistent}`);
+  // 另有意的**不对称**（不是 bug，写清楚免得后人"修"掉）：`consistent` 不再恒等于 `level === 'ok'` ——
+  // F/G 两格都是 `warn`（Midas 确实没装、该告警）而本 flag 回 `true`。告警归 `level`，一致性归本 flag。
+  check(eUnwiredEnabled.consistent === true && eUnwiredEnabled.display.level === 'warn',
+    '有意的不对称：未接线这一格 `consistent:true` 而 `display.level:"warn"` —— 「设置与文件是否对齐」与「这件事健不健康」是两个问题，不许合并',
+    `consistent=${eUnwiredEnabled.consistent} level=${eUnwiredEnabled.display.level}`);
 }
 
 console.log('\n④ 拒绝看不懂的形态（宁可不写，也不猜着合并）');
@@ -255,16 +434,23 @@ console.log('\n⑤ readMemoryBackendState：设置值 vs **实际生效状态**�
   check(s4.effective === 'hindsight',
     'midas 未就绪（二进制缺失）⇒ effective=hindsight（"选了什么"≠"生效了什么"）', `effective=${s4.effective}`);
 
-  // ④b 镜像格（**独立核验指出的未披露缺口**）：`stored=midas` **且 Hindsight 那一行被禁用**时，
-  // `effective` 仍必须是 `hindsight` —— 用户根本不在 Hindsight 上，所以"那一行被禁用"这件事
-  // 不改变"此刻真正在走哪个后端"；Midas 未接通 ⇒ 记忆走的仍是 Hindsight。（旧实现在这一格回
-  // `'off'`，而同一个对象里的文案写着"仍走 Hindsight" ⇒ 自相矛盾。）
+  // ④b `stored=midas` **且 Hindsight 那一行被禁用**：`effective` 仍必须是 `hindsight` —— 用户根本不在
+  // Hindsight 上，所以"那一行被禁用"这件事不改变"此刻真正在走哪个后端"；Midas 未接通 ⇒ 记忆走的仍是
+  // Hindsight。（旧实现在这一格回 `'off'`，而同一个对象里的文案写着"仍走 Hindsight" ⇒ 自相矛盾。）
+  //
+  // ⚠️ 二期语义变更后，这一格的**性质**变了，注释必须跟着改（旧注释把它叫"镜像格 / 自相矛盾的那种
+  // 组合"，那在一期是对的，在二期是**错的**）：现在 `{Hindsight 行被禁用} × {mcp-midas 行在}` 恰恰是
+  // `stored=midas` **已接线**时的**健康形态**（`planMemoryBackendPatch` 的 `midas` 档就是"两件一起写"）。
+  // 所以"Hindsight 行被禁用"不再是异常组合 —— 它只是**另一维**的事实（`hindsightDisabled` 回答），
+  // 与 `effective`（此刻真的在走谁）是两层语义。这里保留的**缺陷**是它当年真正抓的那一条：
+  // **`effective` 不许回 `off`** —— 用户选的是 Midas，而 Midas 未接通 ⇒ 走的是 Hindsight，
+  // 说"关着"就是假话。这条纪律与新语义**不冲突**，且比以往更要紧。
   // ⚠️ `s4` 用的 `a.root` 是 REAL_PATCH（**没有**禁用 Hindsight 行）⇒ 覆盖不到这一格，这也是它
   // 一直没被发现的原因；这里必须另造一份"hindsight 行 disabled: true"的补丁夹具。
   const s4bHome = await makeHome('- id: ui-workflow-run\n  disabled: true\n- id: hindsight\n  disabled: true\n');
   const s4b = await readMemoryBackendState({ settings: { memory: { backend: 'midas' } }, env: {}, home: s4bHome.root, midas: MIDAS_ABSENT, mcpClientInstalled: false });
   check(s4b.hindsightDisabled === true && s4b.statusKind === 'midas-not-installed' && s4b.notWired === true,
-    '镜像格前提成立：stored=midas + 二进制缺失 + **Hindsight 行确实被禁用** ⇒ midas-not-installed / notWired:true',
+    '前提成立：stored=midas + 二进制缺失 + **Hindsight 行确实被禁用** ⇒ midas-not-installed / notWired:true',
     `hindsightDisabled=${s4b.hindsightDisabled} statusKind=${s4b.statusKind}`);
   check(s4b.effective === 'hindsight',
     'midas 未就绪 **且 Hindsight 行被禁用** ⇒ effective 仍是 hindsight（**绝不是 off**：用户不在 Hindsight 上，那一行禁不禁用改变不了此刻走的是谁）',
@@ -760,10 +946,14 @@ console.log('\n⑦e 深色主题覆写：body[data-ds-dark-theme]（宿主三选
     ['.exp-hs-bad', 'color:#ff7b7b', '失败 / 未配置那一档'],
     ['.exp-hs-msg.bad', 'color:#ff7b7b', '块底回执的失败那一档'],
     ['.exp-hs-btn.danger', 'color:#ff7b7b', '「清除令牌」这类危险按钮的文字色'],
+    // 第 9 条（2026-09-19）：这个类是**新加**的，给"选了 off、但补丁里那个 `- insert:` 包裹的
+    // `mcp-midas` 行还在"那条诚实话用。它与 `.exp-hs-warn-text` 的浅色基值逐字相同（`#8a6100`）
+    // ⇒ 深色下同样会掉到 3.29:1 ⇒ **必须**在这个集合里，否则"只给浅色不给深色"能整条溜过去。
+    ['.exp-hs-offwarn', 'color:#f7ad31', '「off 但 mcp-midas 行还在」那条警告的琥珀色文字'],
   ];
   const ruleIn = (s, sel, decl) => s.includes(`body[data-ds-dark-theme] ${sel}{${decl}}`);
   // 覆盖集合本身也钉住条数：不许靠「把查不动的那条从集合里删掉」把测试改绿（本仓的棘轮口径）。
-  check(DARK_INK.length === 8, '覆盖集合本身被钉成 8 条（少查一条也得显式改这个数字 ⇒ 改绿不是静默的）', `len=${DARK_INK.length}`);
+  check(DARK_INK.length === 9, '覆盖集合本身被钉成 9 条（少查一条也得显式改这个数字 ⇒ 改绿不是静默的；2026-09-19 由 8 改 9：新增 `.exp-hs-offwarn`）', `len=${DARK_INK.length}`);
   const missingDark = DARK_INK.filter(([sel, decl]) => !ruleIn(css, sel, decl));
   check(missingDark.length === 0,
     `深色覆写**成组**覆盖记忆后端全部 ${DARK_INK.length} 条状态墨水（只补 warn-text 一条 = 局部修复，本条必须红）`,
@@ -788,7 +978,7 @@ console.log('\n⑦e 深色主题覆写：body[data-ds-dark-theme]（宿主三选
   const lostAfterStrip = DARK_INK.filter(([sel, decl]) => !ruleIn(noMedia, sel, decl));
   const writtenIntoMedia = lostAfterStrip.filter(([sel, decl]) => ruleIn(css, sel, decl));
   check(noMedia.length < css.length && lostAfterStrip.length === 0,
-    '8 条覆写都**不在**历史 `@media (prefers-color-scheme:dark)` 块内（剥掉媒体块后仍在 ⇒ 判据真的与 OS 无关）',
+    '9 条覆写都**不在**历史 `@media (prefers-color-scheme:dark)` 块内（剥掉媒体块后仍在 ⇒ 判据真的与 OS 无关）',
     lostAfterStrip.length
       ? `剥后丢失 ${lostAfterStrip.length} 条（其中 ${writtenIntoMedia.length} 条确实被写进了媒体块，${lostAfterStrip.length - writtenIntoMedia.length} 条本来就没有）：${lostAfterStrip.map(([s]) => s).join(' / ')}`
       : `剥后 len=${noMedia.length} < ${css.length}`);
@@ -833,10 +1023,10 @@ console.log('\n⑦e 深色主题覆写：body[data-ds-dark-theme]（宿主三选
     '通用剥块器（`@media`/`@supports` 一律剥）**真的剥掉了东西**（反空转：剥块器成了 no-op 时本条必须红，否则下一条会因为"什么都没剥"而空转通过）',
     `剥后 len=${noAtBlocks.length} vs 原 ${css.length}（缩短 ${css.length - noAtBlocks.length} 字节）`);
   check(lostAfterAtStrip.length === 0,
-    '8 条覆写都在**顶层级联**里：把**任意** `@media`/`@supports`（不只是 `prefers-color-scheme`）的内容整块剥掉后这 8 条**仍然在** ⇒「写进 `@media print{}` / `@media (min-width:99999px){}` 让深色修复静默失效」这条假绿路径被封死',
+    '9 条覆写都在**顶层级联**里：把**任意** `@media`/`@supports`（不只是 `prefers-color-scheme`）的内容整块剥掉后这 9 条**仍然在** ⇒「写进 `@media print{}` / `@media (min-width:99999px){}` 让深色修复静默失效」这条假绿路径被封死',
     lostAfterAtStrip.length
       ? `剥后丢失 ${lostAfterAtStrip.length} 条（这些规则被写进了某个 @media/@supports 块：字符串看得见、浏览器里不生效）：${lostAfterAtStrip.map(([s]) => s).join(' / ')}`
-      : `剥后 len=${noAtBlocks.length} < ${css.length}，8 条全在顶层`);
+      : `剥后 len=${noAtBlocks.length} < ${css.length}，9 条全在顶层`);
 
   // ── ⑥（H4）与 ⑦（H5）共用同一个花括号配平解析器 ────────────────────────────────────────────
   // 为什么自己解析而不是继续用正则：下面两条要问"某条规则的 `color` 是什么"与"谁在源码顺序上更靠后"，
@@ -878,13 +1068,13 @@ console.log('\n⑦e 深色主题覆写：body[data-ds-dark-theme]（宿主三选
     });
     const noBase = lightPairs.filter((p) => !p.base || !p.light);
     check(noBase.length === 0,
-      '8 条覆写的**浅色基规则全部解析到了**（抽不到就红 —— 本仓反假绿纪律：抽不到不是"跳过"，是"判据失效"）',
+      '9 条覆写的**浅色基规则全部解析到了**（抽不到就红 —— 本仓反假绿纪律：抽不到不是"跳过"，是"判据失效"）',
       noBase.length
         ? `抽不到 ${noBase.length} 条：${noBase.map((p) => p.sel).join(' / ')}`
-        : `8 条浅色基准：${lightPairs.map((p) => `${p.sel}=${p.light}`).join(' / ')}`);
+        : `9 条浅色基准：${lightPairs.map((p) => `${p.sel}=${p.light}`).join(' / ')}`);
     const notDiff = lightPairs.filter((p) => p.light && p.light === p.decl.slice('color:'.length));
     check(notDiff.length === 0,
-      'NEGATIVE ×8：逐条断言**浅色值 ≠ 深色值**（不只是"等于 `DARK_INK` 里钉的那个常量"—— 把深色值写成浅色值、顺手把常量也改掉，本条也必须红）',
+      'NEGATIVE ×9：逐条断言**浅色值 ≠ 深色值**（不只是"等于 `DARK_INK` 里钉的那个常量"—— 把深色值写成浅色值、顺手把常量也改掉，本条也必须红）',
       notDiff.length
         ? `浅=深 ${notDiff.length} 条（等于没修）：${notDiff.map((p) => `${p.sel}（两边都是 ${p.light}）`).join(' / ')}`
         : lightPairs.map((p) => `${p.sel}: ${p.light} ≠ ${p.decl.slice('color:'.length)}`).join('；'));
@@ -896,13 +1086,13 @@ console.log('\n⑦e 深色主题覆写：body[data-ds-dark-theme]（宿主三选
     const darkRules = parsedRules.filter((r) => /^body\[data-ds-dark-theme\]/.test(r.selector) && r.top && hasColor(r));
     const unexpected = darkRules.filter((r) => !expected.some((e) => e.selector === r.selector && r.body === e.decl));
     check(unexpected.length === 0,
-      '除了这 8 条，样式表里**没有别的** `body[data-ds-dark-theme] …{…color:…}` 规则（整条规则逐字比对，不只看子串 —— 多一条更高特异度/更靠后的深色规则就红）',
+      '除了这 9 条，样式表里**没有别的** `body[data-ds-dark-theme] …{…color:…}` 规则（整条规则逐字比对，不只看子串 —— 多一条更高特异度/更靠后的深色规则就红）',
       unexpected.length
         ? `多出 ${unexpected.length} 条：${unexpected.map((r) => `${r.selector}{${r.body}}`).join(' / ')}`
         : `恰好 ${darkRules.length} 条，逐字与 DARK_INK 一一对应`);
     // 反空转：上一条自己**真的比过 8 条**（否则"一条都没匹配到"会让它空转通过）。
     check(darkRules.length === expected.length,
-      '反空转：上面那条「不多不少」确实比过 8 条深色规则（命中数不为 8 ⇒ 红，避免空转通过）', `命中 ${darkRules.length}`);
+      '反空转：上面那条「不多不少」确实比过 9 条深色规则（命中数不为 9 ⇒ 红，避免空转通过）', `命中 ${darkRules.length}`);
     // 顺序：同一 `body[data-ds-dark-theme]` 前缀下特异度相同 ⇒ 源码**晚**者胜；深色规则若排在自己的浅色基
     // 规则之前，就会被浅色规则原样盖掉（字符串全在、屏幕上是浅色）。所以逐条要求 浅.pos < 深.pos。
     const outOfOrder = lightPairs.map((p) => {
@@ -911,7 +1101,7 @@ console.log('\n⑦e 深色主题覆写：body[data-ds-dark-theme]（宿主三选
       return { p, lightPos, darkPos };
     }).filter((x) => x.lightPos < 0 || x.darkPos < 0 || x.lightPos > x.darkPos);
     check(outOfOrder.length === 0,
-      '8 条覆写在**源码顺序上都晚于**自己的浅色基规则（同特异度前缀内晚者胜 ⇒ 有人把它挪到基规则之前会被浅色原样盖掉，本条必须红）',
+      '9 条覆写在**源码顺序上都晚于**自己的浅色基规则（同特异度前缀内晚者胜 ⇒ 有人把它挪到基规则之前会被浅色原样盖掉，本条必须红）',
       outOfOrder.length
         ? `顺序倒置 ${outOfOrder.length} 条：${outOfOrder.map((x) => `${x.p.sel}（浅 ${x.lightPos} / 深 ${x.darkPos}）`).join(' / ')}`
         : lightPairs.map((p) => `${p.sel}: 浅 ${parsedRules.indexOf(p.base)} < 深 ${parsedRules.findIndex((r) => r.selector === `body[data-ds-dark-theme] ${p.sel}`)}`).join('；'));
@@ -1229,10 +1419,10 @@ console.log('\n⑦e 深色主题覆写：body[data-ds-dark-theme]（宿主三选
     // 反空转 ×2：8 条覆写本体都定位到（否则算不出源码位置、顺序判据空转）；候选扫描真的扫过 ≥12 个分支
     // （真实表实测 16；扫到 0 条也会"绿" ⇒ 那是空转）。低于阈值要**显式**改这个数字，改绿不是静默的。
     check(ovLocated === DARK_INK.length && shadowExamined >= 12,
-      '⑧ 反空转：8 条覆写的**规则本体**都定位到了（拿不到本体就算不出它的源码位置 ⇒ 顺序判据会空转），且候选扫描真的扫过 ≥12 个"可能命中同一元素且声明 color/all/fill"的分支（扫到 0 条也会绿，那是空转）',
+      '⑧ 反空转：9 条覆写的**规则本体**都定位到了（拿不到本体就算不出它的源码位置 ⇒ 顺序判据会空转），且候选扫描真的扫过 ≥12 个"可能命中同一元素且声明 color/all/fill"的分支（扫到 0 条也会绿，那是空转）',
       `定位 ${ovLocated}/${DARK_INK.length}；扫到候选分支 ${shadowExamined} 个`);
     check(shadowThreats.length === 0,
-      '⑧（H5）8 条深色覆写**逐条**都没有被任何规则赢过 —— 判据不再看"带不带 `body[data-ds-dark-theme]` 前缀"，而是对每条覆写扫**全部**声明 `color`（或 `all:` / `-webkit-text-fill-color`）、且选择器**可能**命中同一元素的规则，要求没有一条在「特异度更高 / 同特异度但源码更靠后 / 带 !important」上赢过它（`html body .exp-hs-kv span.exp-hs-ok{color:#1a7f5a}` 这类**无前缀**规则 = (0,2,3) > (0,2,1)，正是旧口径看不见的那一类）',
+      '⑧（H5）9 条深色覆写**逐条**都没有被任何规则赢过 —— 判据不再看"带不带 `body[data-ds-dark-theme]` 前缀"，而是对每条覆写扫**全部**声明 `color`（或 `all:` / `-webkit-text-fill-color`）、且选择器**可能**命中同一元素的规则，要求没有一条在「特异度更高 / 同特异度但源码更靠后 / 带 !important」上赢过它（`html body .exp-hs-kv span.exp-hs-ok{color:#1a7f5a}` 这类**无前缀**规则 = (0,2,3) > (0,2,1)，正是旧口径看不见的那一类）',
       shadowThreats.length
         ? `被赢过 ${shadowThreats.length} 处：${shadowThreats.join(' / ')}`
         : `扫过 ${shadowExamined} 条候选分支（启发式可能命中），无一条能赢过它对应的覆写`);
@@ -1326,10 +1516,10 @@ console.log('\n⑦e 深色主题覆写：body[data-ds-dark-theme]（宿主三选
       else if (propsText[vStart] !== '{') inlineThreats.push(`${valText}：style 不是对象字面量，判不了 ⇒ 宁可误报：${String(styleVal).slice(0, 60)}`);
     }
     check(inkMounts >= 12,
-      '⑨ 反空转：真的认出了 ≥12 个"挂着这 8 个墨水类之一"的渲染位点（本轮实测 21；并发改动后一度到 24 —— 阈值 12 留足余量；认不出就说明扫描口径失效，下面那条会空转）',
+      '⑨ 反空转：真的认出了 ≥12 个"挂着这 9 个墨水类之一"的渲染位点（本轮实测 21；并发改动后一度到 24 —— 阈值 12 留足余量；认不出就说明扫描口径失效，下面那条会空转）',
       `认出 ${inkMounts} 个位点`);
     check(inlineThreats.length === 0,
-      '⑨（N-3）这 8 个墨水类**挂在哪个元素上，那个元素就不带行内 color**（行内声明直接赢过任何非 important 的样式表声明 ⇒ ⑧ 看不见它；client.js 里另有 30 处行内 color 用在**别的**组件上，所以这里按元素判、不一刀切）',
+      '⑨（N-3）这 9 个墨水类**挂在哪个元素上，那个元素就不带行内 color**（行内声明直接赢过任何非 important 的样式表声明 ⇒ ⑧ 看不见它；client.js 里另有 30 处行内 color 用在**别的**组件上，所以这里按元素判、不一刀切）',
       inlineThreats.length ? `${inlineThreats.length} 处行内色：${inlineThreats.join(' / ')}` : `扫过 ${inkMounts} 个目标渲染位点，props 里都没有行内 color`);
   }
 }
@@ -1467,9 +1657,16 @@ console.log('\n⑩ Midas 一期：分层发现 / - insert: 补丁行 / 五态就
   const p4 = planMemoryBackendPatch(REAL_PATCH, 'midas', { midas: { binPath: '', installDir: '', dbPath: '' } });
   check(p4.ok === false && p4.text === null && /缺一不可/.test(p4.errors.join('')),
     '三要素缺任一 ⇒ **拒绝写入**（写一条缺 DB 的行等于让记忆悄悄蒸发；写一条缺路径的行等于假接通）', p4.errors[0]);
-  const p5 = planMemoryBackendPatch('- id: hidden\n  disabled: true\n', 'midas', midasOpts);
-  check(p5.ok && !hindsightDisabledIn(p5.text) && midasRowInText(p5.text),
-    '順手把 Hindsight 的禁用清掉（midas 与 hindsight 是**唯一的两个记忆后端**：不能两个都没了）', '');
+  // ⚠️ 这一格**改写过**（二期）：旧夹具是 `- id: hidden` + `disabled: true`，而 `hidden` **不是**
+  // `hindsight` ⇒ 它从来没有走到"Hindsight 那一行"的分支上，"顺手清掉禁用"那句断言于是**恒真**（空转：
+  // 那两条 check 在旧夹具上无论实现怎么改都绿）。新语义下 `midas` **已接线**这一档的动作恰好相反
+  // ——**置为禁用**（真二选一）—— 所以夹具必须是真的 `- id: hindsight` 行，断言的是"禁用被**设置**了、
+  // 且 MCP 行在场"。反面（未接线 ⇒ 恢复启用）由 ⑥ 那一组守着；两条合起来才是完整契约。
+  const p5 = planMemoryBackendPatch('- id: hindsight\n  disabled: false\n  name: someone-elses-row\n', 'midas', midasOpts);
+  check(p5.ok && p5.changed && hindsightDisabledIn(p5.text),
+    'midas（已接线）⇒ 把**真的** `hindsight` 行置为禁用（配了真夹具 ⇒ 不再是恒真的空转断言）', JSON.stringify(p5.text));
+  check(p5.text !== null && midasRowInText(p5.text) && /name: someone-elses-row/.test(p5.text),
+    'midas（已接线）⇒ MCP 行在场，且那一行**别的键原样保留**（只改 disabled 这一个值，不整行删）', '');
   const topOnly = '- id: mcp-midas\n  name: x\n- id: other\n  disabled: false\n';
   const p6 = planMemoryBackendPatch(topOnly, 'midas', midasOpts);
   check(p6.ok && midasRowInText(p6.text) && (p6.notes || []).some((n) => /顶层/.test(n)),
@@ -1672,6 +1869,484 @@ console.log('\n⑩ Midas 一期：分层发现 / - insert: 补丁行 / 五态就
       if (oldBin === undefined) delete process.env[MIDAS_BIN_ENV]; else process.env[MIDAS_BIN_ENV] = oldBin;
       try { _live.loadSettingsSync(); } catch { /* 恢复缓存失败不影响判定 */ }
     }
+  }
+}
+
+// ── ⑪ 「选了 off，但补丁里 `mcp-midas` 那一行还在」—— 一键移除 + 诚实披露（2026-09-19）──────
+// 为什么单开一大节：这是本轮修掉的**真实缺陷**，而它的失败形态**四层同时成立**才叫修好，缺一层
+// 都会退回原样或引入新的伤害：
+//   · 纯函数层：`planMidasRowRemoval()` 必须**删得对**（独苗连表头删、有兄弟留表头、形态不认识就拒写）
+//     —— 这是唯一会真的改用户补丁文件的地方，写错一次就是数据丢失；
+//   · 状态层：`readMemoryBackendState()` 必须**如实说**（`off` 不再是"一件事"，而是
+//     「Hindsight 停没停」×「那个 MCP 行还在不在」两件）—— 旧实现把那行的事实折进 `stored==='midas'`
+//     分支里 ⇒ 选 `off` 时界面写着"不会有任何记忆调用"，而 MCP 服务照样起、17 个工具照样注册（**假话**）；
+//   · 路由层：动作必须真的挂在**既有**路由上（新开一条路由会撞 `routes-shared.test.mjs` 的 15 条棘轮）；
+//   · 客户端层：只在服务端说"能安全删"时才给按钮，且**防御性读法**（旧服务端没有这个字段 ⇒ 一个字不渲染）。
+// 下面四块按这个顺序钉。**所有新断言都必须能在实现回退时变红** —— 配套的判别变异是 **M171**。
+console.log('\n⑪ off 之后补丁里那个 mcp-midas 行还在（一键移除 + 诚实披露）');
+{
+  // 与实现无关的极简判定：这段文本里还有没有 `- insert:` 表头 / 顶层 `- ` 项。
+  const hasInsertHeader = (t) => /^- insert:\s*$/m.test(String(t));
+  const hasTopLevelEntry = (t) => /^-\s/m.test(String(t));
+
+  // ── A. `planMidasRowRemoval()`（纯函数）—— 全部会真的改用户文件的判定都在这里 ──────────────
+  {
+    // 真实形状的一块（逐字取自 `midasPatchRowLines()` 的输出 —— 那才是本机补丁文件里真实的样子）。
+    // ⚠️ 用例 ⑤ 的"假阳性守卫"要求这块**必须是真实的**：`args:` 底下有一条**标量**序列项
+    // （`          - '/some/bin/midas-mcp'`），它缩进比子项深、又以 `- ` 开头 —— 任何"更深的 `- `
+    // 就是别人的条目"的粗糙判据都会把这份**完全合法**的文件误拒（实测踩到过）。
+    const REAL_BLOCK = ['- insert:',
+      `    - id: ${MIDAS_PATCH_ROW_ID}`,
+      "      name: '@deepseek-ai/dsh-mcp-client'",
+      '      config:',
+      "        transport: 'stdio'",
+      "        serverName: 'midas'",
+      "        command: 'node'",
+      '        args:',
+      "          - '/some/bin/midas-mcp'",
+      "        cwd: '/some/install'",
+      '        env:',
+      `          ${MIDAS_DB_ENV}: '/some/memory.sqlite3'`,
+    ].join('\n') + '\n';
+    const SCALAR_ARG_LINE = "          - '/some/bin/midas-mcp'";
+    check(REAL_BLOCK.includes(SCALAR_ARG_LINE) && /^\s*-\s+'/.test(SCALAR_ARG_LINE),
+      '夹具前提：真实块里确实有一条**标量**序列项（`args:` 的取值）—— 用例⑤ 的假阳性守卫靠它成立',
+      SCALAR_ARG_LINE.trim());
+
+    // ① 独苗：`- insert:` 底下只有 `mcp-midas` 一条 ⇒ 连表头一起删掉
+    const only = `- id: ui-workflow-run\n  disabled: true\n${REAL_BLOCK}`;
+    const r1 = planMidasRowRemoval(only);
+    check(r1.ok === true && r1.changed === true && r1.text !== null
+      && !r1.text.includes(MIDAS_PATCH_ROW_ID) && !hasInsertHeader(r1.text),
+      '独苗：`- insert:` 底下只有 mcp-midas ⇒ ok:true / changed:true，产物里**没有** mcp-midas、**表头也没了**（留下一个没有子项的空容器只会误导人）',
+      JSON.stringify(r1.text));
+    check(r1.text === '- id: ui-workflow-run\n  disabled: true\n',
+      '独苗：其余行**逐字保留**（删除动作只在它声明要改的那一处落笔）', JSON.stringify(r1.text));
+
+    // ② 同级兄弟在**后面** ⇒ 只删这一条，表头留下、兄弟逐字不动
+    const sibAfter = ['- insert:',
+      `    - id: ${MIDAS_PATCH_ROW_ID}`,
+      "      name: 'a'",
+      '    - id: other-insert',
+      "      name: 'b'",
+    ].join('\n') + '\n';
+    const r2 = planMidasRowRemoval(sibAfter);
+    check(r2.ok === true && r2.changed === true && !r2.text.includes(MIDAS_PATCH_ROW_ID),
+      '兄弟在**后面**：只删 mcp-midas 这一块（ok:true / changed:true，产物里没有它）', JSON.stringify(r2.text));
+    check(hasInsertHeader(r2.text) && r2.text.includes("    - id: other-insert\n      name: 'b'"),
+      '兄弟在**后面**：`- insert:` 表头**保留**、兄弟项**逐字不动**（`insert` 是数组，删表头 = 把别人的条目一起删了）',
+      JSON.stringify(r2.text));
+
+    // ③ 同级兄弟在**前面** ⇒ 同上（两种相对顺序都要核 —— 只测一种会让"只看相邻行"的写法蒙混过关）
+    const sibBefore = ['- insert:',
+      '    - id: other-insert',
+      "      name: 'b'",
+      `    - id: ${MIDAS_PATCH_ROW_ID}`,
+      "      name: 'a'",
+    ].join('\n') + '\n';
+    const r3 = planMidasRowRemoval(sibBefore);
+    check(r3.ok === true && r3.changed === true && !r3.text.includes(MIDAS_PATCH_ROW_ID),
+      '兄弟在**前面**：同样只删 mcp-midas 这一块（ok:true / changed:true）', JSON.stringify(r3.text));
+    check(hasInsertHeader(r3.text) && r3.text.includes("    - id: other-insert\n      name: 'b'"),
+      '兄弟在**前面**：表头保留、兄弟项逐字不动（与用例②同一条纪律，两个方向都不许丢数据）', JSON.stringify(r3.text));
+
+    // ④ 畸形形态（更深缩进的 `- <key>:`）⇒ **拒绝写入**。
+    // ⚠️ 这是**健壮性护栏**，不是活跃路径：`- insert:` 在缩进 0、子项在缩进 4，子项内部再出现一条
+    // 缩进更深的 `- id: x` 映射项在合法 YAML 里没有位置 —— `js-yaml` / `yaml` v2 都拒收，
+    // **DSH 自己在启动时就会抛** `bad indentation of a sequence entry`。也就是说这种文件根本进不了
+    // "运行中的 dsh"。那为什么还要测：因为规划器此刻**块尾不可信**（`findMidasInsertRow()` 会把
+    // 更深缩进的行算进这一块），兄弟普查看不见被吞进来的同缩进条目 ⇒ 若不拒绝，删表头就会把
+    // `- id: other` **一起删掉**并报 changed:true。删别人的数据是最坏的结果，所以这里宁可什么都不做。
+    const malformed = '- insert:\n  - id: mcp-midas\n    - id: other\n';
+    const r4 = planMidasRowRemoval(malformed);
+    check(r4.ok === false && r4.text === null && r4.changed === false,
+      '畸形形态（块内更深缩进的 `- id: …`）⇒ **拒绝写入**（ok:false / text 恒为 null / changed:false：一个字节都不落盘）',
+      JSON.stringify({ ok: r4.ok, text: r4.text, changed: r4.changed }));
+    check(r4.errors.length > 0 && r4.errors.join(' ').includes('拒绝写入'),
+      '畸形形态：拒绝是**有理由**的（错误里明说"拒绝写入"，不是静默返回 null）', r4.errors[0] || '');
+    check(r4.text === null || !String(r4.text).includes('- id: other'),
+      '畸形形态：邻项 `- id: other` **没有被销毁**（被吞进来的条目必须原样活着 —— 这正是"宁可拒写"要保住的东西）',
+      JSON.stringify(r4.text));
+
+    // ⑤ ★关键假阳性守卫★：真实块里那条 `args:` 下的**标量**序列项**不得**被判成"别人的条目"。
+    // 名字起清楚：这一条要是红了，说明真的那份 cordis.patch.yml 会被**误拒**（功能整个不可用）。
+    const fullPatch = `# a top-level YAML array of load-overrides, disables, and inserts\n- id: ui-workflow-run\n  disabled: true\n${REAL_BLOCK}`;
+    const r5 = planMidasRowRemoval(fullPatch);
+    check(r5.ok === true,
+      '★假阳性守卫★：`args:` 下的**标量**序列项（`- \'/some/bin/midas-mcp\'`）**不得**被当成"别人的条目" ⇒ ok:true（这一条红了 = 真实补丁文件会被误拒，功能整个不可用）',
+      JSON.stringify({ ok: r5.ok, errors: r5.errors.slice(0, 1) }));
+    check(r5.changed === true && r5.text === '# a top-level YAML array of load-overrides, disables, and inserts\n- id: ui-workflow-run\n  disabled: true\n',
+      '★假阳性守卫★：同一份真实补丁删完之后，注释与既有顶层项**逐字保留**（不是"为了过关而拒绝"）',
+      JSON.stringify(r5.text));
+
+    // ⑥ 本来就没有那一行 ⇒ 幂等不动，文本逐字返回（**不假报成功**）
+    const noRow = '- id: ui-workflow-run\n  disabled: true\n';
+    const r6 = planMidasRowRemoval(noRow);
+    check(r6.ok === true && r6.changed === false && r6.text === noRow,
+      '没有 mcp-midas 行 ⇒ ok:true / changed:false，文本**逐字**返回原样（没改动就不写盘、也不假报成功）',
+      JSON.stringify({ changed: r6.changed, same: r6.text === noRow }));
+
+    // ⑦ 幂等：连调两次，第二次必须 changed:false 且文本与第一次产物逐字相同
+    const r7a = planMidasRowRemoval(fullPatch);
+    const r7b = planMidasRowRemoval(r7a.text);
+    check(r7b.changed === false && r7b.text === r7a.text,
+      '幂等：对同一份输入连调两次，第二次 changed:false 且文本与第一次产物**逐字相同**（否则设置页每点一次就写一次盘）',
+      JSON.stringify({ changed: r7b.changed, same: r7b.text === r7a.text }));
+
+    // ⑧ 流式 YAML ⇒ 拒绝（本模块只认块式；`parseRows` 只扫**顶层**项，所以这一条必须用
+    // **顶层**的流式行来触发 —— 见下面那条"嵌套流式行"的说明，别把两者混成一条）。
+    const flow = '- id: ok-row\n- {id: mcp-midas}\n';
+    const r8 = planMidasRowRemoval(flow);
+    check(r8.ok === false && r8.text === null,
+      '流式 YAML（顶层 `- {id: …}`）⇒ ok:false / text:null（形态不认识就不猜着合并，一个字节不落盘）',
+      JSON.stringify({ ok: r8.ok, text: r8.text }));
+    // ⚠️ **实测口径**（与 `parseRows` 的实际射程对齐，不写想当然的那条）：流式判定发生在
+    // `parseRows` 扫描**顶层数组项**时，所以**嵌套**在 `- insert:` 底下的流式行 `- {id: mcp-midas}`
+    // **不报错**；而 `findMidasInsertRow()` 只认 `^\s+- id: mcp-midas$` 这种**块式**写法 ⇒ 它
+    // 看不见这一行 ⇒ 走"本来就没有那一行"的早退（`ok:true, changed:false`，**文本逐字返回**）。
+    // 这不是缺陷（那一行本来就不会被 dsh 认成 MCP 挂载行），但**必须如实钉住**：它正是"看不见 =
+    // 不动手"的正当形态，而不是"被悄悄删掉了"。
+    const nestedFlow = '- insert:\n  - {id: mcp-midas}\n';
+    const r8b = planMidasRowRemoval(nestedFlow);
+    check(r8b.ok === true && r8b.changed === false && r8b.text === nestedFlow,
+      '嵌套流式行（`- insert:` 底下的 `- {id: mcp-midas}`）：`findMidasInsertRow()` 只认块式 ⇒ 看不见它 ⇒ 走"本来就没有"的早退（ok:true / changed:false / 文本**逐字**返回原样）—— 看不见就不动手，绝不猜着删',
+      JSON.stringify({ ok: r8b.ok, changed: r8b.changed, same: r8b.text === nestedFlow }));
+
+    // ⑨ 补丁里**只有**那条 midas insert ⇒ 产物恰好是 `'[]'`。
+    // 为什么必须钉这一个字面量：**空文件、或只剩注释**会让 DSH 启动时直接抛（顶层数组为空）；
+    // `[]` 才是"零个覆盖项"的合法写法。写成空串就等着宿主开机失败。
+    const onlyMidas = `- insert:\n    - id: ${MIDAS_PATCH_ROW_ID}\n      name: 'a'\n`;
+    const r9 = planMidasRowRemoval(onlyMidas);
+    check(r9.ok === true && r9.changed === true && r9.text === '[]',
+      '补丁里只有那条 midas insert ⇒ 产物**恰好**是 `[]`（合法空数组；空文件/只剩注释会让 dsh 启动时抛）',
+      JSON.stringify(r9.text));
+
+    // ⑩ 表头与子项之间夹着注释/空行（模板里就有）⇒ 不许误判成"没有表头"，也不许留下无主的空容器
+    const gap = `- insert:\n  # mcp client\n    - id: ${MIDAS_PATCH_ROW_ID}\n      name: 'a'\n`;
+    const r10 = planMidasRowRemoval(gap);
+    check(r10.ok === true && r10.changed === true && !r10.text.includes(MIDAS_PATCH_ROW_ID),
+      '表头与子项之间夹着注释/空行 ⇒ ok:true，且没有把"表头就在那儿"误判成"没有表头"（判据是**结构回溯**，不是看相邻行）',
+      JSON.stringify(r10.text));
+    check(!hasInsertHeader(r10.text) && !hasTopLevelEntry(r10.text) && r10.text === '[]',
+      '间隔行形态：**不留**没有子项的 `- insert:` 空容器（夹在中间的空行/注释跟着表头一起删 —— 留着会变成无主的孤儿注释）',
+      JSON.stringify(r10.text));
+  }
+
+  // ── B. `readMemoryBackendState()` —— **诚实契约**（这一节直接对应原缺陷）────────────────────
+  {
+    const MIDAS_ROW_BLOCK = ['- insert:',
+      `    - id: ${MIDAS_PATCH_ROW_ID}`,
+      "      name: '@deepseek-ai/dsh-mcp-client'",
+      '      config:',
+      '        args:',
+      "          - '/some/bin/midas-mcp'",
+    ].join('\n') + '\n';
+    const OFF_DONE = '- id: ui-workflow-run\n  disabled: true\n- id: hindsight\n  disabled: true\n';
+
+    // ⑪ `stored:'off'` + hindsight 确实禁用 + **那一行还在** ⇒ 必须是那个新结论，而不是"已关闭"
+    const liveHome = await makeHome(OFF_DONE + MIDAS_ROW_BLOCK);
+    const s11 = await readMemoryBackendState({ settings: { memory: { backend: 'off' } }, env: {}, home: liveHome.root });
+    check(s11.statusKind === 'off-midas-row-live',
+      'stored=off + hindsight 已禁用 + mcp-midas 行还在 ⇒ statusKind=**off-midas-row-live**（旧实现回 `off`，界面于是说"不会有任何记忆调用"——假话）',
+      s11.statusKind);
+    check(s11.midasRowPresent === true && s11.midasRowRemovable === true,
+      '同一格：midasRowPresent:true + midasRowRemovable:true（"那一行还在"与"能一键删掉"都是**独立事实**，一起带出去）',
+      JSON.stringify({ present: s11.midasRowPresent, removable: s11.midasRowRemovable }));
+    check(s11.midasRowId === MIDAS_PATCH_ROW_ID && s11.midasServerName === MIDAS_SERVER_NAME,
+      '行 id / 服务名由服务端给（客户端是手写 bundle、不能 `import lib/` ⇒ 少给一个字段它就会就地硬编一份）',
+      `${s11.midasRowId} / ${s11.midasServerName}`);
+
+    // ⑫ `stored:'off'` + hindsight 禁用 + **没有**那一行 ⇒ 必须回**旧**的 `off` 与**逐字**旧文案
+    const cleanHome = await makeHome(OFF_DONE);
+    const s12 = await readMemoryBackendState({ settings: { memory: { backend: 'off' } }, env: {}, home: cleanHome.root });
+    check(s12.statusKind === 'off' && s12.midasRowPresent === false,
+      'stored=off + hindsight 已禁用 + **没有** mcp-midas 行 ⇒ 仍是**旧**的 `off`（新分支不许把干净的那一格也染成告警）',
+      `statusKind=${s12.statusKind} present=${s12.midasRowPresent}`);
+    check(s12.display.zh === '已关闭：profile 补丁里 `hindsight` 行是 `disabled: true` ⇒ 重启 dsh web 后不会有任何记忆调用。',
+      '同一格：**逐字**保留旧文案（这一格不涉及 mcp-midas，那句话在它里面是真的；有别的断言钉着它，这里再钉一次防漂移）',
+      s12.display.zh);
+
+    // ⑬ `midasRowPresent` 必须**与 `stored` 无关** —— 这正是原缺陷的根：旧实现把它折进
+    // `stored === 'midas'` 那一支里 ⇒ 选 hindsight / off 时**根本看不到**那一行。
+    const hHome = await makeHome(`- id: hindsight\n  disabled: false\n${MIDAS_ROW_BLOCK}`);
+    const s13h = await readMemoryBackendState({ settings: { memory: { backend: 'hindsight' } }, env: {}, home: hHome.root, hindsight: { exists: true, failing: false } });
+    check(s13h.midasRowPresent === true,
+      'stored=**hindsight** 时 midasRowPresent 仍是 true（与选了什么无关 —— 它是补丁文件的事实；旧实现只在 `stored===\'midas\'` 分支里算它）',
+      JSON.stringify({ stored: s13h.stored, present: s13h.midasRowPresent }));
+    const mHome = await makeHome(`- id: hindsight\n  disabled: false\n${MIDAS_ROW_BLOCK}`);
+    const s13m = await readMemoryBackendState({ settings: { memory: { backend: 'midas' } }, env: {}, home: mHome.root, midas: MIDAS_ABSENT, mcpClientInstalled: false });
+    check(s13m.midasRowPresent === true && s13m.midasRowRemovable === true,
+      'stored=**midas** 时 midasRowPresent 也是 true（三个档位都要看得到这一行 —— 这就是"无条件暴露"的地基）',
+      JSON.stringify({ stored: s13m.stored, present: s13m.midasRowPresent, removable: s13m.midasRowRemovable }));
+
+    // ⑭ 新分支的文案必须**真的说出后果**（子串断言：将来有人把这句披露删掉/改软，本条立刻红）
+    check(/照样启动/.test(s11.display.zh) && /照样注册/.test(s11.display.zh),
+      '新分支的中文文案点明后果：MCP 服务**照样启动**、工具**照样注册**（只说"off 但有残留"等于没说清为什么这重要）',
+      s11.display.zh.slice(0, 46));
+    check(/STILL/.test(s11.display.en) && /still starts/.test(s11.display.en) && /still registered/.test(s11.display.en),
+      '新分支的**英文**文案同样点明"服务器照旧启动、工具照旧注册"（有一边漂移就红 —— 两档文案必须说同一件事）',
+      s11.display.en.slice(0, 46));
+  }
+
+  // ── B2. **两种零必须分得开**：`midasRowKnown` 的教义锁（2026-09-19 独立复核发现的缺陷 a）────
+  // 缺陷 a 逐字：旧实现把「**磁盘上确实没有**那一行」与「**根本读不到补丁**，所以无从判定」都压进
+  // `midasRowPresent:false` 这**一个**布尔里 ⇒ 界面/别的会话读到 `false`，就把"我不知道"当成
+  // "它不在"（本仓 2026-09-19 立下的纪律：**两种零必须分得开**）。
+  // 修法是加一个**伴随字段** `midasRowKnown = patchReadable`（`false` = 无从判定），并让
+  // `midasRowPresent` 在 `patchReadable === false` 时**结构上被强制**为 `false`（不假报"看见了"）。
+  // 下面这一组断言就是那道修法的锁：**四格里必须给出两种不同的读数**，只钉一格等于没钉 ——
+  // 一个把 `midasRowKnown` 直接写成 `true`（或恒等于 `midasRowPresent`）的实现，会在第③④格变红。
+  {
+    /** 一块**真实形状**的 `- insert:` 包裹的 mcp-midas（逐字取自 `midasPatchRowLines()` 的输出）。 */
+    const MB_ROW_BLOCK = ['- insert:',
+      `    - id: ${MIDAS_PATCH_ROW_ID}`,
+      "      name: '@deepseek-ai/dsh-mcp-client'",
+      '      config:',
+      "        transport: 'stdio'",
+      "        serverName: 'midas'",
+      "        command: 'node'",
+      '        args:',
+      "          - '/some/bin/midas-mcp'",
+      "        cwd: '/some/install'",
+      '        env:',
+      `          ${MIDAS_DB_ENV}: '/some/memory.sqlite3'`,
+    ].join('\n') + '\n';
+    const MB_OFF_DONE = '- id: hindsight\n  disabled: true\n';
+
+    // ① 读得到的补丁 ∧ 那一行在 ⇒ known:true ∧ present:true ∧ removable:true
+    const kHome = await makeHome(MB_OFF_DONE + MB_ROW_BLOCK);
+    const kOn = await readMemoryBackendState({ settings: { memory: { backend: 'off' } }, env: {}, home: kHome.root });
+    check(kOn.patchReadable === true && kOn.midasRowKnown === true
+      && kOn.midasRowPresent === true && kOn.midasRowRemovable === true,
+      '①补丁读得到 + `- insert:` 包裹的 mcp-midas 行在 ⇒ patchReadable:true ∧ midasRowKnown:true ∧ midasRowPresent:true ∧ midasRowRemovable:true（三条独立事实一起带出去）',
+      JSON.stringify({ read: kOn.patchReadable, known: kOn.midasRowKnown, present: kOn.midasRowPresent, removable: kOn.midasRowRemovable }));
+
+    // ⑤ **类型钉**：`midasRowPresent` 必须**始终**是布尔。`client.js` 读的是
+    // `st.midasRowPresent === true`（严格相等）—— 一旦有人"为了表达不知道"把它改成 `null`，
+    // 那个判据**照样**是 false（看起来没事），可任何 `JSON.stringify` / 真值判断的别的消费者会当场变脸。
+    // 所以"不知道"这件事**只能**住在 `midasRowKnown` 里，不许动 `midasRowPresent` 的类型。
+    check(typeof kOn.midasRowPresent === 'boolean' && typeof kOn.midasRowRemovable === 'boolean' && typeof kOn.midasRowKnown === 'boolean',
+      '**类型钉**：`midasRowPresent` 恒为 boolean（绝不 `null`/`undefined`）—— 它护着 `client.js` 的 `st.midasRowPresent === true`；"不知道"只许住在 `midasRowKnown` 里',
+      `typeof present=${typeof kOn.midasRowPresent}`);
+
+    // ② 读得到的补丁 ∧ 没有那一行 ⇒ known:true ∧ present:false（**知道**，结论是"不在"）
+    const kCleanHome = await makeHome(MB_OFF_DONE);
+    const kClean = await readMemoryBackendState({ settings: { memory: { backend: 'off' } }, env: {}, home: kCleanHome.root });
+    check(kClean.patchReadable === true && kClean.midasRowKnown === true && kClean.midasRowPresent === false,
+      '②补丁读得到 + **没有**那一行 ⇒ midasRowKnown:true ∧ midasRowPresent:false（"知道，且结论是不在"——这与下一格的"不知道"**不是**同一个读数）',
+      JSON.stringify({ known: kClean.midasRowKnown, present: kClean.midasRowPresent }));
+
+    // ③④ **关键格**：读不到补丁 ⇒ 两个零必须分得开。
+    // 两种造法都试，因为它们的可信度取决于平台：①`chmod 000`（本轮实测本机 `readFile` 确实 EACCES
+    // ⇒ 真的走到了"读不到"那一支）②`makeHome(undefined)`（连通配目录都不建 ⇒ 补丁文件不存在 ⇒
+    // 同样走到"读不到"那一支，与权限无关）。**先实测** `patchReadable === false` 真的成立，
+    // 再往下断言 —— 否则这一整块会在一个"权限拦不住 root"的环境里**空转通过**（本仓最忌讳的假绿）。
+    const chmodHome = await makeHome(MB_OFF_DONE + MB_ROW_BLOCK);
+    let chmodReadable = true;
+    try {
+      await chmod(chmodHome.patchPath, 0o000);
+      try { await readFile(chmodHome.patchPath, 'utf8'); } catch { chmodReadable = false; }
+      const byChmod = await readMemoryBackendState({ settings: { memory: { backend: 'off' } }, env: {}, home: chmodHome.root });
+      // ⚠️ 先报告**用的是哪一种机制**：`chmod` 在本平台的实测结论（见详情里的读数）。
+      check(byChmod.patchReadable === false,
+        '③夹具前提（chmod 000）：本平台上真的读不到那份补丁 ⇒ patchReadable:false（否则下面那条会在"权限拦不住"的环境里空转通过）',
+        `chmod 后直接 readFile ${chmodReadable ? '**仍读得到**' : '抛了'} / patchReadable=${byChmod.patchReadable}`);
+      check(byChmod.patchReadable === false && byChmod.midasRowPresent === false && byChmod.midasRowKnown === false && byChmod.midasRowRemovable === false,
+        '③**读不到补丁**（chmod 000）⇒ patchReadable:false ∧ midasRowPresent:false ∧ **midasRowKnown:false** ∧ midasRowRemovable:false —— 本仓纪律「**两种零必须分得开**」：这里的两个 false 说的是"**无从判定**"，与第②格那个"**确实没有**"必须是**两个**读数；把 known 恒写成 true ⇒ 本条立刻红',
+        JSON.stringify({ read: byChmod.patchReadable, known: byChmod.midasRowKnown, present: byChmod.midasRowPresent, removable: byChmod.midasRowRemovable }));
+    } finally {
+      // ⚠️ 必须恢复权限：000 的文件留在临时目录里会让 `rm -rf` 删不掉（`roots` 的清理在文件末尾统一做）。
+      await chmod(chmodHome.patchPath, 0o600).catch(() => { /* 恢复失败不该让判定变色 */ });
+    }
+
+    // ④ 同一条纪律的**第二种**造法（与权限无关，恒可靠）：连 `.dsh/profiles/web/` 都不建 ⇒ 补丁文件不存在。
+    // 为什么两种都要：`chmod` 那一格在"以 root 跑"的环境里会读得到（那时它自己就红、或前提不成立），
+    // 而 `EACCES`/`ENOENT` 在这条代码路径上是**同一支**（`try { readText } catch { patchReadable = false }`）
+    // ⇒ 两者的期望读数必须**逐字相同**。只钉一种，就等于把这条纪律押在平台的权限语义上。
+    const noneHome = await makeHome(undefined);
+    const byMissing = await readMemoryBackendState({ settings: { memory: { backend: 'off' } }, env: {}, home: noneHome.root });
+    check(byMissing.patchReadable === false && byMissing.midasRowPresent === false && byMissing.midasRowKnown === false && byMissing.midasRowRemovable === false,
+      '④**补丁文件不存在**（`makeHome(undefined)`）⇒ 与第③格**逐字相同**的四读数（读不到就是读不到，机制是 EACCES 还是 ENOENT 不改变结论）',
+      JSON.stringify({ read: byMissing.patchReadable, known: byMissing.midasRowKnown, present: byMissing.midasRowPresent, removable: byMissing.midasRowRemovable }));
+
+    // ④b 这两格**必须真的不是同一个读数**：把"读不到"与"确实没有"并排比一次。若实现回退成
+    // "两者都对 `midasRowPresent` 写 false 而不给 known"，单纯的 present 比对**不会**红 ——
+    // 它红在 `known` 那一维：`false`（不知道）vs `true`（知道且不在）。这一条的意义是把那句纪律
+    // **显式写成一次比对**，而不是散在四条断言里靠人脑记。
+    check(byMissing.midasRowKnown === false && kClean.midasRowKnown === true
+      && byMissing.midasRowPresent === kClean.midasRowPresent,
+      '④b**两个零的正式读法**：「读不到」（known:false）与「确实没有」（known:true）在 `midasRowPresent` 上同为 false，**只能**靠 `midasRowKnown` 分开 —— 这一条就是那句纪律的可执行版本',
+      `读不到 known=${byMissing.midasRowKnown} / 确实没有 known=${kClean.midasRowKnown}`);
+
+    // ③b 读不到补丁时**必须有一句人话**说明"这不是'那一行不在'"（本仓纪律：失败必须出声）。
+    // 只给一个布尔而不解释，用户看到的就是"它说没这一行，可我明明写过"。
+    check(byMissing.notes.some((n) => /无从判断/.test(n) && /midasRowKnown/.test(n)),
+      '③b 读不到补丁时 notes 里**明说**"也无从判断那一行在不在"且点名 `midasRowKnown`（只给一个布尔不解释 = 让用户自己猜为什么"我写过的那行不见了"）',
+      (byMissing.notes.find((n) => /midasRowKnown/.test(n)) || '').slice(0, 40));
+  }
+
+  // ── B3. 拒绝路径的 notes **不许**带着成功的剧情（2026-09-19 独立复核发现的缺陷 b）──────────
+  // 缺陷 b 逐字：`planMidasRowRemoval()` 的 notes 是**边删边写**的 —— 「这一块是那个 `- insert:` 底下的
+  // **唯一**子项 ⇒ 连表头一起删掉」那句是在 `out.splice(...)` **之后**才 push 的。而 `refuse()` 的**每一条**
+  // 路径都在那些 splice 之后 ⇒ `ok:false` 的失败回执里躺着"删掉了"的剧情（本仓最忌讳的假报：
+  // 只读 notes 的调用方会把失败当成功）。同一条 latent bug 也修在 `applyMemoryBackend` 上。
+  // 修法：拒绝支**整段丢弃** `plan.notes`，换成拒绝说明（理由逐条来自 `plan.errors`，一个字不丢）。
+  {
+    // ⚠️ **夹具陷阱**（前一位 agent 实测踩到并记录）：一块**缺 `config:`/`args:`** 的 mcp-midas
+    // 是**太短**的 —— `findMidasInsertRow()` 不会把后面那些行算进这一块，规划器于是走"**没有** `- insert:`
+    // 表头"那一支（`wrapperIsHeader === false`），**根本不会**说出「唯一子项」⇒ 断言"notes 里没有唯一子项"
+    // **恒真**（假通过）。所以这里必须用与真实 `cordis.patch.yml` 同形状的**完整块**。
+    const REFUSE_BLOCK = ['- insert:',
+      `    - id: ${MIDAS_PATCH_ROW_ID}`,
+      "      name: '@deepseek-ai/dsh-mcp-client'",
+      '      config:',
+      "        transport: 'stdio'",
+      "        serverName: 'midas'",
+      "        command: 'node'",
+      '        args:',
+      "          - '/some/bin/midas-mcp'",
+      "        cwd: '/some/install'",
+      '        env:',
+      `          ${MIDAS_DB_ENV}: '/some/memory.sqlite3'`,
+    ].join('\n') + '\n';
+    // 畸形形态 = 在**块内**塞一条缩进更深的 `- id: other`（映射子项 = 别人的条目）。
+    // 这正是那个"块尾被吞、兄弟普查看不见"的形态 ⇒ 规划器必须**拒绝写入**（而不是删掉别人的数据）。
+    const MALFORMED_DEEP = '- insert:\n'
+      + REFUSE_BLOCK.split('\n').slice(1).map((l) => (l === '      config:' ? '        - id: other' : l)).join('\n');
+    check(REFUSE_BLOCK.includes('      config:') && MALFORMED_DEEP.includes('        - id: other'),
+      '夹具前提：畸形那块是**完整块**（id/name/config/transport/serverName/command/args/cwd/env 都在）—— 太短的块会让下面的"没有唯一子项"空转通过',
+      '');
+
+    const rHome = await makeHome(MALFORMED_DEEP);
+    const refused = await removeMidasRow({ env: {}, home: rHome.root });
+    check(refused.ok === false && refused.status === 400,
+      '⑥畸形补丁（块内更深缩进的 `- id: other`）⇒ `removeMidasRow()` 回 ok:false / status:400（一个字节都不落盘）',
+      JSON.stringify({ ok: refused.ok, status: refused.status }));
+    // ⚠️ **不许**用裸 `/删/` 去断言"没有成功剧情"：拒绝那句话本身就含「删除」二字
+    // （「已丢弃规划过程中产生的"将要删除"说明」）⇒ 裸 /删/ **恒真**，等于什么都没钉。
+    // 要钉的是那句**具体**的成功叙事 `唯一子项`（只有真的走到"删表头"那一支才会产生）。
+    const refusedNotes = refused.notes.join('\n');
+    check(!refusedNotes.includes('唯一子项'),
+      '⑥拒绝支的 notes **不含** `唯一子项`（那句"连表头一起删掉"是 `out.splice()` 之后才 push 的进度句 —— 动作没发生，剧情就不许留在回执里）',
+      refusedNotes.includes('唯一子项') ? refusedNotes.slice(0, 60) : `notes 长度 ${refusedNotes.length}`);
+    check(refused.errors.join(' ').includes('拒绝写入') && refusedNotes.includes('拒绝写入'),
+      '⑥但理由**一个字都不丢**：`errors` 里明说"拒绝写入"，且同一批理由被并进 notes（notes 是回执唯一的人话位，空着等于用户只看到一个 400）',
+      (refused.errors.find((x) => /拒绝写入/.test(x)) || '').slice(0, 32));
+    // 反空转守卫：这一格必须**真的**走到了那条分支。若夹具没触发（比如块被认成"没有表头"），
+    // 上面两条会**双双恒真**。所以显式要求拒绝理由里出现"更深缩进"那句 —— 它只有在
+    // `swallowedSiblingIdx.length > 0` 时才可能产生。这一条红了 = 上面的断言在空转。
+    check(refused.errors.some((x) => /更深缩进/.test(x)),
+      '⑥反空转：拒绝理由里确实出现「更深缩进」那一句 ⇒ 夹具**真的**触发了块形自检（否则上面两条恒真、等于没测）',
+      String(refused.errors[0] || '').slice(0, 40));
+
+    // ⑦ `applyMemoryBackend` 的拒绝支同一纪律。
+    // ⚠️ **诚实的射程说明**（本轮实测结论，别把它当成比实际更强的保证）：`planMemoryBackendPatch()`
+    // 的 `refuse()` 只有**两处**会在 `out.splice(...)` 之后被调用 —— ①`parsed.errors`（**函数入口**，
+    // 此刻 `notes` 必然是空的）②`finish()` 的三道出口自检。而本轮**穷举搜索**（重复 hindsight 行 /
+    // 嵌套 `disabled` / 流式 YAML / 块内吞并 `- id:` / midas 三个值缺失）**没能构造出**任何一条
+    // "`ok:false` 且 `plan.notes` 非空"的输入。所以：这条缺陷（b 的 `applyMemoryBackend` 那一半）在
+    // 本模块**当前**可达输入空间里是**潜伏的**（修得对，但触发不了）。测试**不许**假装它被覆盖了 ——
+    // 下面那条"空转守卫"就是把这件事**如实钉住**：一旦哪天有人加了一条"先 push 进度句、再拒绝"的
+    // 路径，这条会变红，提醒把这个夹具换成能真正走到那条路径的形态。
+    const aHome = await makeHome('- id: ok-row\n- {id: hindsight}\n' + REFUSE_BLOCK);
+    const aRefused = await applyMemoryBackend({ backend: 'off', env: {}, home: aHome.root });
+    check(aRefused.ok === false && aRefused.status === 400,
+      '⑦`applyMemoryBackend` 在畸形补丁上同样是 ok:false / status:400（拒绝语义与 `removeMidasRow()` 逐条对齐 —— 这一条同时说明 ① 类拒绝的两个实体**都**不带 `plan.notes`）',
+      JSON.stringify({ ok: aRefused.ok, status: aRefused.status }));
+    const aNotes = aRefused.notes.join('\n');
+    check(!/追加|改成|插入/.test(aNotes),
+      '⑦拒绝支的 notes **不含**成功叙事（`追加` / `改成` / `插入`）—— 在 ① 类拒绝上这条是**结构上**成立的（notes 压根没来得及 push），钉的是"将来别把 `plan.notes` 接回来"',
+      `/追加|改成|插入/ 命中：${(aNotes.match(/追加|改成|插入/g) || []).join(' / ') || '无'}`);
+    check(aRefused.errors.length > 0 && aRefused.errors.join(' ').includes('拒绝写入'),
+      '⑦但 `errors` 里理由照旧（"拒绝写入"明说，逐条带行号）—— 丢弃的是**剧情**，不是**理由**',
+      String(aRefused.errors[0] || '').slice(0, 32));
+    check(/什么都没写|什么都没删/.test(aNotes),
+      '⑦**空转守卫 + 射程声明**：拒绝支的 notes 是那段"什么都没写/什么都没删"的拒绝说明（**不是空的**）—— '
+      + '它不是"plan.notes 被正确丢弃"的证据（那个夹具的 plan.notes 本来就是空的），只是钉住"拒绝时永远有人话"。'
+      + '这条**故意**写得会在"有人往拒绝路径上先 push 进度句"时变红：那时它仍然绿，但⑦上面那条会开始**真的**咬合 —— 届时请把本夹具换成能走到那条路径的形态',
+      aNotes.slice(0, 26));
+
+    // ⑦b 拒绝支**不许**回传 `plan.notes`（源码级 —— 补上 ⑦ 那一段"没有可达夹具"留下的缺口）。
+    // 理由：`plan.notes` 是**边改边写**的进度句。只要拒绝支碰了它，就是"把没发生的动作写成发生了"。
+    // 这条不依赖"能不能构造出触发它的夹具"：它直接钉住**接线**（与本节其它源码级断言同一口径）。
+    // 为什么值得单开一条：可构造性是可变的（今天不可达 ≠ 明天不可达），而错误的接线一旦接回去，
+    // 下一次任何新拒绝路径都会立刻开始撒谎。这条让"接回去"这个动作**当场**变红。
+    const mbSrc = await readFile(join(here, 'lib', 'memory-backend.js'), 'utf8');
+    check(/return \{ \.\.\.base, errors: plan\.errors, notes: \[refusal\] \};/.test(mbSrc)
+      && !/return \{ \.\.\.base, errors: plan\.errors, notes: plan\.notes \};/.test(mbSrc),
+      '⑦b**源码级**：`applyMemoryBackend` 的拒绝支逐字回 `notes: [refusal]`（**绝不** `notes: plan.notes`）—— '
+      + '这条不靠夹具，直接把"把进度句接回失败回执"这个动作钉死',
+      '');
+    check(/errors: plan\.errors,\s*\n\s*notes: \[refusal\],/.test(mbSrc),
+      '⑦b `removeMidasRow` 的拒绝支同样是 `notes: [refusal]`（与 `applyMemoryBackend` 同一口径 —— 两处不许分叉）',
+      '');
+  }
+
+  // ── C. 路由 / 分派（源码级：其它路由断言也是源码级）────────────────────────────────────────
+  {
+    const cmdSrc = await readFile(join(here, 'lib', 'command.js'), 'utf8');
+    check(/'remove-midas-row'/.test(cmdSrc) && /body\.action|body && body\.action/.test(cmdSrc),
+      '`{action:\'remove-midas-row\'}` 在 `lib/command.js` 里真的接了线（纯函数写对了但没人调用 = 功能没上线）', '');
+    check(/action && action !== 'remove-midas-row'/.test(cmdSrc) && /allowed: \['remove-midas-row'\]/.test(cmdSrc),
+      '未知 action 被**拒绝**（400 + `allowed` 清单），不静默回落到"存设置值" —— 静默 no-op 会让写错 action 的客户端以为删掉了', '');
+    check(/json\(400, \{ ok: false, error: 'unsupported action'/.test(cmdSrc),
+      '未知 action 走的是 **400**（不是 200 的"我当你什么都没说"）', '');
+    check(/const backend = String\(\(body && body\.backend\) \|\| ''\)\.trim\(\)/.test(cmdSrc)
+      && /applyMemoryBackend\(\{ backend/.test(cmdSrc),
+      '`{backend}` 那条路径**逐字未动**（新动作不许把既有入口挤掉）', '');
+    // 路由条数棘轮：本动作刻意**复用**既有路由 ⇒ 计数必须仍是 15。
+    // （`routes-shared.test.mjs` 也钉这一条；这里再钉一次是为了让"顺手新开一条路由"在**本节**就红。）
+    const routeSites = (cmdSrc.match(/registerLocal\(\{/g) || []).length;
+    const routeMethods = (cmdSrc.match(/^            methods: \[/gm) || []).length;
+    check(routeSites === 15 && routeMethods === 15,
+      '路由条数仍是**恰好 15**（`registerLocal(` 与 `methods: [` 各 15）—— 本动作挂在**既有**路由上，一条都没多',
+      `registerLocal=${routeSites} / methods=${routeMethods}`);
+  }
+
+  // ── D. 客户端接线（源码级 + 样式表级）─────────────────────────────────────────────────────
+  {
+    const cliSrc = await readFile(join(here, 'client.js'), 'utf8');
+    const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+    const codeOnly = stripComments(cliSrc);
+    const cssStart = cliSrc.indexOf('var CSS =');
+    const cssEnd = cliSrc.indexOf('// ── session store', cssStart);
+    let css = '';
+    try { css = (cssStart < 0 || cssEnd < 0) ? '' : new Function(`${cliSrc.slice(cssStart, cssEnd).trimEnd()}\nreturn CSS;`)(); } catch { css = ''; }
+    const jsOnly = (cssStart < 0 || cssEnd < 0) ? '' : stripComments(cliSrc.slice(0, cssStart) + cliSrc.slice(cssEnd));
+
+    // ⑲ `.exp-hs-offwarn`：样式表里**有规则**（带点）∧ JSX 侧作为 className **挂载**（不带点）。
+    // 两个方向都要查：只查"类名在文件里"抓不住"样式定义了但没人挂"或"挂了但没样式"。
+    check(css.includes('.exp-hs-offwarn{margin-top:6px;color:#8a6100;font-weight:700}'),
+      '样式表里**逐字**有 `.exp-hs-offwarn` 规则（琥珀色墨水；色值取本文件既有的 `.exp-hs-tag`，不新造色）', '');
+    check(/className: 'exp-hs-offwarn'/.test(jsOnly),
+      '`.exp-hs-offwarn` 作为 className **真的被挂载**（不带点 —— 带点的写法不匹配任何元素，是"定义了但没人用"的另一种形态）', '');
+    check((jsOnly.match(/exp-hs-offwarn/g) || []).length === 1,
+      '`.exp-hs-offwarn` 在 JS/JSX 侧**恰好 1 个**挂点（复制到第二处就红 —— 与本仓 ⑦d 的同一套反复制口径）',
+      `命中 ${(jsOnly.match(/exp-hs-offwarn/g) || []).length}`);
+
+    // ⑳ 按钮只在服务端明确说"能安全删"时才给（`midasRowPresent` 为真但删不动 ⇒ 只留警告、不给按钮）
+    const mbStart = cliSrc.indexOf('function MemoryBackendBlock(props) {');
+    const mbEnd = mbStart < 0 ? -1 : cliSrc.indexOf('\n    function ', mbStart + 1);
+    const mbBody = (mbStart < 0 || mbEnd < 0) ? '' : cliSrc.slice(mbStart, mbEnd);
+    check(/var midasRowAction = \(midasRowLive && st\.midasRowRemovable === true\)/.test(mbBody),
+      '移除按钮的渲染条件是 `midasRowLive && st.midasRowRemovable === true` —— 给一个点了必然失败的按钮比不给更糟', '');
+    check(/this\.removeMidasRow\(\)|removeMidasRow\(\)/.test(mbBody) && /setArmRemove/.test(mbBody),
+      '按钮走"先武装、再确认"的两次点击（`setArmRemove`）—— 删用户补丁文件内容的动作与「清除令牌」同级，沿用同一套确认习惯', '');
+
+    // ㉑ 防御性读法：旧服务端没有这个字段（`undefined`）⇒ 一个字都不许渲染。
+    // 所以只认 `=== true`；**绝不用** `!st.midasRowPresent` 之类的反写（那会把 `undefined` 当成"行不在"，
+    // 等于替旧服务端编一个它没给的结论）。
+    check(codeOnly.includes('st.midasRowPresent === true'),
+      '警告的判据写成 `st.midasRowPresent === true`（旧服务端下它是 `undefined` ⇒ 不渲染、不误报也不假报）', '');
+    check(!/!\s*(st\.)?midasRow(Present|Live|Removable)\b/.test(codeOnly),
+      '源码里**没有**任何 `!midasRow…` 形式的真值反写（把 `undefined` 当成"行不在"就是替旧服务端编结论）', '');
+
+    // ㉒ 移除动作**不碰** `setReceipt(`（那条回执链是给"改后端选择"的，计数被钉在恰好 2）。
+    // 计数在**去掉注释**的 `MemoryBackendBlock` 函数体上做 —— 注释里提到这个函数名不算一处调用。
+    const setReceipts = (stripComments(mbBody).match(/setReceipt\(/g) || []).length;
+    check(setReceipts === 2,
+      '`setReceipt(` 在 `MemoryBackendBlock` 里仍**恰好 2 处**（新增的移除动作走 `setMsg`/`setErr` —— 混进回执链会让顶部重启告警框说着上一轮的话）',
+      `命中 ${setReceipts}`);
   }
 }
 

@@ -251,6 +251,18 @@ window.__ModuleLoader__.load({
       // `.exp-hs-warn` 保持原样，它仍是重启提示（见下）与 HindsightBlock 诊断里那处**真**·告警框的样式。
       // 色值取自本文件既有的"琥珀色墨水"（`.exp-hs-tag{color:#8a6100}`）—— 不新造一个色。
       '.exp-hs-warn-text{color:#8a6100;font-weight:700}' +
+      // ⚠️ 「off 但 mcp-midas 行还活着」那条诚实话（2026-09-19）**另起一个类**，刻意**不**复用上面两条：
+      //   ① `exp-hs-warn-text` 是「实际状态」那**一个**值列的专用墨水（⑦d 把它钉在恰好 1 个 JSX 挂点、
+      //      且样式表里恰好 2 条规则）—— 借它来渲染第二处会把那条计数守卫撑坏；
+      //   ② `exp-hs-msg bad` / `exp-hs-bad` 断言的语义是**失败**（红），而这里的事实是**警告**：
+      //      Hindsight 确实关了（用户的目的达到了），只是补丁里还躺着一行 ⇒ 用红色等于把"你做了个
+      //      错误决定"画在用户脸上，与 `.exp-hs-warn`（琥珀）那条既有视觉语言也不一致；
+      //   ③ 本仓既有规律：`.exp-hs-warn` 本身是一个**告警框**（border/padding/渐变）——挂到内联
+      //      文字上就是 2026-09-17 那个"缺边的破框"。这里**只**给颜色与上边距，**没有任何盒子声明**，
+      //      所以它既能贴在块级 div 上、也不会重演那个缺陷（⑦d 的 `boxless` 断言会核它）。
+      // 色值仍是本文件既有的琥珀墨水 `#8a6100`（同 `.exp-hs-tag` / `.exp-hs-warn-text`），不新造色：
+      //   白底上 5.54:1、深色底（`#151517`）上换 `#f7ad31` 后 9.53:1，两档都在 WCAG AA 正文之上。
+      '.exp-hs-offwarn{margin-top:6px;color:#8a6100;font-weight:700}' +
       '.exp-hs-warn{margin:8px 0;padding:8px 10px;border:1px solid #f0c36d;border-left:3px solid #e0a83c;border-radius:8px;background:linear-gradient(180deg,rgba(224,168,60,.12),transparent);font-size:11.5px;line-height:1.6}' +
       // ⚠️ 中性「历史 / 已恢复」样式（2026-09-16）：失败之后**已有成功**时不许再挂告警框。
       // 灰蓝细边、无渐变、无左侧重色条 —— 与 `.exp-hs-warn` 视觉上明确区分。
@@ -331,6 +343,12 @@ window.__ModuleLoader__.load({
       // 只覆写 `color`（墨水）：半透明底衬（rgba wash）与非文字边框在深色下不构成对比度缺陷，动它们会越出
       //   「最小新增」的范围（`.exp-hs-btn.danger` 的浅粉描边同理：它是边框不是文字）。
       'body[data-ds-dark-theme] .exp-hs-warn-text{color:#f7ad31}' +
+      // 第 9 条（2026-09-19）：`.exp-hs-offwarn` 是「off 但 mcp-midas 行还活着」那条警告的墨水 ——
+      // 它与 `.exp-hs-warn-text` 的浅色基值**逐字相同**（都是 `#8a6100`），所以深色下同样必须换掉
+      // （`#8a6100` 在 `#151517` 上只有 3.29:1，低于 AA 4.5:1）。取值与理由同上面那段对比度说明。
+      // ⚠️ 加了这一条就必须同步 `memory-backend.test.mjs` 的 `DARK_INK`（8 → 9）—— ⑦ 的「不多不少」
+      //    要求 `body[data-ds-dark-theme] …{…color:…}` 这一类规则**只允许** `DARK_INK` 里那些条。
+      'body[data-ds-dark-theme] .exp-hs-offwarn{color:#f7ad31}' +
       'body[data-ds-dark-theme] .exp-hs-tag{color:#f7ad31}' +
       'body[data-ds-dark-theme] .exp-hs-ok{color:#4ed17e}' +
       'body[data-ds-dark-theme] .exp-hs-hist .exp-hs-tag-ok{color:#4ed17e}' +
@@ -2379,6 +2397,13 @@ window.__ModuleLoader__.load({
       // 结构化回执：只用来把"需重启"提到顶部那块显眼的告警框里（分段文案仍出自 `memoryBackendParts`）。
       var rcS = useState(null); var receipt = rcS[0], setReceipt = rcS[1]
       var bS = useState(false); var busy = bS[0], setBusy = bS[1]
+      // ── 「移除 mcp-midas 那一行」的**两次点击**武装位（与 `HindsightBlock.armClear` 同一套先例）──
+      // 第一次点只是武装（按钮文案变成"再点一次确认"），第二次才真的 POST。理由：这是一个**删用户
+      // 补丁文件内容**的动作，误触的代价与「清除令牌」同级 ⇒ 沿用本仓既有的确认习惯，不另发明一种。
+      // 刻意**不**复用 `receipt`：那条回执链（`memoryBackendParts`）描述的是"改了后端选择 ⇒ 要不要重启"，
+      // 与"删掉一行"不是同一件事 —— 混进去会让顶部的重启告警框在最坏的时候说着上一轮的话
+      // （⑦c 的「setReceipt 恰好两处」计数守卫也正是不许这里多出一处）。
+      var rS = useState(false); var armRemove = rS[0], setArmRemove = rS[1]
       function load(withProbe) {
         // `?probe=1` 只有用户点「探测一次启动」时才带：那会在服务端**真的启动一次** Midas 进程做 MCP 握手，
         // 与 Hindsight 那条连通性探测同一口径（进页面不发任何探测请求）。
@@ -2410,6 +2435,40 @@ window.__ModuleLoader__.load({
           else load()
           setMsg(memoryBackendMsg(res.d))          // 整句回执（含重启那句）—— 与拆分前的输出逐字相同
           setReceipt(memoryBackendParts(res.d))    // 同一份字面量的分段版：顶部告警框排版用
+        }).catch(function (e) { setBusy(false); setErr(String(e && e.message ? e.message : e)) })
+      }
+      /**
+       * 移除补丁里那个 `- insert:` 包裹的 `mcp-midas` 行 —— 「选 off 也关不干净」的**一键处置**。
+       *
+       * 为什么要这个按钮：选 `off` 只写 `hindsight: disabled: true`，**不碰** `mcp-midas` 那一行 ⇒
+       * Midas 的 MCP 服务照样随 dsh web 启动、它的工具照样注册，而界面原来只说"不会有任何记忆调用"。
+       * 服务端已经把"那一行还在不在 / 能不能安全删"当成**独立事实**（`midasRowPresent` /
+       * `midasRowRemovable`，与 `stored` 无关）发下来 ⇒ 客户端只在它说"能删"时才给这个按钮。
+       *
+       * 三条纪律：
+       *   ① **不碰 `setReceipt`**：那条回执链是给"改后端选择"的（顶部重启告警框取它的分段文案）。
+       *      删一行是另一件事，它的回执只走下面的 `setMsg` / `setErr` —— 否则重启告警框会拿着
+       *      上一轮的形状说这一轮的话（⑦c 的「setReceipt 恰好两处」计数守卫也钉着不许这里多出一处）。
+       *   ② **成功后回读一次真实状态**（`load()`），不自己把"我以为删掉了"当成事实：服务端回执里
+       *      虽然带了 `state`，但走 `load()` 与 `apply()` 是同一条路径 ⇒ 界面停在旧状态的机会为零。
+       *   ③ 回执如实说**这次到底改了没有**（`saved`/`changed`）与**要不要重启**（`needsRestart`）——
+       *      没有改动时不许说"已删除"。
+       */
+      function removeMidasRow() {
+        setBusy(true); setErr(''); setMsg(''); setArmRemove(false)   // 开新一轮一律先撤掉旧的武装位与旧回执
+        fetch('/plugins/dsh-expert-team/memory-backend', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'remove-midas-row' }),
+        }).then(function (r) { return r.json().catch(function () { return null }).then(function (dd) { return { ok: r.ok, d: dd } }) }).then(function (res) {
+          setBusy(false)
+          if (!res.ok || !res.d || !res.d.ok) { setErr(((res.d && (res.d.errors || [res.d.error])) || ['移除失败']).join('；')); return }
+          load()   // 回读服务端真实状态（`midasRowPresent` 必须已经是 false —— 与 `apply()` 同一口径）
+          var d = res.d
+          // 没有改动 ⇒ 不许说"已删除"（"本来就没有"与"刚删掉"是两件事，服务端 `changed`/`saved` 分得开）。
+          if (!d.saved) setMsg(t('本次没有改动 ⇒ 那一行本来就不在（或形态不认识、服务端没动它）。', 'No change was made — the row was not there (or its shape was unknown, so nothing was touched).'))
+          else setMsg(d.needsRestart
+            ? t('已移除 profile 补丁里那个 mcp-midas 行。⚠ 需要重启 dsh web 才生效（profile 补丁在加载 profile 时读取）。',
+                'Removed the mcp-midas row from the profile patch. ⚠ A dsh web restart is required for it to take effect (the patch is read when the profile loads).')
+            : t('已移除 profile 补丁里那个 mcp-midas 行。', 'Removed the mcp-midas row from the profile patch.'))
         }).catch(function (e) { setBusy(false); setErr(String(e && e.message ? e.message : e)) })
       }
       var disp = st.display || {}
@@ -2471,6 +2530,73 @@ window.__ModuleLoader__.load({
               : null)
         : null
 
+      // ── 「off 但 mcp-midas 行还在」的诚实话 + 一键移除（2026-09-19）───────────────────────────
+      // 为什么这块必须存在：选 `off` 只写 `hindsight: disabled: true`，**不碰**那个 `- insert:` 包裹的
+      // `mcp-midas` 行 ⇒ Midas 的 MCP 服务照样随 dsh web 启动、`mcp__midas__*` 工具照样注册在模型的
+      // 工具面上，而界面原来只说"不会有任何记忆调用" —— 那句话在那个格子里是**假的**。
+      //
+      // ⚠️ **防御性读法**（本轮硬约束）：服务端那两个新字段可能晚于本文件落地。所以判据一律写成
+      // `st.midasRowPresent === true` 而不是真值判断 —— 旧服务端下它是 `undefined` ⇒ 这一段
+      // **一个字都不渲染**（没有警告、没有按钮），既不误报也不假报。**绝不用 `!st.midasRowPresent`
+      // 之类的反写**：那会把 `undefined` 当成"行不在"，等于替旧服务端编一个它没给的结论。
+      // ⚠️ 渲染成**块级 `<div>` + 专用文字类 `.exp-hs-offwarn`**，不是 `exp-hs-warn`：后者是告警
+      // **框**且被 ⑦d 钉在恰好 2 处（重启提示 / 诊断块故障），这里既不是那两处、也不该占用它。
+      var midasRowLive = st.midasRowPresent === true
+      // ⚠️ 告警的判据**不是** `midasRowLive`（2026-09-19 语义变更配套修复）：三选一现在真的是**互斥**的 ——
+      // `midas` 档的**目标形态**就是 `{hindsight 行 disabled} × {mcp-midas 行在}`，而 `off` 档落地时会把
+      // 那一行**连根删掉**；**同一个物理状态**在 `midas` 下是"已接通"（ok）、在 `off` 下才是"没写成的关闭
+      // 动作的残留"（warn）。只看 `midasRowPresent` 就等于把这个不对称**抹平**：用户**成功**选中 Midas 时
+      // 会看到下面这段"你这里是一堆残留"的琥珀告警 —— 与功能目的正好相反（本仓 2026-09-17 那个"缺边的
+      // 破框"级别的自伤）。所以告警改键在**服务端自己的结论** `statusKind === 'off-midas-row-live'` 上：
+      // 服务端**只**在 `stored === 'off' && hindsightDisabled && midasRowPresent` 时才发这一档
+      //（`lib/memory-backend.js` 的 `off-midas-row-live`），这正是"这一格是残留"的**唯一**权威判据。
+      // 为什么不在客户端自己再推一遍（`stored === 'off' && …`）：服务端已经是"这个组合坏不坏"的**唯一
+      // 事实源**，客户端重推一次就是**同一件事两个家** —— 下次服务端改分档（本仓第一号返工来源）时两边
+      // 必然分叉，而界面会拿旧口径说新状态。客户端只做一件事：**照渲染服务端给的结论**。
+      // 这与本文件既有的 `unreachableish`（上面读 `st.statusKind === 'on-failing' / 'on-unconfigured'`）
+      // 是**同一套成熟写法**，不是新发明。
+      // ⚠️ 防御性读法照旧：旧服务端没有 `statusKind` ⇒ 它是 `undefined` ⇒ 这一段**一个字都不渲染**。
+      var offLeftover = st.statusKind === 'off-midas-row-live'
+      var midasRowId = plainText(String(st.midasRowId || 'mcp-midas'))
+      var midasServerName = plainText(String(st.midasServerName || 'midas'))
+      var midasRowWarn = offLeftover
+        ? h('div', { className: 'exp-hs-offwarn', role: 'status' }, esc(t(
+            '⚠ 补丁里那个 - insert: 包裹的 ' + midasRowId + ' 行还在 —— 所以这不是"记忆完全没接"。'
+            + '重启 dsh web 后，' + midasServerName + ' 的 MCP 服务照样启动、它的工具照样注册在模型的工具面上。'
+            + '区别在于：没有任何东西会自动调用它们 —— 本插件不再自动读写记忆，只有你自己（或别的会话）显式调那些工具时才会动到库。',
+            '⚠ The - insert:-wrapped ' + midasRowId + ' row is STILL in the patch — so this is NOT "no memory wiring at all". '
+            + 'After a dsh web restart the ' + midasServerName + ' MCP server still starts and its tools stay registered on the model\'s tool surface. '
+            + 'The difference: nothing calls them automatically — this plugin no longer reads or writes memory on its own; only an explicit tool call (by you or another session) touches the store.')))
+        : null
+      // 只在服务端明确说"能安全删"时才给按钮；`midasRowPresent` 为真但删不动（读不到文件 / 形态不认识 /
+      // 删完文件会非法）时**照旧显示警告、但把按钮去掉**，并如实说"得手工处置" ——
+      // 给一个点了必然失败的按钮比不给按钮更糟（用户会以为是自己的操作错了）。
+      var midasRowAction = (midasRowLive && st.midasRowRemovable === true)
+        ? h('div', { className: 'exp-hs-actions' },
+            h('button', { className: 'exp-hs-btn danger', disabled: busy, onClick: function () { if (armRemove) removeMidasRow(); else setArmRemove(true) } },
+              esc(armRemove
+                ? t('再点一次：移除 mcp-midas 那一行', 'Click again: remove the mcp-midas row')
+                : t('移除 mcp-midas 那一行', 'Remove the mcp-midas row'))))
+        : (midasRowLive
+          ? h('div', { className: 'exp-settings-note' }, esc(t('这一行不能用这里的按钮安全移除（补丁读不到、或形态不认识）⇒ 请手工删掉它，然后重启 dsh web。',
+              'This row cannot be safely removed by the button here (the patch is unreadable, or its shape is unknown) — delete it by hand, then restart dsh web.')))
+          : null)
+      // ⚠️ **渲染**用的是这个（与上面那条告警**同一个**判据）—— `midasRowAction` 回答的是"按钮做不做得
+      // 出来"（**能力**问题），这里回答的是"这个按钮该不该出现在这一格"（**语境**问题）。两者都对，但只有
+      // 后者是这一格要问的：健康的 `midas` 档下 `midasRowRemovable` 本来就是 true（那一行**确实**删得动，
+      // 字段没说谎），所以只按能力判据渲染的话，一个**刚接通 Midas** 的用户会在"已接通"旁边看到一颗
+      // 「移除 mcp-midas 那一行」的红色按钮 —— 那等于请他去拆自己刚配好的东西，与三选一互斥语义下
+      // `midas` 档的目标形态**直接矛盾**（本仓第一号返工来源：同一件事两个家）。真想删的用户并不缺路径：
+      // 选 `off` 保存一次（新语义下那一步会**真的**连行一起删掉），或自己编辑补丁文件。
+      // 两块都键在 `offLeftover`（= 服务端的 `off-midas-row-live`）⇒ 告警与按钮**永远同进同退**，
+      // 结构上不可能出现"有按钮没解释"或"有解释没按钮"。
+      var midasRowActionShown = (offLeftover && st.midasRowRemovable === true)
+        ? midasRowAction
+        : (offLeftover
+          ? h('div', { className: 'exp-settings-note' }, esc(t('这一行不能用这里的按钮安全移除（补丁读不到、或形态不认识）⇒ 请手工删掉它，然后重启 dsh web。',
+              'This row cannot be safely removed by the button here (the patch is unreadable, or its shape is unknown) — delete it by hand, then restart dsh web.')))
+          : null)
+
       return h('div', { className: 'exp-hs-form' },
         h('div', { className: 'exp-settings-group' }, esc(t('记忆后端 · 三选一', 'Memory backend · choose one'))),
         h('div', { className: 'exp-hs-row' },
@@ -2490,6 +2616,20 @@ window.__ModuleLoader__.load({
             h('span', { className: 'exp-settings-note' }, esc(st.patchExists
               ? (st.hindsightDisabled ? t('（Hindsight 行已禁用）', ' (the hindsight row is disabled)') : t('（Hindsight 行未禁用）', ' (the hindsight row is not disabled)'))
               : t('（文件不存在）', ' (file absent)'))))),
+        // ── (D) 同一行里并排说出**另一个**补丁事实（2026-09-19）────────────────────────────
+        // 为什么紧挨着「profile 补丁」那一行：这两件事说的是**同一个文件**里躺着的两行
+        //（`hindsight` 行 / `mcp-midas` 行）—— 分开摆会让人以为要去看两个地方。
+        // ⚠️ 非 midas 情形下这一整段是 `null` ⇒ 上面那句 Hindsight 文案**逐字不变**
+        //（有测试钉着那句），旧服务端下同样一个字都不多。
+        // ⚠️ 仍走防御性读法（`=== true`）：旧服务端 `undefined` ⇒ 不渲染、不编造。
+        midasRowLive
+          ? h('div', { className: 'exp-settings-note' }, esc(t('（另外：profile 补丁里 mcp-midas 那一行仍在）', ' (also: the mcp-midas row is still in the profile patch)')))
+          : null,
+        // 警告与「移除那一行」的按钮：紧跟「实际状态 / profile 补丁」这两行事实**正下方**
+        //（约束：必须排在第一个 `exp-hs-kv` **之后** —— 首个 `exp-hs-kv` 是重启告警框定位的锚点）。
+        // ⚠️ 两块都由服务端的 `off-midas-row-live` 决定（残留才说、残留才给按钮）—— 见上面那两段注释。
+        midasRowWarn,
+        midasRowActionShown,
         // Midas 首装引导：摆在「实际状态」那句实话**正下方**（先看到"现在没接通"，紧接着就是"怎么接通"）。
         midasGuide,
         // ⚠️ 这一句是这块界面存在的理由之一：把"故障"与"你的选择"分开说，别让人去关一个本来该开的开关。

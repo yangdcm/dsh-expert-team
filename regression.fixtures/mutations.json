@@ -2166,8 +2166,8 @@
     },
     {
       "id": "M166-memory-backend-hindsight-stays-disabled",
-      "title": "记忆后端：选了 `hindsight`/`midas` 时不再清除 `- id: hindsight` 的禁用 ⇒ 设置页说记忆开着，实际整条后端是死的",
-      "why": "2026-09-17 新增（本轮「记忆后端三选一」的判别变异）。`off` 的落地方式就是往 dsh profile 补丁里写 `- id: hindsight` + `disabled: true`；反方向的唯一正确动作是把那一行去掉（当它是我们的规范形态时）或把那个值改成 `disabled: false`。变异让这个分支恒不成立（改成 `if (true)`）⇒ 用户从「不使用」切回「Hindsight」时，补丁文件**原样保留禁用**，而设置页显示「Hindsight」：界面上记忆是开的、实际一条都不会写。这个缺陷**只有测试能抓住** —— `planMemoryBackendPatch()` 出口那道自检只审『这次生成的新文本』，而变异走的是 `changed:false` 的早退分支，压根不经过自检。预期红（**2026-09-17 用注入法逐条数过，实际是 5 项，不是最初写的 3 项**）：`非规范形态的 disabled:true ⇒ 改成 false（恢复启用）`、`hindsight ⇒ 删掉本插件追加的那一行，文件逐字回到原样`、`midas ⇒ 清除禁用（本轮未接线，实际记忆仍要走 Hindsight）`，以及**计划层之外**那两条：`hindsight ⇒ 恢复原样（逐字）`（`applyMemoryBackend` 真的写盘那一段也走同一个分支 ⇒ 文件不会被恢复）与 `真的有改动时才 needsRestart:true`（`changed:false` ⇒ `needsRestart:false`，用户不会被提示重启）。**必须仍然绿**：`off（首次）⇒ ok + changed` 与 `off（第二次）⇒ changed:false 且文本逐字不变（幂等）`（`off` 方向不受影响）。",
+      "title": "记忆后端：选了 `hindsight`（或 `off` 之后又切回 `hindsight`）时，不再把 `- id: hindsight` 那一行恢复成**启用** ⇒ 设置页说走 Hindsight，补丁却把整条后端禁着",
+      "why": "2026-09-17 新增，**2026-09-19 二期语义变更后重新锚定并重新计数**（本条守的缺陷类没变，变的是它所在的分支）。旧代码里这一行在「选 hindsight/midas 就清除禁用」的那条路上；二期把它收进 `editHindsightToEnabled()` —— 现在 `hindsight` / `off` / `midas`（**未接线**）三档共用它。`off` 的落地方式就是往 dsh profile 补丁里写 `- id: hindsight` + `disabled: true`；反方向的唯一正确动作是把那一行去掉（当它是我们的规范形态时）或把那个值改成 `disabled: false`。变异让这个分支恒不成立（`if (!hit || hit.disabled !== true)` 改成 `if (true)`）⇒ 用户从「不使用」切回「Hindsight」时，补丁文件**原样保留禁用**，而设置页显示「Hindsight」：界面上记忆是开的、实际一条都不会写。⚠️ 二期语义变更**加大了**这条变异的杀伤面：它现在同时打中「`midas` **未接线** ⇒ 必须恢复启用」这条**安全不变量**（未接线时若不恢复启用，用户就同时失去两个后端），以及新排他契约里 `hindsight` 那一档「MCP 行必须被移除」的断言（那一档的移除发生在 Hindsight 那一维改完之后，前一步恒 false ⇒ 后续断言拿到 null）。这个缺陷**只有测试能抓住** —— `planMemoryBackendPatch()` 出口那道自检只审「这次生成的新文本」，而变异走的是 `changed:false` 的早退分支，压根不经过自检。预期红（**2026-09-19 用 `--only M166` 的真实变异产物逐条数过，实测 11 项**；旧文里那句「实际是 5 项」是变更前的口径，已作废）：① 计划层 —— `非规范形态的 disabled:true ⇒ 改成 false（恢复启用）`、`hindsight ⇒ 删掉本插件追加的那一行，文件逐字回到原样`、`midas（**未接线**）⇒ 把 Hindsight 那一行恢复成启用（安全不变量…）`、`midas（未接线）⇒ 删掉的是本模块自己的规范形态那一行…`、`hindsight` ⇒ Hindsight 行**启用**（不再是禁用态）`、`hindsight` ⇒ **移除** `- insert:` 包裹的 mcp-midas 行…`、`midas`（**未接线**）⇒ 绝**不**把 Hindsight 留在禁用态…`、`midas`（未接线）+ 补丁里只有我们自己那一行 ⇒ Hindsight **恢复启用**、不写 MCP 行`；② 计划层之外（`applyMemoryBackend` 真的写盘那一段走同一个分支）—— `hindsight ⇒ 恢复原样（逐字）`、`midas（二进制缺失）⇒ 盘上补丁一个字节都没动`、`真的有改动时才 needsRestart:true`（`changed:false` ⇒ `needsRestart:false`，用户不会被提示重启）。**必须仍然绿**：`off（首次）⇒ ok + changed` 与 `off（第二次）⇒ changed:false 且文本逐字不变（幂等）`（`off` 方向不受影响），以及 `midas`（**已接线**）那一组（它走的是 `editHindsightToDisabled()`，与这条变异不是同一个分支 —— 那一组由 M172 守）。",
       "test": "memory-backend.test.mjs",
       "edits": [
         {
@@ -2226,6 +2226,32 @@
           "file": "client.js",
           "find": "'.exp-hs-restart-h{font-weight:700;margin-bottom:2px}' +",
           "replace": "'.exp-hs-restart-h{margin-bottom:2px}' +"
+        }
+      ]
+    },
+    {
+      "id": "M171-memory-backend-midas-removal-swallowed-sibling-blind",
+      "title": "「移除 mcp-midas 那一行」的**吞并行普查失明** ⇒ 畸形补丁上会连带删掉别人的条目，还报「已删除」",
+      "why": "2026-09-19 新增（判别变异，护航 ⑪）。这不是假想事故，而是本轮修复里**唯一会真的改用户补丁文件**的那条路径上的最后一道守卫：`planMidasRowRemoval()` 删块用 `splice(hit.start, hit.end - hit.start + 1)`，而 `findMidasInsertRow()` 的块尾规则是「其后每一行只要缩进更深就算这一块」—— 于是一条更深缩进的 `- id: other`（别人的序列项）会被**吞进** `mcp-midas` 这一块。函数因此先做一次**块形自检**：扫块内有没有 `- <key>:` 形状的更深深缩进行（`swallowedSiblingIdx`），有就 `refuse()`、一个字节不落盘。变异把那条正则换成恒假（`if (false)`）⇒ 自检永远看不见被吞进来的兄弟 ⇒ 兄弟普查从块尾之后开始、也算成 0 ⇒ 删表头时把 `- id: other` **一起删掉**，还附一句「唯一子项」的假说明、并回 `ok:true, changed:true`（**丢数据 + 假报成功**，两者都是本仓最忌讳的形态）。⚠️ 这种缩进在合法 YAML 里不成立（`insert` 的兄弟子项必须同缩进；实测 `js-yaml` 与 `yaml` v2 都拒收，DSH 自己在启动时就抛 `bad indentation of a sequence entry`）⇒ 守卫是**健壮性护栏**而非活跃路径，但它必须真的能拦住：宁可什么都不做，也不许在'前提无法核实'时动用户的文件。预期红（`--only M171` 实测 2 项，用真实变异运行器数过）：`畸形形态（块内更深缩进的 - id: …）⇒ **拒绝写入**（ok:false / text 恒为 null / changed:false：一个字节都不落盘）`（实测产物从 `null` 变成 `[]`，且报 changed:true）与 `畸形形态：拒绝是**有理由**的（错误里明说「拒绝写入」，不是静默返回 null）`（`errors` 从 3 条变成 0 条）。**必须仍然绿**：`★假阳性守卫★：args: 下的**标量**序列项（- '/some/bin/midas-mcp'）**不得**被当成「别人的条目」⇒ ok:true` 与 `★假阳性守卫★：同一份真实补丁删完之后，注释与既有顶层项**逐字**保留` —— 这两条正是「把正则放宽到恒真」那类错误修法的反面证据：本变异的失败模式（失明）与它们的失败模式（误拒）互为对照，只钉其中一边就会让另一边偷偷溜过去。",
+      "test": "memory-backend.test.mjs",
+      "edits": [
+        {
+          "file": "lib/memory-backend.js",
+          "find": "    if (/^\\s*-\\s+[^\\s#][^:]*:(\\s|$)/.test(lines[k])) swallowedSiblingIdx.push(k + 1);",
+          "replace": "    if (false) swallowedSiblingIdx.push(k + 1); // MUTANT: 吞并行普查失明（删表头会连带删掉别人的条目）"
+        }
+      ]
+    },
+    {
+      "id": "M172-memory-backend-wired-midas-leaves-hindsight-enabled",
+      "title": "记忆后端：**已接线**的 `midas` 档不再把 Hindsight 置为禁用 ⇒ 重启后两个记忆后端同时活着，而设置页只说了一个（二期要修的原始缺陷原样复现）",
+      "why": "2026-09-19 新增（判别变异，护航二期的「三档都是两行都管的真二选一」契约）。这不是假想事故，而是**用户报的那个缺陷本身**：二期之前选 `midas` 是**加法**（只往补丁里插 `- insert:` 包裹的 mcp-midas 行，Hindsight 那一行照旧启用）⇒ 重启后 Hindsight 继续注入上下文、继续按 token 计费，而设置页只显示「Midas」这一个后端 —— 用户以为换到了本地零 LLM 的后端，实际两边都在跑。二期的修法是把这一档变成「两件一起写」：插 MCP 行 **∧** 把 `- id: hindsight` 写成 `disabled: true`。变异把那个**合取**砍掉后半（`wantHindsightDisabled` 只留 `target === 'off'`）⇒ 走 `editHindsightToEnabled()`、Hindsight 那一行**保持启用**，而 MCP 行照旧插入、`planMemoryBackendPatch()` 出口自检也照旧通过（那一维的自检用的是同一个 `wantHindsightDisabled`，**变异体自己和自己一致** ⇒ 自检看不见它）。这正是本变异必须存在的原因：**出口自检审的是「生成的新文本符合本函数的意图」，而不是「意图本身对不对」** —— 意图被改错时，自检一定跟着错，只有测试能抓住。预期红（**2026-09-19 用 `--only M172` 的真实变异产物逐条数过，实测 4 项**）：`midas（**已接线**）⇒ Hindsight 那一行被写成 disabled: true（这一档是**真二选一**，不是加法）`、`midas（已接线）+ 补丁本来已禁用 ⇒ 禁用**保留**、MCP 行插入（「未接线 ⇒ 恢复启用 / 已接线 ⇒ 保留禁用」的判别点）`、`` `midas`（已接线）⇒ Hindsight 行 disabled: true **且** MCP 行在场（这是**健康**形态，不是矛盾） ``、`midas（已接线）⇒ 把**真的** hindsight 行置为禁用（配了真夹具 ⇒ 不再是恒真的空转断言）`。**必须仍然绿**：`midas + 发现到二进制 ⇒ 追加**规范的 insert 行**…`、`再跑一次 ⇒ changed:false 且文本逐字不变（幂等…）`、`路径变了 ⇒ **整块替换**那一行…`、`缩进不同也一样幂等（第二次 changed:false）` —— 这四条证明本变异只动了「关不关 Hindsight」那一维，MCP 行的插入/替换/幂等行为**不受影响**（抓住它的是**新**断言，不是旧断言顺手命中）。",
+      "test": "memory-backend.test.mjs",
+      "edits": [
+        {
+          "file": "lib/memory-backend.js",
+          "find": "  const wantHindsightDisabled = target === 'off' || (target === 'midas' && !!midas);",
+          "replace": "  const wantHindsightDisabled = target === 'off'; // MUTANT: 已接线的 midas 不再关 Hindsight ⇒ 两个后端同时活着"
         }
       ]
     }

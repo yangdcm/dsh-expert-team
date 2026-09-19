@@ -400,7 +400,7 @@ presets/expert-team/   「专家团模式」preset：12 个角色 subagent 工�
 
 - **两条规则被搬到宿主 `tools/post-execute` 瀑布上**（`lib/interception.js`）：「台账契约」——重复 id / 环 / 自依赖当场顶回（`HARD_GRAPH_CODES`）；「规格边界」——SPEC 未填不许进实现（`SPEC_COMPLETE_PHASES`）。**规格沉默等于允许，那正是头号返工源。**
 - **写侧归属门禁**挂在 `tools/pre-execute`（`lib/artifact-ownership.js`）：创建放行、覆写他人工件当场拒绝；**持 `bash` 的角色仍可能绕过**（已列进[适用性与边界](#适用性与边界)）。
-- **90 个测试文件 + 170 条变异目录**：`npm run test:all` 零依赖、无需 `install`（CI 跑的就是它）。变异目录在 CI 里校验的是**形状**（id 唯一、每个变异体的 `find` 串在目标文件里恰好命中一次、条数与常量一致）；**变异体本身需手动注入**，**CI 目前不执行变异体** ⇒ 它是"防呆 + 防漂移"，**不是**"自动证明测试能抓错"。
+- **90 个测试文件 + 172 条变异目录**：`npm run test:all` 零依赖、无需 `install`（CI 跑的就是它）。变异目录在 CI 里校验的是**形状**（id 唯一、每个变异体的 `find` 串在目标文件里恰好命中一次、条数与常量一致）；**变异体本身需手动注入**，**CI 目前不执行变异体** ⇒ 它是"防呆 + 防漂移"，**不是**"自动证明测试能抓错"。
 - **多组棘轮（ratchet）**：`vocab-consistency`（术语与角色标签单一真源）、`scan-single-source`（同一事实不许有两个家）、`write-bypass-ratchet`（写侧不许绕过拦截）、`settings-consumers`（每个设置项都必须有消费者，白名单集合相等 ⇒ 只减不增）、`state-perf-guard`（子会话计时**零次**读日志，性能回归即红）。
 - **两种零要分得清**："我不知道有什么"与"确实没有"不长成同一个样子 —— 工具面收窄失败时区分 `no-known-names` / `nothing-to-deny`；`/state` 取不到时间戳时给 `hasTimestamp: false`，而不是用 `0` 冒充。
 - **失败必须出声**：写侧越界、工件分叉、超轮次返工一律**显式报错**，不做静默截断 —— 静默失败是本仓最贵的 bug 类型。
