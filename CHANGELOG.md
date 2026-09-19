@@ -341,6 +341,85 @@ Hindsight、两者是否一致。于是这两件事在界面上是**两种不同
   `props.onSettings` / `props.memoryBackend`；两个渲染位点都把 `onSettings` 原样交给三选一）。
   判据放宽这件事本身现在**有记录、也有补偿断言**。
 
+### 两处修复：推荐插件自检的 midas 那条断言在"装了"的机器上假红 + `effective` 没回答"现在到底走哪个后端"
+
+- **① 测试在"用户真的装了"的机器上假红（`node memory-backend.test.mjs` 一条 ✗）**：这条断言要证明的是
+  "选了 midas 却没装 ⇒ 提示里含安装命令"，可它当时是**拿真实的宿主环境**去问的
+  （`delete process.env[MIDAS_MCP_BIN]` 之后 `detectOptionalPlugins` 会继续扫 PATH 里的裸名字
+  `midas-mcp`）。用户自己把 `midas-memory-mcp` 装成全局命令之后，探针就命中它 ⇒ 那一档从
+  `missing` 变成 `installed-not-ready`，**同一条断言在开发机上红、在干净 CI 上绿** —— 那不是测代码，
+  是测宿主（发现层早有这个教训：状态机用例一律注入 `midas:` 夹具）。
+  修法**不是放宽断言**，而是给它补上和发现层同一套的**注入口**：
+  `detectOptionalPlugins(ctx, { env })` → `probe(names, env)` → `probeMidasBinarySync({ env })`
+  （不传 `env` 时仍是 `process.env`，生产路径一个字没变；注入只改"看哪些路径"，分档判据不动）。
+  于是 **`missing` 与 `installed-not-ready` 两档都由夹具驱动**：前者把 `MIDAS_MCP_BIN` 指到一个
+  **不存在**的路径（发现的第一层命中即停 ⇒ 与宿主 PATH 无关），后者指向一个**真实存在**的文件。
+  断言强度原样保留：`missing` ⇒ 提示里**必须**含安装命令；`installed-not-ready` ⇒ **midas 那一段里
+  一个安装命令都不许有**。另加两条反空转守卫：两个夹具路径"一个确实不存在、一个确实存在"，
+  以及"同一台机器上注入这两档**必须**给出不同结论"（注入没接线 ⇒ 两档都退化成宿主的结论 ⇒ 红）。
+- **② `readMemoryBackendState()` 的 `effective` 没回答它自己文档里的那个问题**：它的 JSDoc 写着
+  "用户真正关心的是**现在到底走哪个后端**"，而实现是 `hindsightDisabled ? 'off' : 'hindsight'`
+  —— **从不看 `stored`**。于是"选了 Midas 且五态里确实就绪"也会被报成 `effective: 'hindsight'`
+  （`statusKind: 'midas-ready'`、`notWired: false` 同时在同一个对象里 ⇒ 自相矛盾）。
+  修法就是**重排 + 一行**：`effective` 挪到 `notWired` 之后求值（`midasDisplay` / `notWired` 都是
+  先声明后赋值，放在原来的位置只会撞 TDZ），判据写成
+  `(stored === 'midas') ? (notWired ? 'hindsight' : 'midas') : (hindsightDisabled ? 'off' : 'hindsight')`。
+  刻意**复用 `notWired`**、不重新推一遍 `midasDisplay.kind === 'midas-ready'`：两个 flag 同源
+  ⇒ 结构上不可能漂移（重推一遍等于同一件事写两份，下次改一处就分叉）。
+  **八种情形**逐条核对过（下表是修好之后的实测值，八格都来自真跑 `readMemoryBackendState`）：
+
+  | # | 情形 | `effective` |
+  |---|---|---|
+  | 1 | `hindsight` + Hindsight 行未禁用 | `hindsight` |
+  | 2 | `hindsight` + Hindsight 行禁用 | `off`（**以文件为准** —— conflict 那档的文案也是这么说的） |
+  | 3 | `off` + 行未禁用（选了但没落地） | `hindsight`（如实："想关"不等于"已关"） |
+  | 4 | `off` + 行禁用 | `off` |
+  | 5 | `midas` + 五态就绪 | `midas` |
+  | 6 | `midas` + 未就绪（四态任一）+ 行未禁用 | `hindsight` |
+  | 7 | **`midas` + 未就绪 + 行禁用** | **`hindsight`** |
+  | 8 | `midas` + **盲探**（`probeOk:false`，五态走 `unknown`）+ 行禁用 | `hindsight` |
+
+  **第 7 格是本轮独立核验抓出来的、上一版被漏掉的一格（如实记下，不是"已文档化的取舍"）**：
+  第一版的三元把 else 分支写成 `hindsightDisabled ? 'off' : 'hindsight'`，在 `stored === 'midas'` 时
+  那个 else **根本不该适用** —— 用户不在 Hindsight 上，Hindsight 行禁不禁用改变不了"此刻真正在走谁"。
+  于是出现镜像的自相矛盾：`effective: 'off'`，而同一个对象里的文案写着"Midas **未接通** …… 记忆仍走
+  Hindsight"。**第 8 格同一形状**（`midasDisplay` 为 null 时也走 else ⇒ 被判成 `off`）：本轮一并按
+  "先按 `stored` 分叉"改掉，`stored === 'midas'` 时 `effective` 只可能是 `'midas'` / `'hindsight'`。
+  「Hindsight 行被禁用」这个细节由 `hindsightDisabled` / `display` / `notes` 表达，不由 `effective`
+  表达 —— 两个语义层，别混。
+  （独立核验另外裁定：`midas` 就绪 **且** 行被禁用那一格回 `effective: 'midas'` 是**可接受的** ——
+  Midas 确实在走，且那一档的文案对 Hindsight 一个字都没说 ⇒ 本轮**不改**那一格。）
+  既有两条断言（`effective === 'hindsight'` / `effective === 'off'`）保持绿。
+  补 **6 条断言**堵住这个覆盖缺口（均落在既有 `memory-backend.test.mjs`，**不新增测试文件**）：
+  · midas **未就绪**（复用 `MIDAS_ABSENT` 夹具，Hindsight 行未禁用）⇒ `effective === 'hindsight'`；
+  · midas **就绪**（复用端到端那套 `MIDAS_FOUND` + `mcpClientInstalled:true` + 补丁行已落盘）⇒
+    `effective === 'midas'`（**这条是那个 latent bug 的看门人**）；
+  · **第 7 格** ×3：`stored=midas` + `MIDAS_ABSENT` + **另造一份"hindsight 行 `disabled: true`"的补丁夹具**
+    （原来的 `s4` 用的是没禁用的补丁 ⇒ 这一格此前**零覆盖**，正是它没被发现的原因）⇒ 前提成立 +
+    `effective === 'hindsight'` + 同一对象内 `effective === 'hindsight'` 与
+    `display.zh` 含"仍走 Hindsight"说的是同一句话（任一边漂移就红）；
+  · **第 8 格** ×2（**这一格现在也有常驻断言**）：`stored=midas` + `MIDAS_BLIND`（**盲探** ⇒
+    `probeOk:false`、五态 `unknown`）+ 同一份"hindsight 行被禁用"的夹具 ⇒ 前提成立（`statusKind=unknown`
+    / `notWired:true` / `midasSetup.ready:false`）+ `effective === 'hindsight'` + 同一对象内
+    `effective === 'hindsight'` 与 display 的"⇒ 这里不给结论。**记忆仍走 Hindsight**"是同一句话、
+    且**不许**出现"已关闭"。**为什么值得单独立**：第 7 与第 8 格虽走同一条新分支，但**触发条件不同**
+    —— 一个是"确定没装"、一个是"**不知道**装没装"；而"两种零必须分得开"（`probeOk:false` 不许被读成
+    "没装"）正是本轮反复出问题的地方 ⇒ 把「**无法判断就绪 ≠ 记忆已关**」这条纪律钉成常驻断言。
+- 两处修复各自在 `/tmp` 副本上做过**注入变红**实证（回退 `effective` 的旧写法 ⇒ 新增的"就绪 ⇒ midas"
+  红；把判据改成恒 `midas` ⇒ 新增的"未就绪 ⇒ hindsight"红；把 midas 探针改回读 `process.env` ⇒
+  分档那条红），每处都附 `node --check` 与改动行的 `grep` 证明注入真的落到了文件里。第 7 / 第 8 格
+  的修复另做了**三次**注入，每次都先 `grep` 注入行、再 `node --check`、再贴裸红输出：
+  ① **把 else 分支退回旧写法** ⇒ 第 7 格与第 8 格的断言各 ✗ 两条（`effective=off` 与 display 的
+  "记忆仍走 Hindsight" 同时成立 —— 核验报的那句自相矛盾原样复现）；② **第 7 格显式回 `off`**；
+  ③ **第 8 格（盲探）显式回 `off`** —— 这一条注入**只**让第 8 格的两条断言变红、第 7 格仍绿，
+  证明第 8 格那条常驻断言是**独立承重**的，不是靠第 7 格顺手命中。三次注入的真值表都逐格打过：
+  修复后第 7 / 第 8 格从 `off` 变成 `hindsight`，**第 1–5 格一格都没动**。
+  （第一次给第 8 格写注入时我把条件猜成了"`midasDisplay` 为 null" —— 实测它不是 null 而是
+  `{kind:'unknown',…}`，那次注入因此**没碰到目标**（测试全绿、真值表没变）；我据此换了条件并重新
+  证明。这条如实记下：**注入"没落地"与"落对了但断言不承重"必须分得开**，否则会把无效注入当成
+  守卫生效 —— 与本仓"抽不到不是跳过、是判据失效"同一条纪律。）
+- **本版不改版本号、不新增依赖、不改任何既有设置的默认值。**
+
 **本版不改版本号、不新增依赖、不改任何既有设置的默认值。**
 
 ## 1.3.34

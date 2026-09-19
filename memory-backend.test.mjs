@@ -250,6 +250,50 @@ console.log('\n⑤ readMemoryBackendState：设置值 vs **实际生效状态**�
   check(s4.notWired === true && s4.statusKind === 'midas-not-installed', 'midas + 二进制缺失 ⇒ midas-not-installed + notWired:true（不静默 no-op）', s4.statusKind);
   check(/未接通/.test(s4.display.zh) && /Hindsight/.test(s4.display.zh) && /token/.test(s4.display.zh),
     '文案说明"未接通、实际仍走 Hindsight、仍按 token 计费"（一句实话都不能少）', s4.display.zh.slice(0, 40));
+  // 新增（覆盖缺口）：Midas **没就绪**时，`effective` 必须如实回 `hindsight` —— 那几档文案自己就
+  // 写着"记忆此刻仍走 Hindsight"，`effective` 与它必须说同一件事（`stored` 才是"选了什么"）。
+  check(s4.effective === 'hindsight',
+    'midas 未就绪（二进制缺失）⇒ effective=hindsight（"选了什么"≠"生效了什么"）', `effective=${s4.effective}`);
+
+  // ④b 镜像格（**独立核验指出的未披露缺口**）：`stored=midas` **且 Hindsight 那一行被禁用**时，
+  // `effective` 仍必须是 `hindsight` —— 用户根本不在 Hindsight 上，所以"那一行被禁用"这件事
+  // 不改变"此刻真正在走哪个后端"；Midas 未接通 ⇒ 记忆走的仍是 Hindsight。（旧实现在这一格回
+  // `'off'`，而同一个对象里的文案写着"仍走 Hindsight" ⇒ 自相矛盾。）
+  // ⚠️ `s4` 用的 `a.root` 是 REAL_PATCH（**没有**禁用 Hindsight 行）⇒ 覆盖不到这一格，这也是它
+  // 一直没被发现的原因；这里必须另造一份"hindsight 行 disabled: true"的补丁夹具。
+  const s4bHome = await makeHome('- id: ui-workflow-run\n  disabled: true\n- id: hindsight\n  disabled: true\n');
+  const s4b = await readMemoryBackendState({ settings: { memory: { backend: 'midas' } }, env: {}, home: s4bHome.root, midas: MIDAS_ABSENT, mcpClientInstalled: false });
+  check(s4b.hindsightDisabled === true && s4b.statusKind === 'midas-not-installed' && s4b.notWired === true,
+    '镜像格前提成立：stored=midas + 二进制缺失 + **Hindsight 行确实被禁用** ⇒ midas-not-installed / notWired:true',
+    `hindsightDisabled=${s4b.hindsightDisabled} statusKind=${s4b.statusKind}`);
+  check(s4b.effective === 'hindsight',
+    'midas 未就绪 **且 Hindsight 行被禁用** ⇒ effective 仍是 hindsight（**绝不是 off**：用户不在 Hindsight 上，那一行禁不禁用改变不了此刻走的是谁）',
+    `effective=${s4b.effective}`);
+  check(s4b.effective === 'hindsight' && /仍走 Hindsight/.test(s4b.display.zh),
+    '同一对象内**不自相矛盾**：effective=hindsight 与 display 的"记忆仍走 Hindsight"必须是同一句话（有一边漂移就红）',
+    `effective=${s4b.effective} display=${s4b.display.zh.slice(0, 34)}`);
+
+  // ④c 第 8 格：**盲探**（`probeOk:false` —— 探测本身不可用 ⇒ 五态走 `unknown`）+ Hindsight 行被禁用。
+  // 为什么要单独立一条：它与 ④b 走**同一条**新分支（`notWired === true` ⇒ `hindsight`），但
+  // **触发条件不同** —— ④b 是"确定没装"（`probeOk:true` + `found:false`），这一格是"**不知道**装没装"。
+  // 而"两种零必须分得开"正是本轮反复出问题的地方（`probeOk:false` 不许被读成"没装"），
+  // "探测不可用"这一档最容易在后续重构里被漏掉、或被 else 分支顺手判成 `off`。把这条纪律钉住：
+  // **「无法判断就绪」≠「记忆已关」** ⇒ `effective` 绝不回 `off`。
+  // 一致性判据与 ④b 同形：这一格的文案**也**写着"⇒ 这里不给结论。**记忆仍走 Hindsight**（仍按 token
+  // 计费）"—— 所以 `effective === 'hindsight'` 正是同一句话，两边必须一起成立（有一边漂移就红）。
+  const s4c = await readMemoryBackendState({ settings: { memory: { backend: 'midas' } }, env: {}, home: s4bHome.root, midas: MIDAS_BLIND, mcpClientInstalled: false });
+  // 注：这一格 `midasSetup` **不为 null**（用户选了 midas 就有引导，与就绪与否无关）—— 它带
+  // `ready === false`，即"引导给到位、结论不下"。别把它写成 null（那是**没选** midas 才有的形状）。
+  check(s4c.hindsightDisabled === true && s4c.statusKind === 'unknown' && s4c.notWired === true
+    && s4c.midasSetup && s4c.midasSetup.ready === false,
+    '第 8 格前提成立：stored=midas + **盲探**（探测不可用）+ Hindsight 行被禁用 ⇒ unknown / notWired:true（不给结论，但引导照给）',
+    `hindsightDisabled=${s4c.hindsightDisabled} statusKind=${s4c.statusKind} midasSetup.ready=${s4c.midasSetup && s4c.midasSetup.ready}`);
+  check(s4c.effective === 'hindsight',
+    'midas 盲探（探测不可用）+ Hindsight 行被禁用 ⇒ effective 仍是 hindsight —— 「无法判断就绪」**不等于**「记忆已关」（绝不回 off）',
+    `effective=${s4c.effective} statusKind=${s4c.statusKind}`);
+  check(s4c.effective === 'hindsight' && /仍走 Hindsight/.test(s4c.display.zh) && !/已关闭/.test(s4c.display.zh),
+    '第 8 格同一对象内**不自相矛盾**：effective=hindsight 与 display 的"记忆仍走 Hindsight"是同一句话，且**不许**出现"已关闭"（三边任一处漂移就红）',
+    `effective=${s4c.effective} display=${s4c.display.zh.slice(0, 34)}`);
 
   // ⑤ "选了 Hindsight 但不通" 与 "选了不使用" **必须是两种说法**（这就是本模块存在的理由之一）
   const s5 = await readMemoryBackendState({ settings: { memory: { backend: 'hindsight' } }, env: {}, home: a.root, hindsight: { exists: false, failing: false } });
@@ -1491,6 +1535,11 @@ console.log('\n⑩ Midas 一期：分层发现 / - insert: 补丁行 / 五态就
   const ready = await readMemoryBackendState({ settings: { memory: { backend: 'midas' } }, env: e2eEnv, home: e2e.root, midas: MIDAS_FOUND, mcpClientInstalled: true });
   check(ready.statusKind === 'midas-ready' && ready.notWired === false && ready.display.level === 'ok' && ready.midasSetup.ready === true,
     'apply 之后回读 ⇒ `midas-ready` / notWired:false（"写进去了"与"读出来是就绪"两端对齐）', ready.statusKind);
+  // 新增（**这条就是那个 latent bug 的看门人**）：五态里确实就绪时，`effective` 才允许是 `midas`。
+  // 只判 `notWired === false` 不够 —— 旧实现在这里会回 `hindsight`（根本没读 `stored`/`notWired`）。
+  check(ready.effective === 'midas',
+    'midas 就绪（二进制 + MCP 客户端 + 补丁行都在）⇒ effective=midas（"现在到底走哪个后端"必须真的回答 midas）',
+    `effective=${ready.effective} statusKind=${ready.statusKind} notWired=${ready.notWired}`);
   const oneStep = await readMemoryBackendState({ settings: { memory: { backend: 'midas' } }, env: e2eEnv, home: e2e.root, midas: MIDAS_FOUND, mcpClientInstalled: false });
   check(oneStep.statusKind === 'midas-needs-mcp-client' && oneStep.notWired === true && /MCP 客户端/.test(oneStep.display.zh),
     '二进制在、客户端没装 ⇒ `midas-needs-mcp-client` + notWired:true + 文案点明缺的是哪一件', oneStep.statusKind);
@@ -1580,23 +1629,42 @@ console.log('\n⑩ Midas 一期：分层发现 / - insert: 补丁行 / 五态就
     try {
       process.env[DSH_HOME_ENV] = cfgHome;
       _live.loadSettingsSync();
+      // ⚠️ 这两档**不碰宿主的 PATH**（`{ env }` 注入）：`MIDAS_MCP_BIN` 是发现的**第一层**，
+      // 探针命中它就不再往下看 ⇒ 用例判定的完全是"注入的这份 env 说了什么"，与这台机器上
+      // 恰好装没装 `midas-mcp`（用户现在真的装了）无关。走 `process.env` 那条老路时，
+      // 裸名字候选会扫 PATH 里的 `midas-mcp` ⇒ 断言在开发机与干净 CI 上结果不同（测宿主 = 假红）。
       delete process.env[MIDAS_BIN_ENV];
-      const missing = _live.detectOptionalPlugins(ctxOf([]));
+      // 反空转守卫：这两个夹具路径**必须**是"一个不存在、一个存在"，否则下面那条"注入真的生效"
+      // 的比对会因为两边都是 false 而空转通过（本仓对"没咬合上也算绿"的纪律）。
+      const absentBin = join(cfgHome, 'no-such-dir', 'midas-mcp');
+      const presentBin = fileURLToPath(import.meta.url);   // 一个**真实存在**的文件 ⇒ 同步探针会命中
+      check(absentBin !== presentBin
+        && (await stat(absentBin).then(() => false).catch(() => true)) === true
+        && (await stat(presentBin).then(() => true).catch(() => false)) === true,
+        '反空转：「没装」夹具确实不存在、「装了」夹具确实存在（否则下面两档的比对会空转通过）', absentBin);
+      const envAbsent = { [MIDAS_BIN_ENV]: absentBin };
+      const envPresent = { [MIDAS_BIN_ENV]: presentBin };
+      const missing = _live.detectOptionalPlugins(ctxOf([]), { env: envAbsent });
+      // 诊断一起打出来：万一这条红了，要能一眼看出"注入没生效"（两档同值）还是"判定错了"（档位对不上）。
+      const hostMissing = _live.detectOptionalPlugins(ctxOf([]));
+      const notReady = _live.detectOptionalPlugins(ctxOf([]), { env: envPresent });
+      check(stOf(missing) !== stOf(notReady),
+        '**注入的 env 真的被读到了**（同一台机器上，注入"没有那份二进制"与"有那份二进制"两档必须给出不同结论 —— '
+        + '注入没接线时两者都会退化成宿主的结论 ⇒ 本条红）',
+        `注入没装=${stOf(missing)} / 宿主=${stOf(hostMissing)} / 注入装了=${stOf(notReady)}`);
       check(stOf(missing) === 'missing' && missing.hint.indexOf(MIDAS_INSTALL_COMMAND) >= 0,
         '选了 midas 且没装 ⇒ missing，提示里**含**安装命令（该装就告诉他怎么装）', stOf(missing));
-      process.env[MIDAS_BIN_ENV] = fileURLToPath(import.meta.url);   // 一个**真实存在**的文件 ⇒ 同步探针会命中
-      const notReady = _live.detectOptionalPlugins(ctxOf([]));
       // 提示是**一行里逐项分档**的（`；` 分隔）⇒ 要按**这一项那一段**判"没有命令"，
       // 否则同一条提示里别项缺装的命令会让本断言假红（这不是放水：判的就是 midas 这一段）。
       const midasSeg = String(notReady.hint).split('；').find((p) => p.indexOf('midas-memory-mcp') >= 0) || '';
       check(stOf(notReady) === 'installed-not-ready' && midasSeg !== '' && !/dsh plugin|npm i -g/.test(midasSeg),
         '二进制在、MCP 客户端没装 ⇒ installed-not-ready，**midas 那一段**里不含任何安装命令（"已装但没就绪"不该被叫去重装）',
         midasSeg.slice(0, 60));
-      const ready = _live.detectOptionalPlugins(ctxOf([MIDAS_MCP_CLIENT_PACKAGE]));
+      const ready = _live.detectOptionalPlugins(ctxOf([MIDAS_MCP_CLIENT_PACKAGE]), { env: envPresent });
       check(stOf(ready) === 'ready', '二进制 + MCP 客户端都在 ⇒ ready', stOf(ready));
       await writeFile(join(cfgHome, 'expert-team', 'settings.json'), JSON.stringify({ memory: { backend: 'hindsight' } }));
       _live.loadSettingsSync();
-      const notChosen = _live.detectOptionalPlugins(ctxOf([]));
+      const notChosen = _live.detectOptionalPlugins(ctxOf([]), { env: envPresent });
       check(stOf(notChosen) === 'unknown' && notChosen.hint.indexOf('midas-memory-mcp') < 0,
         '没选 midas（默认 Hindsight）⇒ unknown：**不提示**（不制造噪声 —— 噪声会降权所有告警）', stOf(notChosen));
     } finally {
