@@ -7,6 +7,48 @@
 
 （暂无）
 
+## 1.5.1
+
+**主题：三处真机缺陷修复（含一处「同一个值、两个路由两种说法」）+ 一处文档更正**。
+**本版是补丁 —— 没有新能力、没有行为变更、没有开关变化**：下面第一条修的是"读错了存储"，恢复的是
+**本来应有的**行为；其余是渲染与文案。**本版未改 `presets/**`**（persona 契约与 1.5.0 一致）。
+
+### 修复
+
+- **选 Midas 后重启 `dsh web`，设置页下拉又跳回 `Hindsight`**（`lib/command.js`）。值**从来没有丢过**，是读错了地方：
+  `/settings` 的 GET 分支是**唯一**绕开 `currentSettings()` 的设置读取口 —— 它读 `SETTINGS_CACHE || loadSettingsSync()`，
+  即**只读文件存储** `~/.dsh/expert-team/settings.json`。而 `memory.backend` 是 `enum`、宿主表达得了，按设计
+  `persistSettingsPatch` **从不**把它写进文件存储，它只落在**宿主命名空间** `~/.dsh/settings.yaml` ⇒ 文件里压根没有
+  `memory` 这个键 ⇒ `normalizeSettings` 填上 spec 默认 `hindsight`。于是同一个进程、同一个键出现两个**互斥**的答案：
+  `/settings` 答 `hindsight`，而 `/memory-backend` 答真值 `midas`（后者用的是 `currentSettings()`）—— 用户看到的正是
+  「同一个值，两个路由两种说法」。**修法**：settings 一律走 `currentSettings()`，与 `/memory-backend`、`compilePolicy`
+  等**所有**消费者同一口径（宿主不可用时它内部同样退回文件值，行为与 1.1.x 一致）；`repaired` 仍取自缓存 ——
+  那是**加载时**的文件解析修复记录，而 `currentSettings()` 返回的是裸设置对象，响应形状保持不变。
+- **设置页说明把 markdown 标记原样显示给用户**（`client.js`）。截图里是 `三种选择**互斥**（…`。
+  **两条独立渲染路径**都只做了 `esc(...)`（仅转义 HTML、**没有**剥标记），而面板没有 markdown 渲染器：
+  - **组说明**（`esc(g.hint)`）—— 当前 5 条组 hint 都是干净散文，属**潜伏**缺陷，本次一并收口；
+  - **行说明** —— 用户实际看到的那条。
+  两处都改成 `esc(plainText(...))`（先剥标记、再转义 HTML，与其它 10 处服务端文案同一套顺序），
+  不靠"作者记得别写 markdown"这条纪律兜底。
+- **`memory.backend` 的说明 804 字 → 158 字**（`lib/settings.js`）。旧 hint 804 字、9 对 `**`、16 个反引号，是全 spec
+  **唯一**带标记的一条，也是次长一条（221 字）的 3.6 倍。改写成 **158 字纯散文**（实测：0 对 `**`、0 个反引号），
+  只留三个帮用户做决定的事实：三选一互斥 / **选 Midas 会停掉 Hindsight，前提是二进制真的找得到**（没接通就不关，
+  否则两个后端一起失去）/ **改这一项要重启 `dsh web` 才生效**。操作细节（`- insert:` 行、`disabled: true`、
+  `MIDAS_MCP_DB` 没有默认值、装法步骤）全部移出 —— 那些已由状态块与 `midasSetup` 引导在**恰当时机**渲染，
+  写进 hint 只会多一份会漂的拷贝。
+
+### 文档
+
+- **中英 README 加入 dsh-plugin.org 收录徽章，并修正一处过时表述**（`README.md` / `README.en.md`）。
+  插件已于 2026-09-15 被 dsh-plugin.org 收录（[收录页](https://dsh-plugin.org/zh/plugins/yangdcm/dsh-expert-team)），
+  原文「收录**已提交**、待上游合并、未合并前请用方式一」已不成立 ⇒ 改为如实陈述并链回收录页，
+  「方式二：插件市场」的步骤不再带"若已被收录"的前提。
+
+### 升级步骤
+
+- 前两条是**宿主路由与面板渲染**的修复，hint 文案同样在重启后刷新 ⇒ **重启 `dsh web`** 后全部生效。
+- 本版**无行为变更、无新能力、无开关变化**，不需要改任何设置。
+
 ## 1.5.0
 
 **主题：把只写在"按需加载"处的规则，搬到"常驻"的通道上 —— lead 拿到只读 shell，交互改走可点击选项**。
