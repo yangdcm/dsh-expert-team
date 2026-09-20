@@ -556,12 +556,11 @@ console.log('\n⑥ applyMemoryBackend：真写盘（受控入口）/ 幂等 / �
   check(r8.ok && r8.saved && r8.needsRestart, '真的有改动时才 needsRestart:true', JSON.stringify({ changed: r8.changed, needsRestart: r8.needsRestart }));
 }
 
-console.log('\n⑦ 接线断言（源码级）：路由存在 / GET+POST / 真的被调用 / 受控入口 / 未接通话术随包发布');
+console.log('\n⑦ 接线断言（源码级）：路由存在 / GET+POST / 真的被调用 / 受控入口 / 未接通话术（逐态语义）/ 引导条件');
 {
   const cmdSrc = await readFile(join(here, 'lib', 'command.js'), 'utf8');
   const modSrc = await readFile(join(here, 'lib', 'memory-backend.js'), 'utf8');
   const cliSrc = await readFile(join(here, 'client.js'), 'utf8');
-  const setSrc = await readFile(join(here, 'lib', 'settings.js'), 'utf8');
 
   check(/\/plugins\/dsh-expert-team\/memory-backend/.test(cmdSrc), '`lib/command.js` 里有这条路由（函数写对了但没人挂 = 功能没上线）', '');
   const routeAt = cmdSrc.indexOf("path: '/plugins/dsh-expert-team/memory-backend'");
@@ -580,8 +579,55 @@ console.log('\n⑦ 接线断言（源码级）：路由存在 / GET+POST / 真�
     '模块里**没有**任何直写调用（写绕过棘轮：豁免面只有两个文件，这里是第三个就红）', '');
   check(!/\bwriteFile\s*\(/.test(withoutComments(cliSrc)), 'client.js 里也没有直写调用', '');
 
-  check(/未接通/.test(withoutComments(modSrc)) && /未接通/.test(withoutComments(setSrc)),
-    '「本轮未接通」这句实话**随包发布**（在 lib 的生产代码里，不只是测试里）', '');
+  // ── 未接通话术：**逐态语义**断言（2026-09-20 重写，替掉一条字面命中）──────────────────────────
+  // 旧断言是 `/未接通/.test(去注释的 lib/memory-backend.js) && /未接通/.test(去注释的 lib/settings.js)`。
+  // 两个操作数都是**弱代理**（"这 4 个字在这个文件里出现过"）：写进一句与本功能无关的话、写进别的字符串
+  // 都能让它绿，而它**保护不了任何用户可见行为**。它自己的理由也已经失效：它声称保护「本轮未接通」，
+  // 而 `lib/settings.js` 的注释明说那句话**必须拿掉**（`midas` 真接线了，"本轮没做"成了假话）
+  // ⇒ 断言退化成的实际含义是"settings.js 里必须出现一次『未接通』"，而它出现的唯一原因就是这条断言
+  // 本身（自证循环：为变绿而留的文案，又被断言钉死 ⇒ 谁也删不掉）。
+  // 现在钉的是**契约**：三个"未就绪但已可判定"的档，每一档的 `zh` 都必须同时说清两件事 ——
+  //   ① 用户**没接通**（不许沉默、不许说已接通）；② 此刻**实际**在走哪个后端（Hindsight）。
+  // 真源是**生产函数** `classifyMidasReadiness` 的输出（不是文件里的文本）：把某一档的措辞删空或删掉
+  // "没接通" ⇒ 红；把词塞进注释 ⇒ 不可能再绿（断言不再读文件）。
+  // 正则**容忍同义词**（措辞可以改：未接通 / 还没接通 / 尚未接通），但"这件事必须被说"不能省。
+  {
+    const readyInput = { bin: MIDAS_FOUND, mcpClientInstalled: true, patchRowPresent: true, patchReadable: true, start: null, lookedAt: '/fake/midas-memory-mcp/dist/bin/midas-mcp.js' };
+    const NOT_WIRED = /未接通|还没接通|没有接通|尚未接通/;
+    const STILL_HINDSIGHT = /仍(?:然)?走 Hindsight|还是走 Hindsight|Hindsight 仍(?:然)?(?:在跑|生效)/;
+    const notReadyCases = [
+      ['midas-not-installed', '没装：二进制没找到', { ...readyInput, bin: MIDAS_ABSENT }],
+      ['midas-start-failed', '装了但起不来', { ...readyInput, start: { ok: false, error: '进程提前退出（code=3）', stderr: 'Cannot find module node:sqlite' } }],
+      ['midas-needs-mcp-client', '差 MCP 客户端', { ...readyInput, mcpClientInstalled: false }],
+    ];
+    for (const [kind, why, input] of notReadyCases) {
+      const got = classifyMidasReadiness(input);
+      const zh = String(got.zh || '');
+      // 反空转①：先确认这一档**真的是它自己**（否则"文案对"可能只是打到了别的档）。
+      check(got.kind === kind, `（前置）${kind} 那一档取得出来（${why}）`, got.kind);
+      // 反空转②：`zh` 必须有内容 —— 空串会让下面的正则变成"没有可匹配的东西"而静默算过。
+      // 失败详情里**打印观测到的原文**（不是只说"红了"）：改文案的人要一眼看到现在写的是什么。
+      check(zh.length > 20 && NOT_WIRED.test(zh) && STILL_HINDSIGHT.test(zh),
+        `${kind}（${why}）：文案**说清用户没接通**、且**说清此刻仍走 Hindsight**（"到底哪个后端在用"不许留给用户猜）`,
+        zh.length > 20 ? zh.slice(0, 90) + '…' : `⚠️ zh 只有 ${zh.length} 字：${JSON.stringify(got)}`);
+    }
+    // 反面：就绪那一档**不许**说"未接通"（三档抄成同一句、或就绪档被删空，都要红）。
+    const readyZh = String(classifyMidasReadiness(readyInput).zh || '');
+    check(readyZh.length > 20 && !NOT_WIRED.test(readyZh),
+      'midas-ready：**不说**未接通（就绪却说没接通 = 谎报；文案被删空 = 用户什么都看不到）',
+      readyZh.length > 20 ? readyZh.slice(0, 90) + '…' : `⚠️ zh 只有 ${readyZh.length} 字`);
+
+    // 渲染路径的**空洞**：既有断言只查 `st.midasSetup` / `midasSetup.steps` / `exp-hs-midas-guide`
+    // 这几个**词**在 `client.js` 里出现（`settings-page.test.mjs` 与下面的 ⑨ 都是这个口径），
+    // 却**没钉条件** —— 把 `!midasSetup.ready` 改成 `midasSetup.ready`（只有已接通的人才看到"怎么装"、
+    // 没接通的人什么都不显示）那些断言全绿，而那恰好把功能整个掀翻。这里钉住那个布尔表达式本身。
+    const gateAt = cliSrc.indexOf('var midasGuide = (midasSetup && !midasSetup.ready)');
+    const gateLine = gateAt < 0 ? '' : cliSrc.slice(gateAt, cliSrc.indexOf('\n', gateAt) + 1);
+    check(gateAt >= 0 && /var midasGuide = \(midasSetup && !midasSetup\.ready\)/.test(gateLine),
+      '引导的开关条件是 `midasSetup && !midasSetup.ready`（**没就绪**才渲染引导；少了 `!` 就退化成"只有已接通的人才看得到装法"）',
+      gateLine.trim() || `⚠️ 找不到那条赋值（gateAt=${gateAt}）—— 本条必须红，绝不许"切了个空串"静默通过`);
+  }
+
   check(/memory-backend/.test(cliSrc), '客户端用的是这条专用路由（不是拿 /settings 去糊）', '');
   check(/memory-backend/.test(cliSrc) && /needsRestart/.test(cliSrc), '客户端会读回执里的 needsRestart（重启要求由那条路由给）', '');
   check(/'memory\.backend'/.test(withoutComments(cliSrc)) || /'memory\.backend'/.test(cliSrc), '客户端认得 `memory.backend` 这个键（改它要走专用路由 + 显示重启要求）', '');
@@ -590,6 +636,67 @@ console.log('\n⑦ 接线断言（源码级）：路由存在 / GET+POST / 真�
   const settingsRouteAt = cmdSrc.indexOf("path: '/plugins/dsh-expert-team/settings'");
   const tail = settingsRouteAt < 0 ? '' : cmdSrc.slice(settingsRouteAt, settingsRouteAt + 4200);
   check(/memory\.backend/.test(tail) && /只存值/.test(tail), '`/settings` 路由里点明 `memory.backend` 只存值、要去专用路由（不留一句笼统的"无需重启"）', '');
+
+  // ── ⑦a-2 跨路由一致性：`/settings` 与 `/memory-backend` 必须答**同一个** `memory.backend` ──────
+  // 这条断言补的是一个**真实发生过的**缺陷（2026-09-20 用户报障：「选了 Midas，重启 dsh web 后
+  // 下拉又跳回 Hindsight」）。根因不在持久化（值一直存得对），而在**读取口分叉**：
+  //   · `/settings` 的 GET 分支当时读 `SETTINGS_CACHE || loadSettingsSync()` —— **只读文件存储**
+  //     `~/.dsh/expert-team/settings.json`，而该文件**从来没有** `memory` 键（`memory.backend` 是
+  //     `enum`、宿主表达得了 ⇒ `persistSettingsPatch` 对它跳过文件存储，只写宿主 `~/.dsh/settings.yaml`）
+  //     ⇒ `normalizeSettings` 填上 spec 默认 `hindsight`；
+  //   · `/memory-backend` 的 GET 分支读 `currentSettings()`（宿主值叠在文件值之上的**唯一读取口**）
+  //     ⇒ 正确回 `midas`。
+  // 同一个进程、同一个键、两个路由**相反的答案** —— 旧 §⑦ 只钉了 `/settings` 里"点明 memory.backend
+  // 只存值"（上面那条），却没钉"它的 GET 到底用哪个读取口"，于是这个缺陷**全绿地**溜了过去。
+  //
+  // 为什么是源码级而不是行为级：这两条路由的 handler 闭在 `apply(ctx, config)` 里，依赖真实 ctx/req/res
+  // 与宿主命名空间；本仓既有的接线断言（本节全部）都是源码级正则这一套口径，且**行为面**已由上面
+  // ⑤/⑥ 的纯函数格 + `host-settings.test.mjs` 的宿主合并格覆盖。这里要钉的是**接线**（谁调谁），
+  // 那恰好是纯函数测试**看不见**的那一层 —— 与"函数写对了但没人调用"是同一个缺陷类。
+  {
+    // 先切出 `/settings` 路由块，再从中切出 **GET 分支**体（`if (method === 'GET')` → 它自己的 `return;`）。
+    // ⚠️ 必须切到"分支体"这一级，不能只在整段 window 里 `test()`：整段里还有 POST 分支和
+    // `currentSettings()` 的其它出现（如 `persistSettingsPatch` 的失败回执），窗口一大就会**空洞通过**。
+    const blockAt = cmdSrc.indexOf("path: '/plugins/dsh-expert-team/settings'");
+    const block = blockAt < 0 ? '' : cmdSrc.slice(blockAt, blockAt + 4200);
+    const getHead = block.indexOf("if (method === 'GET')");
+    const getBranch = getHead < 0 ? '' : block.slice(getHead, block.indexOf('return;', getHead) + 7);
+    // 反空转：切出来的分支体必须真的像一段 GET 分支（含 json(200 与 settings:），否则下面两条断言
+    // 会因为"切了个空串"而变成恒真的空洞断言。
+    const branchNonEmpty = getBranch.length > 100 && /json\(200/.test(getBranch) && /settings:/.test(getBranch);
+    check(branchNonEmpty,
+      '（前置）`/settings` 的 GET 分支体切得出来（切不出就说明路由被搬走/改了形状 ⇒ 下面两条要先醒）',
+      `blockAt=${blockAt} / getHead=${getHead} / 分支体 ${getBranch.length} 字`);
+
+    // ⚠️⚠️ 这条断言必须在**去掉注释**的源码上判 —— 这是本条唯一的坑，而且真踩过：
+    //     修复时本分支里写了整段解释（"这里曾经绕开 `currentSettings()`…"），于是**回退到旧写法**
+    //     之后 `/currentSettings\(\)/.test(getBranch)` 依然命中注释里的那个词 ⇒ **空洞通过**。
+    //     变异验证当场抓到了它（把 `settings: merged` 改回 `settings: cur.settings` 时这条仍绿）。
+    //     剔注释用**行首 `//`** 这一条规则：既能盖住本仓这类整行注释，又不会误伤模板串里的 `//`
+    //     （那类剔除器会把真代码一起吃掉，反而更危险）。
+    const stripLineComments = (s) => s.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+    const getCode = stripLineComments(getBranch);
+    check(/currentSettings\(\)/.test(getCode),
+      '`/settings` 的 **GET 分支**经 `currentSettings()` 解析设置（与 `/memory-backend` 同一读取口）—— 用 `SETTINGS_CACHE \\|\\| loadSettingsSync()`（只读文件存储）会答错 `memory.backend`',
+      branchNonEmpty ? '' : '⚠️ 分支体没切出来，本条不计');
+    // ⚠️ 这里**不能**只查 `!/SETTINGS_CACHE/.test(getBranch)`：`repaired` 按设计仍取自缓存
+    //    （`cached.repaired`，`currentSettings()` 返回裸设置对象、不带修复记录），那一行**必须**留。
+    //    要钉的是"**别再拿缓存当 settings 用**"这个具体写法：`settings: <缓存>.settings`。
+    check(!/settings:\s*(?:SETTINGS_CACHE|cur|cached)[.\[]/.test(getBranch) && !/const\s+cur\s*=\s*SETTINGS_CACHE/.test(getBranch),
+      '`/settings` 的 GET **不再**把缓存对象当成 settings 用（`settings: cur.settings` 这种写法已绝迹；`repaired` 取自缓存是允许的，它本来就只有缓存有）',
+      branchNonEmpty ? '' : '⚠️ 分支体没切出来，本条不计');
+
+    // **跨路由一致性**本身：两条路由各自的 GET 分支都必须落在同一个 resolver 上。
+    // 上一条钉了 `/settings` 这一侧；这一条把 `/memory-backend` 那一侧一起钉住 —— 否则将来有人
+    // 把**另一边**改成文件读取，单看每一条仍然绿，两个路由又分叉了。
+    const mbRouteAt = cmdSrc.indexOf("path: '/plugins/dsh-expert-team/memory-backend'");
+    const mbBlock = mbRouteAt < 0 ? '' : cmdSrc.slice(mbRouteAt, mbRouteAt + 4200);
+    const mbNonEmpty = mbBlock.length > 100 && /readMemoryBackendState/.test(mbBlock);
+    check(mbNonEmpty, '（前置）`/memory-backend` 路由块切得出来', `mbRouteAt=${mbRouteAt} / ${mbBlock.length} 字`);
+    check(/readMemoryBackendState\(\{\s*settings:\s*currentSettings\(\)/.test(mbBlock) && /currentSettings\(\)/.test(getCode),
+      '两条路由对 `memory.backend` 用**同一个** resolver（`currentSettings()`）：同一个键不可能再出现"一个路由说 hindsight、另一个说 midas"',
+      (mbNonEmpty && branchNonEmpty) ? '' : '⚠️ 有一侧没切出来，本条不计');
+  }
 
   // ── ⑦b 三选一**界面本身**的接线（2026-09-17 补：独立的只读核验发现这块 UI 零断言覆盖）──────
   // 为什么必须查源码结构而不是"函数存在"：`MemoryBackendBlock` 是本轮最要紧的一块 UI，

@@ -128,15 +128,51 @@ console.log('\n③ 设置页真的接进了官方设置菜单（注册了但没�
   //      唯一带标记的 `memory.backend` 就是这次报障的那条）。
   // 这条不依赖具体行号/措辞，spec 新增带 markdown 的 hint 时会**自动**被它逮到。
   check(/title: plainText\(r\.hint\)/.test(src), '`title` 气泡也过 `plainText()`（原生 tooltip 同样是用户可见文本）');
+
+  // 2026-09-20 补：**组说明是另一条渲染路径**。上面几条全部只盯 `r.hint`（行说明），而
+  // `exp-settings-group` 那一行渲染的是 `g.hint`（**组**说明）—— 它此前只做了 `esc(g.hint)`，
+  // 压根没走 `plainText`。当时 5 条组 hint 恰好都是干净散文（13/9/5/20/32 字）⇒ **潜伏**缺陷：
+  // 只要哪个作者往组 hint 里写一次 `**`，它就会像「记忆后端」那次一样原样糊到用户脸上，
+  // 而上面所有断言**全绿**（它们根本查不到这条路径）。
+  // 所以这里做两件事：① 钉住正确形态 `esc(plainText(g.hint))`；② 反向钉住老写法已绝迹。
+  check(/esc\(plainText\(g\.hint\)\)/.test(src),
+    '组说明**先剥 markdown 再转义**（`esc(plainText(g.hint))`）—— 与行说明同一套纪律，组标题那一行也是一条独立渲染路径');
+  check(!/esc\(g\.hint\)/.test(src.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n')),
+    '组说明那条老写法（只 `esc` 不剥标记）在**生产代码**里已绝迹（判前先剔行首 `//`：注释里提到那处老写法是有意为之，不该被自己的注释判红）');
+  // 反向钉的补强：`esc(plainText(g.hint))` 里**含有** `esc(` 但**不含** `esc(g.hint)`，所以上一条能真的逮到
+  // 回退；但同时确认这条路径**仍在**（别为了过上面那条把整段组渲染删掉 —— 那样组说明会整个消失）。
+  check(/className: 'exp-settings-group'/.test(src) && /esc\(g\.label\)/.test(src),
+    '组标题那一行**仍在渲染**（组标签照旧显示 —— 防"删掉整段来消掉告警"）');
+
   {
     const marks = settingsSchema()
       .flatMap((g) => g.items.map((it) => ({ path: it.path, hint: it.hint })))
       .filter((r) => r.hint && (/\*\*/.test(r.hint) || /`/.test(r.hint)));
-    // `memory.backend` 是**已知**带 markdown 的那条（服务端文案，由渲染层 plainText 兜住）。
-    // 这里只允许它一条：将来**新增**的 hint 若又写进 markdown，说明作者误以为面板会渲染 markdown ⇒ 红。
-    check(marks.length <= 1 && (marks.length === 0 || marks[0].path === 'memory.backend'),
-      `spec 里带 markdown 的 hint 只剩已知的 memory.backend（渲染层已剥），新增带标记的 hint 会在这里报警`,
+    // 2026-09-20 收紧：**允许名单已清空**。此前这里放行 `memory.backend` 一条（它是全 spec 唯一
+    // 带标记的 hint，靠渲染层 `plainText` 兜住）；那条 hint 已按用户要求（「文字太多了 简化一点」）
+    // 从 804 字 / 9 对 `**` / 16 个反引号改写成 158 字纯散文 ⇒ 现在**一条都不该带标记**。
+    // 渲染层的 `plainText` 作为**防御性收口**保留（下面几条仍钉着它），但**数据本身**必须是干净的：
+    // 拿掉允许名单后，这条从"防新增"升级成"零容忍" —— 任何人再写 markdown 进 hint 都会立刻红。
+    check(marks.length === 0,
+      'spec 里**没有**任何带 markdown 的 hint（允许名单已清空：`memory.backend` 已改写成纯散文；渲染层 plainText 只是防御性收口，数据本身必须干净）',
       marks.length ? `带标记：${marks.map((m) => m.path).join(', ')}` : '（0 条）');
+    // 组 hint 一并纳入同一条不变量（它们是另一条渲染路径，此前不在扫描面内）。
+    const groupMarks = settingsSchema().filter((g) => g.hint && (/\*\*/.test(g.hint) || /`/.test(g.hint)));
+    check(groupMarks.length === 0,
+      'spec 里**没有**任何带 markdown 的**组**说明（与行说明同一条不变量，组说明是独立渲染路径）',
+      groupMarks.length ? `带标记：${groupMarks.map((g) => g.group).join(', ')}` : '（0 条）');
+  }
+  // 说明**篇幅**闸（2026-09-20 · 用户原话「文字太多了 简化一点」）：旧 `memory.backend` hint 804 字，
+  // 是次长一条（221 字）的 3.6 倍，在设置页里占掉半屏。这里钉一个**上限**，让"又写一篇论文"当场变红 ——
+  // 与 markdown 那条是同一个诉求的两面（长说明多半就是靠标记/操作细节堆出来的）。
+  {
+    const allHints = settingsSchema().flatMap((g) => g.items.map((it) => ({ path: it.path, len: (it.hint || '').length })))
+      .filter((r) => r.len > 0).sort((a, b) => b.len - a.len);
+    const LIMIT = 300;
+    const over = allHints.filter((r) => r.len > LIMIT);
+    check(over.length === 0,
+      `每条 hint 都不超过 ${LIMIT} 字（设置页一行说明的合理上限；操作细节归状态块/引导，不往 hint 里堆）`,
+      over.length ? `超限：${over.map((r) => `${r.path}:${r.len}`).join(', ')}` : `最长 ${allHints[0] ? allHints[0].path + ':' + allHints[0].len : '—'} 字`);
   }
 }
 

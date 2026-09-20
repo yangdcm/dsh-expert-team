@@ -218,7 +218,7 @@ window.__ModuleLoader__.load({
       '.exp-settings-label{flex:0 0 188px;max-width:188px;font-size:12.5px;line-height:1.5}' +
       '.exp-settings-ctl{flex:none;display:flex;align-items:center;min-height:20px}' +
       '.exp-settings-note{flex:1;min-width:0;font-size:11px;line-height:1.5;color:var(--dsw-alias-label-secondary,var(--text,#57606a))}' +
-      // 长说明（spec hint 里有两条：记忆后端 296 字、子代理列表顺序 221 字）挤在「控件右边剩下的
+      // 长说明（spec hint 里超过 120 字阈值的仍是两条：子代理列表顺序 221 字、记忆后端 158 字）挤在「控件右边剩下的
       // 那点宽度」里会被压成一条又窄又高的文字柱 —— 控件列是 `flex:none`，宽度先被它吃掉。
       // ⇒ 说明过长时让该行换行、说明独占一行（`flex-basis:100%`）。判据在 JS 里（阈值见行渲染处），
       // 只影响真正过长的两行，其余行的版面一个像素都不动。
@@ -2199,7 +2199,11 @@ window.__ModuleLoader__.load({
       var hasInertMark = model.some(function (g) { return (g.rows || []).some(function (r) { return /暂未生效/.test(String(r.hint || '')) }) })
       var rows = []
       model.forEach(function (g) {
-        rows.push(h('div', { key: 'h-' + g.group, className: 'exp-settings-group' }, esc(g.label) + (g.hint ? ' · ' + esc(g.hint) : '')))
+        // ⚠️ 组说明是**独立于行说明的另一条渲染路径**（行说明在下面 `esc(plainText(r.hint))`）——
+        // 它此前只做了 `esc(g.hint)`，**没有**剥 markdown。面板没有 markdown 渲染器，spec 的组 hint
+        // 一旦带标记（当前 5 条都是干净散文，属**潜伏**缺陷）就会原样显示给用户。
+        // 与行说明同一套纪律：先 `plainText()` 剥标记、再 `esc()` 转义 —— 不靠"作者记得别写 markdown"兜底。
+        rows.push(h('div', { key: 'h-' + g.group, className: 'exp-settings-group' }, esc(g.label) + (g.hint ? ' · ' + esc(plainText(g.hint)) : '')))
         g.rows.forEach(function (r) {
           var ctl
           if (!r.known) {
