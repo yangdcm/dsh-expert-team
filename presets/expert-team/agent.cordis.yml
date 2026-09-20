@@ -21,11 +21,31 @@
 
 # The preset's own persona, shadowing the deployment default for this agent.
 # `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
+#
+# WHY the 【语言】contract lives HERE and not only in SKILL.md: the skill states
+# the same rule, but a skill is loaded ON DEMAND through the `skill` tool — a
+# lead that never calls it keeps the plain English default above, which is
+# exactly the reported defect (the lead — the only agent the user talks to —
+# answered in English while all 12 role subagents were pinned to Chinese). The
+# persona is the ONLY always-on prompt channel for this agent, so the contract
+# has to be part of it. The 12 role personas below carry the same clause, so the
+# family reads as one; the lead's copy additionally names `SUMMARY.md` /
+# `任务看板.md` (the two artifacts the lead authors) and adds 【交互】, which is
+# the lead's alone — the lead is the only agent a user can be asked to choose
+# from, so it is the only place the clickable-option contract can bind.
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
     prefix: >-
       You are a coding agent powered by the {{model}} model.
+      【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
+      面向用户的回复、汇报、进度说明、结论、汇总，以及 SUMMARY.md / 任务看板.md
+      正文一律使用简体中文。代码、命令、文件路径、标识符、专有名词、引用原文
+      保持原样不翻译。
+      【交互】凡需要用户做选择时（澄清提问、方案确认、二选一或多选决策、档位选择、
+      授权申请），必须用 ask_user_question 工具把候选项做成**可点击选项**：每个选项带
+      label 与 description，推荐项排在第一个并在 description 里标注「推荐」。
+      不得把选项写成「回复 A 或 B」「1. X 2. Y」这类纯文本；用户点选后才算拍板。
     suffix: Your working directory is {{cwd}}.
 
 - id: agent-instructions
@@ -316,6 +336,9 @@
           【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
           回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
           代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+          结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+          显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+          字段名、path 等机器可读标识保持原样，不翻译。
         toolFilter:
           deny: [bash]
 
@@ -335,6 +358,9 @@
           【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
           回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
           代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+          结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+          显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+          字段名、path 等机器可读标识保持原样，不翻译。
         toolFilter:
           deny: [bash]
 
@@ -358,6 +384,9 @@
           【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
           回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
           代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+          结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+          显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+          字段名、path 等机器可读标识保持原样，不翻译。
         toolFilter:
           deny: [subagent_fork, workflow, ralph]
 
@@ -377,6 +406,9 @@
           【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
           回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
           代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+          结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+          显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+          字段名、path 等机器可读标识保持原样，不翻译。
         toolFilter:
           deny: [subagent_fork, workflow, ralph]
 
@@ -396,6 +428,9 @@
           【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
           回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
           代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+          结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+          显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+          字段名、path 等机器可读标识保持原样，不翻译。
         toolFilter:
           deny: [subagent_fork, workflow, ralph]
 
@@ -424,6 +459,9 @@
           【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
           回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
           代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+          结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+          显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+          字段名、path 等机器可读标识保持原样，不翻译。
         toolFilter:
           deny: [bash, subagent_fork, workflow, ralph]
 
@@ -447,6 +485,9 @@
           【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
           回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
           代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+          结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+          显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+          字段名、path 等机器可读标识保持原样，不翻译。
         toolFilter:
           deny: [subagent_fork, workflow, ralph]
 
@@ -469,6 +510,9 @@
           【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
           回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
           代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+          结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+          显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+          字段名、path 等机器可读标识保持原样，不翻译。
         toolFilter:
           deny: [bash, subagent_fork, workflow, ralph]
 
@@ -491,6 +535,9 @@
           【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
           回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
           代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+          结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+          显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+          字段名、path 等机器可读标识保持原样，不翻译。
         toolFilter:
           deny: [subagent_fork, workflow, ralph]
 
@@ -513,6 +560,9 @@
           【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
           回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
           代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+          结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+          显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+          字段名、path 等机器可读标识保持原样，不翻译。
         toolFilter:
           deny: [bash, subagent_fork, workflow, ralph]
 
@@ -535,6 +585,9 @@
           【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
           回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
           代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+          结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+          显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+          字段名、path 等机器可读标识保持原样，不翻译。
         toolFilter:
           deny: [subagent_fork, workflow, ralph]
 
@@ -556,6 +609,9 @@
           【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
           回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
           代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+          结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+          显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+          字段名、path 等机器可读标识保持原样，不翻译。
         toolFilter:
           deny: [bash, subagent_fork, workflow, ralph]
 

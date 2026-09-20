@@ -2220,9 +2220,15 @@ window.__ModuleLoader__.load({
           // 又窄又高的文字柱（真机截图里「记忆后端」那行就是这样）。阈值取 120：spec 里现存的
           // hint 只有两条超过它，其余行（≤83 字）照旧排在控件右边，版面不受影响。
           rows.push(h('div', { key: r.path, className: 'exp-settings-row' + (String(r.hint || '').length > 120 ? ' exp-settings-row-wide' : '') },
-            h('span', { className: 'exp-settings-label', title: r.hint }, esc(r.label)),
+            // ⚠️ 说明文本与 `title` 都要先过 `plainText()`（**只过 `esc()` 不够**）：面板没有 markdown
+            // 渲染器，服务端来的 hint 一旦带标记就原样显示给用户 —— 真机截图里「记忆后端」那行就是
+            // `三种选择**互斥**（…`，`**` 明晃晃挂在界面上（鼠标悬停的原生 title 气泡里同样带 `**`）。
+            // `lib/settings.js` 的 hint **本来就该是纯文本**（现存 19 条里 18 条是，唯一带标记的就是这条），
+            // 所以这里的 strip 是**防御性收口** —— 不靠"作者记得别写 markdown"这条纪律兜底。
+            // 顺序固定为 `esc(plainText(...))`：先剥标记、再转义 HTML（与其它 10 处调用点同一套）。
+            h('span', { className: 'exp-settings-label', title: plainText(r.hint) }, esc(r.label)),
             h('span', { className: 'exp-settings-ctl' }, ctl),
-            h('span', { className: 'exp-settings-note', title: r.hint }, r.hint ? esc(r.hint) : null)))
+            h('span', { className: 'exp-settings-note', title: plainText(r.hint) }, r.hint ? esc(plainText(r.hint)) : null)))
         })
       })
       return h('div', { className: 'exp-settings' },

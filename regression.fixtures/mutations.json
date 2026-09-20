@@ -1724,13 +1724,13 @@
     {
       "id": "M132-lead-toolface-no-name-intersection",
       "title": "lead 工具面**不与宿主真实工具名求交** ⇒ 名单里带上本平台不存在的 shell，`restrict()` **当场抛错**（不是降级）",
-      "why": "2026-09-14 新增（A 线 · lead 工具面）。真实诱因：本 preset 的 shell 工具是**平台二选一**的 —— `tool-bash` 写死 `disabled: process.platform === 'win32'`，`tool-pwsh` 反之。而宿主 `dsh-tools` 的 `restrict()` 对**该作用域不认识的名字是抛错**：`const unknown = [...].filter((name) => !known.has(name)); if (unknown.length > 0) throw new Error(...)`。⇒ 名单里同时写 `bash` 与 `pwsh`，在 macOS 上会因为 `pwsh` 不存在而**直接崩**。这类失败特别危险：它在开发机上可能完全不出现（名字恰好都在），换平台才炸；而且崩的是插件初始化，用户看到的是「专家团没反应」。本变异体去掉求交 ⇒ lead-toolface.test.mjs 的「posix **不**收 `pwsh`」与「win32 反向」必红。",
+      "why": "2026-09-14 新增（A 线 · lead 工具面）。真实诱因：本 preset 的 shell 工具是**平台二选一**的 —— `tool-bash` 写死 `disabled: process.platform === 'win32'`，`tool-pwsh` 反之。而宿主 `dsh-tools` 的 `restrict()` 对**该作用域不认识的名字是抛错**：`const unknown = [...].filter((name) => !known.has(name)); if (unknown.length > 0) throw new Error(...)`。⇒ 名单里同时写 `bash` 与 `pwsh`，在 macOS 上会因为 `pwsh` 不存在而**直接崩**。这类失败特别危险：它在开发机上可能完全不出现（名字恰好都在），换平台才炸；而且崩的是插件初始化，用户看到的是「专家团没反应」。本变异体去掉求交 ⇒ lead-toolface.test.mjs 的「posix **不**收 `pwsh`」与「win32 反向」必红。（2026-09-20：`planLeadToolFace` 因「只读 shell 白名单」重写，求交那一段从 `if (known.has(name)) …` 改成 `if (!known.has(name)) …` 的**反向早退**，`find`/`replace` 随之改到新写法 —— 语义一字不变：把「不在宿主清单里的名字」也塞进 deny。）",
       "test": "lead-toolface.test.mjs",
       "edits": [
         {
           "file": "lib/lead-toolface.js",
-          "find": "    if (known.has(name)) { deny.push(name); continue; }",
-          "replace": "    if (true) { deny.push(name); continue; }"
+          "find": "    if (!known.has(name)) {",
+          "replace": "    if (false) {"
         }
       ]
     },

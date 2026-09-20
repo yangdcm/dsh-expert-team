@@ -108,7 +108,36 @@ console.log('\n③ 设置页真的接进了官方设置菜单（注册了但没�
   // （不能渲染成空白：那会让"标签漏配"看起来像"这个选项本来就没有名字"）。
   check(/labels: it\.labels \|\| null/.test(src), '表单模型透出 \`labels\`（标签随 GET /settings 的 schema 到达客户端）');
   check(/r\.labels && r\.labels\[v\]\) \|\| v/.test(src), '<option> 文本取 \`labels[值] || 值\`（缺标签退回裸值，绝不留空白）');
-  check(/esc\(r\.label\)/.test(src) && /esc\(r\.hint\)/.test(src), '标签与说明过 `esc()`（与其它文案同一套转义纪律）');
+  // 2026-09-20 真机截图报障：设置页「记忆后端」那行显示成 `三种选择**互斥**（…` —— `**` 被当字面量
+  // 渲染出来了。根因是这里只做了 `esc(r.hint)`（只转义 HTML），**没有**剥 markdown；而面板没有
+  // markdown 渲染器，`lib/settings.js` 的 `memory.backend` hint（804 字、9 对 `**`、16 个反引号）
+  // 就这么原样糊到用户脸上（`title` 的原生气泡里也一样）。
+  //
+  // ⚠️ 旧断言 `esc(r.hint)` 为什么**不算数**：它是在原地做子串匹配，压根没测"剥没剥"——
+  // 改动前它通过；就算有人把 `plainText` 这层拿掉，只要那行还写着 `esc(r.hint)` 它**照样通过**。
+  // 一条改动前后都恒真的断言 = **空洞断言**（给了绿灯，却没在保护任何东西）。
+  // 现在直接钉住完整形态 `esc(plainText(r.hint))`：少了 `plainText` 这一层就红。
+  check(/esc\(r\.label\)/.test(src) && /esc\(plainText\(r\.hint\)\)/.test(src),
+    '标签过 `esc()`、说明**先剥 markdown 再转义**（`esc(plainText(r.hint))`）—— 否则服务端 hint 里的 `**` / 反引号会原样显示给用户');
+  // 反向钉：**不许**再出现"只 esc 不 strip"的那处老写法。少了这条，将来有人把某一行改回去
+  // （只要恰好保留另一处正确的 `esc(plainText(r.hint))`）上面那条仍然绿 —— 这是同一类空洞断言的补丁。
+  check(!/esc\(r\.hint\)/.test(src), '没有任何一处把 hint 只 `esc()` 而不剥 markdown（老写法已绝迹）');
+  // 回归闸（防**任何** hint 泄漏 markdown，不只「记忆后端」这一条）：
+  //   ① `title` 属性也必须走 `plainText` —— 原生气泡同样是用户可见的文本；
+  //   ② spec 里每个 hint 经 `plainText` 后都不该再残留 `**` / 反引号（当前 19 条里 18 条本就干净，
+  //      唯一带标记的 `memory.backend` 就是这次报障的那条）。
+  // 这条不依赖具体行号/措辞，spec 新增带 markdown 的 hint 时会**自动**被它逮到。
+  check(/title: plainText\(r\.hint\)/.test(src), '`title` 气泡也过 `plainText()`（原生 tooltip 同样是用户可见文本）');
+  {
+    const marks = settingsSchema()
+      .flatMap((g) => g.items.map((it) => ({ path: it.path, hint: it.hint })))
+      .filter((r) => r.hint && (/\*\*/.test(r.hint) || /`/.test(r.hint)));
+    // `memory.backend` 是**已知**带 markdown 的那条（服务端文案，由渲染层 plainText 兜住）。
+    // 这里只允许它一条：将来**新增**的 hint 若又写进 markdown，说明作者误以为面板会渲染 markdown ⇒ 红。
+    check(marks.length <= 1 && (marks.length === 0 || marks[0].path === 'memory.backend'),
+      `spec 里带 markdown 的 hint 只剩已知的 memory.backend（渲染层已剥），新增带标记的 hint 会在这里报警`,
+      marks.length ? `带标记：${marks.map((m) => m.path).join(', ')}` : '（0 条）');
+  }
 }
 
 console.log('\n④ 读失败必须显式报错（不许停在「正在读取设置…」）');
