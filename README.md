@@ -2,6 +2,7 @@
 
 [English](README.en.md) | 中文
 
+[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/zh/plugins/yangdcm/dsh-expert-team)
 [![npm](https://img.shields.io/npm/v/@yangdcm/dsh-expert-team)](https://www.npmjs.com/package/@yangdcm/dsh-expert-team)
 [![license](https://img.shields.io/npm/l/@yangdcm/dsh-expert-team)](https://github.com/yangdcm/dsh-expert-team/blob/main/LICENSE)
 [![CI](https://github.com/yangdcm/dsh-expert-team/actions/workflows/ci.yml/badge.svg)](https://github.com/yangdcm/dsh-expert-team/actions/workflows/ci.yml)
@@ -192,9 +193,9 @@ dsh plugin --profile web add @yangdcm/dsh-expert-team
 # 然后重启 dsh web，使新 bundle 进入组合
 ```
 
-**方式二：插件市场**（收录**已提交**、待上游合并；合并后即可在市场里搜到，未合并前请用方式一）
+**方式二：插件市场**（**已被收录** —— 见 [dsh-plugin.org 收录页](https://dsh-plugin.org/zh/plugins/yangdcm/dsh-expert-team)）
 
-若已被收录：`dsh web` → **设置 → 插件市场** → 搜索「专家团」→ 一键安装 → 刷新页面。
+`dsh web` → **设置 → 插件市场** → 搜索「专家团」→ 一键安装 → 刷新页面。
 
 **方式三：从源码（开发/未发布时）**
 

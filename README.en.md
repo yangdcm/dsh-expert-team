@@ -2,6 +2,7 @@
 
 English | [中文](README.md)
 
+[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/zh/plugins/yangdcm/dsh-expert-team)
 [![npm](https://img.shields.io/npm/v/@yangdcm/dsh-expert-team)](https://www.npmjs.com/package/@yangdcm/dsh-expert-team)
 [![license](https://img.shields.io/npm/l/@yangdcm/dsh-expert-team)](https://github.com/yangdcm/dsh-expert-team/blob/main/LICENSE)
 [![CI](https://github.com/yangdcm/dsh-expert-team/actions/workflows/ci.yml/badge.svg)](https://github.com/yangdcm/dsh-expert-team/actions/workflows/ci.yml)
@@ -214,9 +215,9 @@ dsh plugin --profile web add @yangdcm/dsh-expert-team
 # then restart dsh web so the new bundle joins the composition
 ```
 
-**Option 2: plugin market** (listing **submitted**, pending the upstream merge; searchable once merged — until then use option 1)
+**Option 2: plugin market** (**already listed** — see the [dsh-plugin.org listing](https://dsh-plugin.org/zh/plugins/yangdcm/dsh-expert-team))
 
-Once listed: `dsh web` → **Settings → Plugin market** → search "expert team" → install → refresh the page.
+`dsh web` → **Settings → Plugin market** → search "expert team" → install → refresh the page.
 
 **Option 3: from source (development / unpublished)**
 
