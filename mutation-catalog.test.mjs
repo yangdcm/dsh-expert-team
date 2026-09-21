@@ -26,7 +26,7 @@ const here = dirname(fileURLToPath(import.meta.url));
  * catalog 的期望条数。**新增/删除变异体时必须同时改这里** —— 这是有意的：
  * 条数变动应当是一次经过确认的动作，而不是悄悄发生（历史吃过一次数字错的亏）。
  */
-const EXPECTED_CATALOG_SIZE = 172;
+const EXPECTED_CATALOG_SIZE = 174;
 
 let fail = 0;
 const check = (ok, name, detail) => {

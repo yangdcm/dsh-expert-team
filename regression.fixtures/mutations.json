@@ -2254,6 +2254,32 @@
           "replace": "  const wantHindsightDisabled = target === 'off'; // MUTANT: 已接线的 midas 不再关 Hindsight ⇒ 两个后端同时活着"
         }
       ]
+    },
+    {
+      "id": "M173-cordis-fs-port-drops-sandbox-policy",
+      "title": "工件写入丢掉沙箱授权凭据（第 5 参）⇒ 会话项目目录 ≠ DSH 启动目录时 `/team` 只留下一个空 run 目录、一个文件都写不进去（Issue #1 原样复现）",
+      "why": "2026-09-21 新增（判别变异，护航 Issue #1 的修复）。这不是假想事故，而是**用户报的那个缺陷本身**（「/team 起不来：文件夹建好了，文件却一个也没写进去」）。机制是**参数级**的：宿主 `@deepseek-ai/dsh-fs-sandbox` 的签名是 `writeText(target, content, expected?, signal?, sandboxPolicy?)`，**第 5 参才是本次调用的授权凭据** —— 围栏判定 `const policy = sandboxPolicy ?? this.ctx.sandboxPolicy.resolve()` 只认它；适配层 `cordisFsPort` 早先**只传前 3 个**，宿主于是回落配置里钉死的 `workspaceRoot = process.cwd()`（启动 DSH 的目录）。触发条件是**收窄的**：项目目录既不在启动目录之下、也不在平台临时区（`/tmp`、`os.tmpdir()`）之下时才被拒；此时 `mkdir`（裸 `node:fs`，不过沙箱）先成功、第一个模板写入即 `FS_SANDBOX_DENIED` ⇒ 目录建好了而文件一个没写进去（反复尝试会累积多个空目录）。变异把那次转发退回 3 参形态 ⇒ 授权凭据再次缺席，事故机制逐字复现。⚠️ 本变异此前**不可能**被抓住：测试 mock 的 `writeText` 只声明 3 个参数，而**不接第 5 参的 mock 在结构上无法发现「第 5 参没传」** ⇒ 旧结论「宿主 CAS 路径已被实测验证」是**假阳性**（它只验了版本栅栏与陈旧重试，从未验过沙箱授权）。本次连同 mock 的 arity 一起修，⑧ 那一节就是本变异体的守卫。预期红 **N = 6**（计数口径已按实测改正）：`node cordis-fs-port.test.mjs` 结尾汇总行 `✗ cordisFsPort 测试失败：N 项` 的 **N 与逐条失败行数相等** —— `grep -c '^  ✗ '` = 6、汇总行的 N = 6 ⇒ **两者相等**；`grep -c '✗'` = 7，多出来的 1 正是那条**不缩进**的汇总行 `✗ cordisFsPort 测试失败：6 项`（它没有前导空格，故不被 `^  ✗ ` 匹配）。此前把口径记成了「`^  ✗ ` 行比汇总行的 N 多 1」（正好记反），并据此误判「原先登记的 6 项已过高、应更正为更小的数」—— **那是错的**。**计数已重新实测复核**：2026-09-21 在 `/tmp` 副本里把本变异应用到 `lib/artifact-writer.js` 后实跑 `node cordis-fs-port.test.mjs`，得到 **exit 1**、`^  ✗ ` 行 **6** 条、汇总行 `✗ cordisFsPort 测试失败：6 项`、注入的 `fail` 计数器 **6**；两种独立口径（逐条数 `^  ✗ ` 输出行 / 内部 `fail` 计数器探针）**都是 6**，重复运行结果一致（确定性）。即 **N = 6**，原先登记的 6 项是准确的（对照：M174 实测 1 项，那条数字无误）。**预期红断言共 6 项，逐条列举**：①`第 5 参是**同一个**授权对象（不是 undefined、不是重建的副本）`；②`授权对象带 workspaceRoot（宿主围栏判定只用这一个值）`；③`相对路径写入时第 5 参同样透传`（①–③ 同属 ⑧a）；④`【修复后】同一路径 + 授权凭据 {workspaceRoot:/proj} ⇒ 写入**成功**`；⑤`宿主侧文件已落盘（围栏按会话项目目录判定）`；⑥`围栏一次都没拦（授权根 = 目标所在的项目目录）` —— 与实跑产物逐条核对一致（6/6）。变异体下同一路径的报错与用户报的一模一样（`工件写入失败[FS_SANDBOX_DENIED] … cannot write 「/proj/team/r8/STATE.json」… file access denied under workspace-write mode`），且宿主侧 0 个文件。而 `写路径上 resolve 收到 {cwd: policy.workspaceRoot}` 与 `相对路径写入时 resolve 同样收到 {cwd: /proj}` 两条**刻意保持绿**（理由见本条末尾）。**必须仍然绿**：①–⑦ 的路径解析 / 版本栅栏 / 陈旧重试 / 范围硬排除 / schema 告警都不依赖第 5 参；⑧b 的「无授权 ⇒ 第 5 参 undefined、resolve 不带 cwd」与 ⑧c 的「解析器抛错 ⇒ 仍成功」也照旧绿 —— 它们证明变异只打中「有授权时是否透传」这一维，没有连带改变降级/回落行为。⚠️ 另有两项**刻意仍绿**且必须说明：`写路径上 resolve 收到 {cwd: policy.workspaceRoot}` 与 `相对路径写入时 resolve 同样收到 {cwd: /proj}` —— 它们守的是修复的**另一半**（相对路径按授权根解析），与第 5 参各自独立；**单靠它们修不好本缺陷**（方案 6.4：那个 cwd 只影响相对路径解析，围栏仍按授权参数判定），所以本变异体没打中它们恰恰是「这两条不是本缺陷的守卫」的证据。",
+      "test": "cordis-fs-port.test.mjs",
+      "edits": [
+        {
+          "file": "lib/artifact-writer.js",
+          "find": "      return ctxFs.writeText(t, content, intent, undefined, policy || undefined);",
+          "replace": "      return ctxFs.writeText(t, content, intent); // MUTANT: 丢掉授权凭据（第 5 参）"
+        }
+      ]
+    },
+    {
+      "id": "M174-path-is-under-raw-string-compare",
+      "title": "归属判定退回**未归一化的原始串**比较 ⇒ `..` 穿越重新被放行：`/proj/../etc/passwd` 被判给 `/proj` 的会话 ⇒ 围栏根被设成 `/proj` ⇒ 一笔越界写入被放行",
+      "why": "2026-09-21 新增（判别变异，护航逐目标授权链的 ⑨ 节 —— gate 评审发现这条链路在 90 个测试文件里 0 命中）。这不是假想事故：`pathIsUnder` 早先**同时**比较归一化形态与一对**未归一化的原始串**，于是 `'/proj/../etc/passwd'.startsWith('/proj/')` 先命中就直接放行 —— 可这个目标的 `path.resolve` 是 `/etc/passwd`，**根本不在** `/proj` 之下。这个 `true` 会让调用方 `sessionOwningTarget` 把目标判给一个**并不拥有它**的会话 ⇒ 围栏根被设成 `/proj` ⇒ 一笔越界写入被**放行**（注意方向：不是「漏判退回无授权」那种安全方向，而是**真的放行**）。修法是**整对删掉**原始串比较 —— 不是把它挪到后面、也不是两者取或（取或等于漏洞仍在）。本变异把归一化那一步换回原始串（`const t = String(target || '')`）⇒ 洞原样复发。⚠️ 这条用例**必须传未归一化的原始串**才抓得住：若测试自己先 `pathResolve` 再喂进去，就等于替被测函数把 `..` 处理掉了，变异体照样全绿 —— ⑨ 里那两条断言（原始串形态 / 归一化形态各一条）正是为此。预期红（**2026-09-21 用 `--only M174` 的真实变异产物逐条数过，实测 1 项**）：`★ `..` 穿越（**原始未归一化**形态）必须为 false ★（曾经的洞：原始串 `startsWith(ROOT + sep)` 先命中 ⇒ 目标判给并不拥有它的会话 ⇒ 越界写入被放行）` —— 变异体下它收到 `true`（放行），正是修复前的行为。紧挨着的 `同一目标的**归一化**形态（`path.resolve` 之后）同样为 false` **刻意保持绿**：它证明这条守卫抓的是**原始串比较**这一维，而不是「归一化到底有没有生效」—— 若测试先 `pathResolve` 再喂进去，本变异体就抓不住了（这也是 ⑨ 里两种形态各断言一次的原因）。**必须仍然绿**：⑧ 的第五参透传、围栏端到端仿真与 `policy-resolve-error` 上报，⑨ 的前缀陷阱 / 盘根 / 空根 / 非字符串输入，⑩ 的最长前缀与「只认宿主会采纳的 cwd」，⑪ 的会话对象透传与降级口径 —— 它们一起证明本变异只打中「原始串 vs 归一化」这一维，没有连带改变降级、回落与围栏宽度。",
+      "test": "cordis-fs-port.test.mjs",
+      "edits": [
+        {
+          "file": "lib/command.js",
+          "find": "    const t = pathResolve(String(target || ''));",
+          "replace": "    const t = String(target || ''); // MUTANT: 退回未归一化的原始串比较 ⇒ `..` 穿越重新被放行"
+        }
+      ]
     }
   ]
 }
