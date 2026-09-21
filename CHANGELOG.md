@@ -7,6 +7,188 @@
 
 （暂无）
 
+## 1.5.2
+
+**主题：修 Issue #1 —— 会话项目目录与 DSH 启动目录不同时，`/team` 只建得出空目录、一个工件也写不进去**。
+**本版是补丁 —— 没有新能力、没有新设置项、没有新开关、没有工件格式变化**：修的是**适配层丢掉了宿主一次调用的授权参数**，
+恢复的是工件写入**本来应有的**落盘能力。**本版未改 `presets/**`**（persona 契约与 1.5.1 一致）。
+
+### 修复
+
+- **`/team` 建出 `team/<RUN_ID>/` 之后，每个工件写入都被 `FS_SANDBOX_DENIED` 拒掉**（`lib/artifact-writer.js`、
+  `lib/command.js`；issue #1，报告人 `fyisgod`）。
+  - **现象**：脚手架跑到**第一个**模板写入即失败，报
+    `工件写入失败[FS_SANDBOX_DENIED] <绝对路径>：cannot write "<路径>": file access denied under workspace-write mode`；
+    而建目录走的是裸 `node:fs/promises`（`lib/command.js:1624` 的 `mkdir`）—— **根本不经过沙箱** —— 所以目录留了下来，
+    反复尝试就累积出多个空 `team/<RUN_ID>/`。这条「建目录不过沙箱、写文件过沙箱」的**不对称**，正是报告人那句
+    「文件夹建好了，文件却一个也没写进去」的来源。
+  - **触发条件（比报告人口径窄）**：会话项目目录**既不在** DSH 启动目录（`process.cwd()`）**之下、也不在**平台临时区
+    （`/tmp`、`os.tmpdir()`）**之下**时才复现。可写根集合是 `{policy.workspaceRoot, '/tmp', os.tmpdir()}`
+    三者 canonicalize 后的并集（`deepseek-harness/packages/sandbox/sandbox/src/roots.ts:52-54`）⇒ 报告写的
+    「启动目录 ≠ 项目目录 ⇒ 必然失败」**过宽**：项目目录落在临时区下时写入是被允许的。这也解释了「为什么有的人复现不了」。
+  - **根因（参数级，不是逻辑级）**：宿主 `@deepseek-ai/dsh-fs-sandbox` 的签名是
+    `writeText(target, content, expected?, signal?, sandboxPolicy?)`，**第 5 参 `sandboxPolicy` 才是一次调用的授权凭据**
+    （`deepseek-harness/packages/fs/fs-sandbox/src/index.ts:80-88`）。围栏判定只用它一个值：
+    `const policy = sandboxPolicy ?? this.ctx.sandboxPolicy.resolve()`（同文件 `:123`），`workspace-write` 下目标
+    canonicalize 后必须落在 `writableRoots(policy)` 内，否则抛结构化 `FS_SANDBOX_DENIED`（`:132-141`）。
+    而本插件的适配层 `cordisFsPort` **只传了前 3 个参数**（原 `lib/artifact-writer.js:110-113` 的
+    `ctxFs.writeText(t, content, intent)`）⇒ 宿主走 `resolve()` 的**无会话**分支 ⇒
+    `workspaceRoot = config.workspaceRoot ?? process.cwd()`，而 `dsh-base` 的 `cordis.patch.yml` 把
+    `workspaceRoot` 显式钉成 `process.cwd()`，也就是**启动 DSH 的那个目录**。于是写
+    `<会话项目目录>/team/<RUN_ID>/...` 被判越界（错误标记 `[FS_SANDBOX_DENIED]` 是**插件**加的，见
+    `lib/artifact-writer.js:420`；宿主原文不含方括号）。宿主官方写入链路 `dsh-tool-fs` 是**两个都传**的：
+    `resolve(path, {cwd: policy.workspaceRoot})`（`deepseek-harness/packages/fs/tool-fs/src/write.ts:107`）
+    **加** `writeText(..., exec.signal, sandboxPolicy)`（同文件 `:113`）—— 本适配层此前与它不一致，缺的正是后者。
+  - **修法**：`cordisFsPort(ctxFs, resolvePolicy = null, onEvent = null)` 新增「**按本次写入的目标解析授权**」的可选解析器
+    （`lib/artifact-writer.js:125`、`:147-157`）：解析到 policy 就（a）让相对路径按授权根解析
+    （`resolve(p, {cwd: policy.workspaceRoot})`，与宿主官方同形状）、（b）把 policy **透传到第 5 参**
+    `ctxFs.writeText(t, content, intent, undefined, policy || undefined)`（`:159`、`:162`）。第 4 参 `signal` 显式传
+    `undefined`：工件写入这一层手里没有 `exec`，语义是「工件写入不可中断」—— **是有意的**，不是漏传。
+    第三个参数 `onEvent`（`:154`）与 `createArtifactWriter({onEvent})` 用的是**同一个通道**（`writerEvents`），
+    本层只用它上报授权解析失败 —— 为什么这条通道**适配层与解析器两处都得拿到**，见下文「随后揪出的三处缺陷」。
+    解析器由 `adoptHostFs` 装配（`lib/command.js:288-309`）：机会式 `ctx.get('sandboxPolicy')`（**不进 `inject`**，
+    与 `fs` 同理 —— 注入一个宿主没有的服务会让整条 `/team` 挂不上）。授权**不再取自环境状态**：
+    `policyResolverForTargets(ctx, sp, writerEvents)`（`:273-285`）给出的解析器接收**本次要写的目标路径**，
+    先由 `sessionOwningTarget(ctx, targetPath)`（`:217-230`）挑出**拥有这个目录的那个会话**，再以**会话对象**调
+    `sp.resolve({ session })`（`:277`）。宿主 `resolve()` 读的是 `session.header.cwd` 与 `session.id`
+    ⇒ **必须传 Session 对象，传 id 无效**（为什么必须按目标判定，见下文「第一版修复带出的新失败方向」）。
+  - **顺带钉死一条「不要这么修」**：只给 `ctx.fs.resolve(path, {cwd})` 传 cwd **修不好本缺陷** —— 那个 cwd 只影响
+    **相对路径解析**，`checkedTarget` 会忽略它、重新 canonicalize 后再按授权参数判归属
+    （`fs-sandbox/src/index.ts:132-143`）。宿主官方两处都传，就是这个原因（对照见
+    `docs/专家团-Issue1-跨目录写入根因与修复方案.md` 6.4）。
+- **写入路径的 cwd 与「会话的真实项目目录」同源**（`lib/command.js`）。旧口径是
+  `invocation.agent?.session?.header?.cwd ?? process.cwd()`（原 `:6229`）：**只读 `header.cwd`，缺失就静默回落到启动目录**。
+  主因修好后，这层偏差会把「围栏拒绝」变形为「**写到了错误的目录**」—— 而沙箱判定与路径推导本该同源。现在把 4 级回落
+  （`header.meta.cwd → header.cwd → session.meta.cwd → session.cwd`）抽成**唯一出处** `sessionCwdOf(session)`
+  （`:3282-3287`），既有的权威取法 `cwdFromSession(ctx, sid)` 改为复用它（`:3308-3316`，不再各抄一份 ⇒ 不会下次只改
+  一处就漂移），写入路径取 `sessionCwdOf(CURRENT_SESSION) ?? cwdFromSession(ctx, CURRENT_SESSION?.id) ?? process.cwd()`
+  （`:6430`）。`process.cwd()` **保留**为最后兜底：拿不到 cwd 时 `/team` 仍然可用，不硬失败。
+- **降级方向是刻意选的，写进了注释与测试**：会话对象拿不到、宿主没有 `sandboxPolicy` 服务、或授权解析失败时，本次写入
+  **不带授权参数**（解析器内部 `catch` 后返回 `undefined`，`lib/command.js:278-283`；适配层
+  `lib/artifact-writer.js:147-157` 还留着一层同样的 `catch` 作**纵深防御**），宿主于是回到「按部署根判定」——
+  即**与修复前逐字相同的行为**。**不允许出现「以前能写、修完写不了」**：「拿不到会话」不能被放大成一次新的写入失败。
+  **但降级本身不再静默**：`{type:'policy-resolve-error', target, error}` 会在同一个 `writerEvents` 通道上被上报，
+  由 `pushActivityEvent` 的新分支（`lib/command.js:347-352`）喊出来，如实说明「本次按无授权处理 ⇒ 回落宿主部署根」
+  以及写入目标 —— 授权解析失败会把围栏**静默地**从「会话项目目录」退回「部署根」，正是最难被发现的一类回归。
+- **第一版修复带出一个新失败方向：授权取自「环境里最后见过的会话」，而好几个写入点写的根本不是那个会话的工作区**
+  （`lib/command.js`；**独立评审发现**）。`CURRENT_SESSION` 只在 `executeTeamCommand` 里更新（`:6422`），它代表的是
+  「**最后执行过 `/team` 的那个会话**」，而不是「**这次要写的目录归谁**」—— 两者不同时就出错：
+  - **被代码结构证实的三处**（`lib/command.js`）：
+    - `GET /state` 的写副作用写的是**用户正在看的那个 run** —— `join(sel.workspace, 'team', sel.runId, 'STATE.json')`
+      （`:7256`、`:7262`），`sel.workspace` 来自**请求**、不属于当前会话；这一处还被
+      `catch { /* best-effort：登记失败不影响读取 */ }`（`:7266`）吞掉 ⇒ **失败连一条日志都没有**
+      （「看不见的失败」正是最难发现的一类回归）。
+    - `/decide`·`/plan`·`/plan/approve`·`/plan/discard` 写 `body.workspace`（`:7594`、`:7724`、`:7889`、`:7917`）。
+    - `dispatchLedger`（`tools/post-execute`）把 `TASKS.json` 回写到**执行者会话**的 cwd 下（`lib/command.js:6826-6837`
+      的 `runFor` 取 `exec.agent.session` 的 cwd → `lib/dispatch-ledger.js` 的 `writeTasks`）。
+  - **为什么算「新引入」而不是老缺陷**：修复前围栏根是 `process.cwd()`（DSH 启动目录）。一笔目标**在启动目录之下、
+    却不在该会话 cwd 之下**的写入，按旧口径是**通过**的；把根换成「环境会话的 cwd」之后，同一笔写入会翻成
+    `FS_SANDBOX_DENIED` —— 也就是说，围栏根从一个固定的宽根换成了一个**可能更窄**的根，而上面这些写入点从来
+    没打算受「当前会话」管辖。
+  - **修法：授权改由「被写目录的归属会话」给出**，与环境状态彻底脱钩。`resolvePolicy(targetPath)` 现在**收到本次要写的
+    目标路径**（`lib/artifact-writer.js:150`），由 `sessionOwningTarget(ctx, target)`（`lib/command.js:217-230`）在候选
+    会话里做**最长前缀匹配**：目标落在谁的 cwd 之下就由谁授权（最长的那个 cwd = 最具体的那个工作区）。候选会话
+    （`candidateSessions`，`:233-255`）有三支：① `ctx.get('sessions').list()` 的**活会话**（纯内存、零持久化 IO）、
+    ② `CURRENT_SESSION`（本次调用留下的会话对象；它可能已不在活存储里，所以必须单独作为候选）、③ 前两支都没命中、
+    又只拿得到 id 时，退回旧口径的 `sessions.get(id)` 反查一次（`:248-253`）。⇒ `/state` 的写入由「正在看的那个 run
+    的会话」授权、`dispatchLedger` 由「执行者会话」授权、`body.workspace` 由「该工作区的会话」授权 —— 各自归位。
+  - **没有候选会话拥有这个目标时不授权** ⇒ 宿主回落部署根 = **修复前逐字相同的行为**（安全方向、不新增失败）。
+    但**这**不是「把围栏放宽」：授权根仍然是**某个会话的 cwd**，目标不在它之下照样被宿主拒
+    （`cordis-fs-port.test.mjs` ⑧d 的假阳性守卫就是这一条）。
+- **随后揪出的三处缺陷：上面的「按目标授权」本身又被一次对抗式评审推翻了三处，逐条已修**
+  （`lib/command.js`、`lib/artifact-writer.js`）。按本仓惯例如实记下 —— 三条里有两条属于「声称修好了、其实没生效」：
+  - **`pathIsUnder` 会放过 `..` 穿越**（`lib/command.js:168-179`）：`pathIsUnder('/proj', '/proj/../etc/passwd')`
+    曾经返回 `true` —— 因为比较里带了一对**未归一化的原始串**，而 `'/proj/../etc/passwd'.startsWith('/proj/')`
+    先命中就直接放行；可这个目标的 `path.resolve` 是 `/etc/passwd`，**根本不在 `/proj` 之下**。这个 `true` 会让
+    `sessionOwningTarget` 把目标判给一个**并不拥有它**的会话 ⇒ 围栏根被设成 `/proj` ⇒ 一笔越界写入被**真的放行**
+    （不是「漏判退回无授权」的安全方向）。**修法**：只比较 `path.resolve` 归一化后的形态，那对原始串**整对删掉** ——
+    不是挪到后面、更不是「两者取或」：取或就等于漏洞仍在。盘根（`''` / `/` / `C:`）归一化前后各判一次，理由见函数注释。
+  - **`policy-resolve-error` 事件在实践中不可达**（`lib/command.js:273-285`、`lib/artifact-writer.js:147-157`）：
+    `policyResolverForTargets` 自带 `catch { return undefined }`，异常在**解析器内部**就被吞掉了 ⇒ 适配层那层的
+    同名 `catch` 永远看不见它，上一稿写的「降级不再静默」是**空头承诺**（独立评审判定为这批缺陷里最严重的一条）。
+    **修法**：**由解析器自己负责上报**，走的还是 `createArtifactWriter({onEvent})` 那条同一个 `writerEvents` 通道
+    （`adoptHostFs` 现在把 `writerEvents` 同时交给适配层**与**解析器，`:302-303`）；适配层那层 `catch` **保留为纵深防御**
+    （万一调用方传进来的不是本函数；重复上报无副作用）。另有一处只有细读才会发现的细节：必须写成
+    `return await sp.resolve(...)` —— `return <被拒绝的 promise>` **不会**被本层的 `try/catch` 接住，少了 `await`，
+    **异步**形态的解析失败会穿透到适配层、而**同步**抛错（宿主 `resolve()` 就是同步方法）仍被吞掉 ⇒「谁来观测」
+    会随调用形态而变；`await` 让两种形态落进同一个 `catch`、同一份上报。**降级方向不变**：仍返回 `undefined`、
+    绝不 rethrow，本次写入照旧不被打断。
+  - **cwd 取值口径与宿主不一致**（`lib/command.js:3301-3304`）：归属判定原用 `sessionCwdOf` 的 4 级回落，而宿主
+    `sandboxPolicy.resolve()` **只读** `session.header.cwd`（`resolveWorkspaceRoot(session?.header.cwd ?? this.workspaceRoot)`）
+    —— 靠回落级 cwd 命中而当选的会话（例如只有顶层 `session.cwd`），交给宿主时会**静默回落部署根** ⇒ 目标再被判越界、
+    写入被拒，**现象与 Issue #1 逐字相同、且没有任何信号**（解析器返回的还是一份「看起来有授权」的凭据）。
+    **修法**：归属判定只认**宿主会采纳的那一个来源**（`hostHonoredCwdOf`）；没有 `header.cwd` 的会话**不当选** ——
+    返回「没有凭据」，而不是一份宿主会忽略的凭据。代价明说、刻意不回退：只有顶层 `session.cwd` 的会话不会被选中
+    ⇒ 该会话的写入按部署根判定 = **修复前行为**（不阻断写入、也不新增失败方向）。`sessionCwdOf` 的 4 级回落
+    **原样保留**给其它既有调用方（`/team` 的 cwd 推导等，`:6430`）。
+- **`lib/host-state-file.js` 只改注释**（`:28-37`）：该文件头原有的结论「`ctx.fs` 出不了工作区」**只覆盖了 `$DSH_HOME`
+  这类绝对越界**，没有覆盖**另一个项目目录**这种**相对**越界（同一个 `<项目目录>/team/<RUN_ID>/...` 在「项目目录 =
+  启动目录」时合法、在两者不同时被拒）—— 这正是本次的盲点。补上覆盖面之后**结论不变**：宿主状态文件仍走本模块的
+  「同目录临时文件 + fsync + rename」，不走 `ctx.fs`。
+
+### 守门
+
+- **测试盲点本身就是根因的一半**：`cordis-fs-port.test.mjs` 的宿主 mock 早先只声明 3 个参数
+  （`async writeText(target, content, intent)`），而**一个不接第 5 参的 mock 在结构上不可能发现「第 5 参没传」** ——
+  于是「宿主路径已实跑验证」是**假阳性**：它验证的只有版本栅栏（`createIfAbsent` / `replaceIfVersion`）与陈旧重试，
+  **从未验证沙箱授权**。这与本仓已登记过的教训同类（断言「函数存在 / 字段有值」，而不是「参数真的被传了」）。
+  本次把 mock 升到与宿主同 arity（断言 `writeText.length >= 5`），并把收到的 `sandboxPolicy` 与 `resolve` 的 `opts`
+  **记进 `stats`**（`cordis-fs-port.test.mjs:59-75`、`:99-103`、`:268-269`）—— `undefined` **也要记**，因为「没传」本身
+  就是要被断言的事实，不能被「没记录」掩盖。
+- **新增 ⑧ 组回归**（`cordis-fs-port.test.mjs:260-370`）：⑧a 有授权 ⇒ 第 5 参收到**同一个**凭据对象、且 `resolve`
+  收到 `{cwd: policy.workspaceRoot}`；⑧b 无授权（`resolvePolicy = null` 与「解析器返回 undefined」两种形态）⇒
+  第 5 参 `undefined`、`resolve` 不带 cwd、**写入照旧成功**；⑧c 解析器抛错 ⇒ **降级**，写入仍然成功；⑧d
+  **端到端围栏仿真**：同一个 mock、同一条路径，「无授权 ⇒ `FS_SANDBOX_DENIED`、宿主侧 0 个文件」与「有授权 ⇒ 落盘成功」
+  成对断言 —— 这条测试按旧实现就该红，正是本次事故的回归锚点；并带一条**假阳性守卫**：授权根**之外**仍然被拒
+  （证明修的是「授权错位」，**不是**「把围栏放宽」）；⑧e `must()` 如实上抛宿主的 code 与文案、只尝试一次、不留半成品，
+  `write()` 则返回 `ok:false + code`（不静默成功）。
+- **新增变异 `M173-cordis-fs-port-drops-sandbox-policy`**（`regression.fixtures/mutations.json`）：把那次第 5 参转发退回
+  3 参形态 ⇒ 授权凭据再次缺席、Issue #1 的机制逐字复现 ⇒ ⑧ 组必红。变异目录 **172 → 174** 条，
+  `mutation-catalog.test.mjs` 的 `EXPECTED_CATALOG_SIZE` 与 `README.md` / `README.en.md` / `llms.txt` /
+  `docs/images/hero.svg` 里的同一数字已同步。
+- **上面那三处修正的守卫已从「待补项」变成有直接锚点的测试**（如实记录，不粉饰）：最初那批 90 个测试文件对
+  「按目标授权」那条链 —— `pathIsUnder` / `sessionOwningTarget` / `candidateSessions` /
+  `policyResolverForTargets` / `hostHonoredCwdOf` / `policy-resolve-error` —— 是**0 命中**；现在它们各自有了
+  **直接**断言（把 `candidateSessions` 与 `hostHonoredCwdOf` 加进 `_live` 导出（`lib/command.js:6580`）之后才有可能）：
+  - **⑧ 组仍守第 5 参转发**：变异 `M173` 的 `find` 串仍逐字锚在**未被改动**的那一行转发上
+    （`lib/artifact-writer.js:162`）⇒ 它照旧必红；⑧a–⑧e 一字未改、仍然全绿。
+  - **新增 ⑧f 与 ⑨–⑫**（`cordis-fs-port.test.mjs`：⑧f `:372-421`、⑨ `:422-459`、⑩ `:461-620`、⑪ `:621-672`、
+    ⑫ `:674-721`）：⑧f 直调 `policyResolverForTargets`，断言 `policy-resolve-error` 在**同步抛**与**被拒的 promise**
+    两种形态下都**恰好上报一次**（顺带守住那句 `return await`）；⑨ 直调 `pathIsUnder` —— `..` 穿越在**未归一化的
+    原始串**与归一化两种形态下都必须为 false，以及前缀陷阱（`/proj` **不**含 `/project/x`）、文件系统根 / 空根 /
+    Windows 盘根、非字符串输入一律不归属且不抛；⑩ 直调 `sessionOwningTarget` / `candidateSessions` —— 最长前缀与
+    「顺序无关」、**只认宿主会采纳的 `header.cwd`**（只有回落级 cwd 的会话**即便前缀更长也不当选**）、候选去重
+    （键优先 `header.id`、回退顶层 `id`，**无 id 不合并**）、非对象过滤、退化 ctx 一律不抛并返回空数组；⑪ 直调
+    `policyResolverForTargets` —— 确认 `sp.resolve` 收到的是**会话对象本身**（不是 id），且解析出的 `workspaceRoot`
+    == 归属会话的 `header.cwd`；⑫ 直调 `hostHonoredCwdOf` —— 取值来源严格性（只认非空的字符串 `header.cwd`，
+    其余一律 `undefined`）。这些新断言连同既有的 ⑧ 组，共 **122 条 `check(...)` 调用点**（`cordis-fs-port.test.mjs`
+     里 `grep -c "check("` 共 122 行 —— 该模式**只**匹配调用点（`:50` 的辅助函数**定义** `const check = (ok, name, detail) => {` 里没有 `check(` 子串）；其中 **95 条**是本版新增 ——
+     `git diff` 新增 95 行、删除 0 行 ⇒ 改动前（`HEAD`）是 **27** 个调用点）。
+  - **新增变异 `M174-path-is-under-raw-string-compare`**（`regression.fixtures/mutations.json`）：把归一化退回
+    **未归一化的原始串**比较 ⇒ `..` 洞复发 ⇒ ⑨ 抓住。变异目录 **172 → 174** 条（`mutation-catalog.test.mjs` 的
+    `EXPECTED_CATALOG_SIZE` 与 `README.md` / `README.en.md` / `llms.txt` / `docs/images/hero.svg` 里的同一数字已同步）。
+  - **这些守卫经对抗式验证确实能失败**（不是「写了就算守住」）：**4 条定向变异各自产出 1 / 8 / 5 / 3 条红色断言**。
+    这 4 条是**即席验证** —— 在 `/tmp` 副本上手工注入、手工计数，**没有登记进 `regression.fixtures/mutations.json`
+    的变异目录**（本版登记在那里的只有 `M173` 与 `M174` 两条）⇒ 与目录内那两条一样，**CI 都不会自动复跑它们**
+    （CI 只校验目录的形状与条数，变异体本身需手动注入，见上文）。
+- **仍未覆盖的缺口如实登记，不假装覆盖**（三条，与上一条「已有直接锚点」并列，别混读）：
+  - **`candidateSessions` 里 `sessions.get(id)` 兜底支在测试中不可达**：`CURRENT_SESSION` / `WRITER_IDENTITY` 是
+    模块级变量、既无 setter 也没有经 `_live` 导出 ⇒ 该支的触发条件不存在。测试文件**明确断言这份不可达性本身**
+    （spy：`sessions.get` 调用次数 = 0），而不是伪造那份模块级状态去「覆盖」它。
+  - **⑧d 的围栏仿真是词法层面的 mock，不是真的跑一次 `@deepseek-ai/dsh-fs-sandbox`** ⇒ 单元测试全绿**不等于**
+    真机全绿。
+  - 这次修复**仍从未在真实 `dsh web` 会话里端到端跑过**（其余处已如实标注）。
+
+### 升级步骤
+
+- 插件在 `apply()` 里接管 `ctx.fs` ⇒ 升级到 1.5.2 后**重启 `dsh web`** 即生效。
+- **不需要任何数据迁移、不需要改任何设置**：本版无新设置项、无开关、无工件格式变化。
+- 恢复验证：在「启动目录 ≠ 会话项目目录」的布局下执行一次 `/team <目标>`，`team/<RUN_ID>/` 下应出现 13 个模板文件
+  （`ARTIFACT_TEMPLATES`：`TASK.md` / `ROSTER.json` / `STATE.json` / `任务看板.md` / `SPEC.md` / `PLAN.md` /
+  `RESEARCH.md` / `TASKS.json` / `REVIEW.md` / `TEST.md` / `SUMMARY.md` / `RETRO.md` / `AUTHORITY.md`）。
+- 此前失败留下的空 `team/<RUN_ID>/` **不会被自动清理**（本版未改动失败回滚路径）：用 `/team clear <run>` 清指定 run，
+  或 `/team clear` 清本工作区全部 run。空目录不含状态，删除不丢数据。
+
 ## 1.5.1
 
 **主题：三处真机缺陷修复（含一处「同一个值、两个路由两种说法」）+ 一处文档更正**。
