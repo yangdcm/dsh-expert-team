@@ -9,11 +9,11 @@ English | [中文](README.md)
 
 ![dsh expert-team plugin banner: a 12-role multi-agent team, a 9-phase gated pipeline, zero runtime dependencies](https://raw.githubusercontent.com/yangdcm/dsh-expert-team/main/docs/images/hero.svg)
 
-> **One sentence in, a gated team delivery out.** `/team build a payments module with login` gives
-> **small teams and solo builders** a complete engineering department: it assembles a 12-role expert team
-> (product, architecture, research, UI/UX, backend, frontend, data, security, review, QA, devops, docs) and runs
-> clarify → research → design → spec-review → plan-approval → implement → review → test → deliver,
-> with implementers editing your workspace directly and **every hand-off persisted as a reviewable artifact**.
+> **Role-based multi-agent expert team = your digital workforce.** `/team build a payments module with login`
+> gives **small teams and solo builders** a complete engineering department: one goal assembles a 12-role
+> expert team (product, architecture, frontend, backend, reviewer, QA and more) that delivers through a
+> nine-phase gated pipeline, with a persistent team you can keep directing.
+> Implementers edit your workspace directly, and **every hand-off is persisted as a reviewable artifact**.
 
 A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh):
 **zero runtime dependencies, no build step, no install hooks.**

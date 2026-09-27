@@ -7,6 +7,23 @@
 
 （暂无）
 
+## 1.5.3
+
+**主题：精简插件介绍文案 —— 统一为「数字员工」口径，并补上「九阶段门控流水线」的可读表述**。
+**本版是纯文案版 —— 没有新能力、没有新设置项、没有新开关、没有工件格式变化、未改 `presets/**`**。
+
+### 变更
+
+- 介绍文案统一收口为三条卖点：**角色化多智能体专家团 = 你的数字员工**、一句目标自动组建多角色团队、按九阶段门控流水线协作交付。
+- `package.json` 的 `description`、`skills/expert-team/SKILL.md` 的 frontmatter `description`、`README.md` / `README.en.md` 引言、`llms.txt` 简介同步精简，删除九阶段全名罗列、工件清单（SPEC/PLAN/TASKS…）等实现细节。
+- 英文文案同步改为 `your digital workforce` 口径，保留 npm 英文检索关键词。
+- `## Unreleased` 保持为 `（暂无）`；`## 1.5.2` 及更早版本节**逐字未动**。
+
+### 兼容性
+
+- 无破坏性变更：`skills/expert-team/SKILL.md` 的 `name` 与 `whenToUse` 字段未动，技能自动路由行为不变。
+- 测试面：90 个测试文件全通过（无任何测试把介绍文案写死，仅 `bootstrap.test.mjs` 断言 `description.length > 40`）。
+
 ## 1.5.2
 
 **主题：修 Issue #1 —— 会话项目目录与 DSH 启动目录不同时，`/team` 只建得出空目录、一个工件也写不进去**。
