@@ -2280,6 +2280,19 @@
           "replace": "    const t = String(target || ''); // MUTANT: 退回未归一化的原始串比较 ⇒ `..` 穿越重新被放行"
         }
       ]
+    },
+    {
+      "id": "M175-subagent-bar-idle-occupies-composer",
+      "title": "空闲态状态条重新渲染成一行灰字 ⇒ 输入框上方常驻一条空行、间距被破坏（GitHub issue #2 复发）",
+      "why": "真实报障（GitHub issue #2，2026-11）：`SubagentBar` 在 `idle`（拿到会话态且确实没有子代理在跑）时仍渲染一行灰字「无子代理在运行」。该 dock 条目对本插件注册的**每个会话**都生效 ⇒ 即使从没用过专家团，输入框上方也常驻一行，占掉间距、影响视觉。修法是空闲态**不占位**（`return null`）：busy 仍渲染（那才是有用信息），而「未知」（快照未到，`subagentBarModel` 返回 null）本来就不渲染 —— 三种状态在渲染层收敛成「要么显示 busy、要么什么都不占」。本变异把 `return null` 换回旧的那行灰字 ⇒ 缺陷原样复发。预期红 2 项（由 `subagent-bar.test.mjs` ⑥ 的两条源码锚点抓住）：`空闲态渲染为 null（issue #2 的修复点）` 与 `渲染层不再挂空闲态 class（不会出现\"留了一条空行\"）`。**必须仍然绿**：①②的模型层语义（idle 与 null 的区分、计数、命名回落）、宽度/居中约束、`/state` 判据的移除 —— 证明本变异只打中「空闲态是否占位」这一维。",
+      "test": "subagent-bar.test.mjs",
+      "edits": [
+        {
+          "file": "client.js",
+          "find": "      if (m.kind === 'idle') return null",
+          "replace": "      if (m.kind === 'idle') return h('div', { className: 'exp-subbusy-idle' }, esc(m.text))"
+        }
+      ]
     }
   ]
 }

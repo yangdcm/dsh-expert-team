@@ -180,7 +180,12 @@ console.log('⑥ 源码层锚点（防止未来改口径改歪）')
   check(/function subagentBarModel\(sessions, sid\)/.test(src), 'subagentBarModel 签名改为 (sessions, sid)')
   check(src.indexOf("ctx.slots.inject('conversation.input.dock'") >= 0, '注册进 conversation.input.dock（输入框正上方）')
   check(src.indexOf("id: 'expert-team-subagents'") >= 0, '新 id（不撞 queue/todo/goal）')
-  check(src.indexOf('.exp-subbusy{') >= 0 && src.indexOf('.exp-subbusy-idle{') >= 0, 'CSS 两类状态都在场')
+  check(src.indexOf('.exp-subbusy{') >= 0, 'busy 横幅的 CSS 仍在场')
+  // GitHub issue #2：空闲态的那行灰字常驻会占掉一行、破坏输入框上方间距 ⇒ 渲染层**不占位**。
+  // 模型层仍保留 `idle`（与 `null`＝未知区分），只是渲染选 null。
+  check(src.indexOf('.exp-subbusy-idle{') < 0, '空闲态的 CSS 已移除（不再有占位元素）')
+  check(barSrc.indexOf("if (m.kind === 'idle') return null") >= 0, "空闲态渲染为 null（issue #2 的修复点）")
+  check(barSrc.indexOf('exp-subbusy-idle') < 0, '渲染层不再挂空闲态 class（不会出现"留了一条空行"）')
   const bareCount = (src.match(/fetch\(['"]\/plugins\/dsh-expert-team\/state/gi) || []).length
   check(bareCount === 0, '没有裸 /state fetch（state-perf-guard 棘轮）', `bare=${bareCount}`)
   // 宽度回归（真机报障：状态条比输入框宽）：dock 条目必须让出侧边留白 + 居中，

@@ -7,6 +7,25 @@
 
 （暂无）
 
+## 1.6.1
+
+**主题：修 GitHub issue #2 —— 空闲时输入框上方的状态条不再占位**。
+**本版是补丁：只改渲染与一条 CSS，不动 preset / 协议 / 工件格式。**
+
+### 修复
+
+- **`SubagentBar` 在空闲态常驻一行灰字「无子代理在运行」**（GitHub issue #2，报告人 `WiseXin`）：该 dock 条目注册在
+  `conversation.input.dock`，对本插件的**每个会话**都生效 —— 即使从没用过专家团，输入框上方也常驻一行，占掉间距、影响视觉。
+  现在空闲态**渲染为 `null`**（不占位）；busy 仍有横幅，「未知」（会话快照还没到）本来就不渲染。同时删除只为那一行存在的
+  `.exp-subbusy-idle` CSS。
+- 模型层语义**不变**：`subagentBarModel` 仍区分 `idle`（确定没人跑）与 `null`（未知）—— 渲染层只是选择"不占位"，
+  绝不把"未知"渲染成"无子代理在运行"。
+- 新增变异体 `M175-subagent-bar-idle-occupies-composer`（把 `return null` 换回旧灰字 ⇒ `subagent-bar.test.mjs` 必须变红）。
+
+### 兼容性
+
+- 无配置/工件/preset 变更；`engines.dsh` 不变（`>=0.2.2-rc.1`）。测试面：90 个测试文件 / 175 条变异目录。
+
 ## 1.6.0
 
 **主题：适配 DeepSeek Harness 0.2.x —— 把「专家团模式」preset 从目录副本迁移到 bundle 补丁，并按 0.2.2 的新契约重建 12 个角色的配置层边界**。
