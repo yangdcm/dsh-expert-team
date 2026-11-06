@@ -19,7 +19,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
 /**
  * 解析 dsh 安装根目录，用于借用宿主自带的 `yaml`。
@@ -52,30 +52,83 @@ function resolveDshInstall() {
 }
 
 const DSH = resolveDshInstall();
+
+/**
+ * 宿主版本必须覆盖本包 `engines.dsh` 的下限。
+ *
+ * 为什么要有这道闸：0.2.2 的 preset 会引用更新版本才有的插件（例如 `dsh-tool-schedule`
+ * 在 0.2.1+ 才出现）。拿一台 **0.2.0** 的机器去校验，会把"宿主太旧"报成"预设写错了" ——
+ * 那是假红，会训练人忽略门禁。此时**如实说"验不了"**（exit 2），而不是给一个错误结论。
+ */
+function hostVersion() {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(DSH, 'package.json'), 'utf8'));
+    return String(manifest.version || '');
+  } catch { return ''; }
+}
+function minDshVersion() {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8'));
+    const range = String((pkg.engines && pkg.engines.dsh) || '');
+    const m = /(\d+)\.(\d+)\.(\d+)/.exec(range);
+    return m ? [+m[1], +m[2], +m[3]] : null;
+  } catch { return null; }
+}
+function versionTriple(v) {
+  const m = /(\d+)\.(\d+)\.(\d+)/.exec(String(v || ''));
+  return m ? [+m[1], +m[2], +m[3]] : null;
+}
+{
+  // 只对**本包随附的 preset 补丁**做版本闸（默认输入，或显式指向包内 `presets/`）：
+  // 它会引用较新宿主才有的插件。显式传入的 fixture 文件是你的选择 —— 它可能只用宿主编年史里
+  // 一直存在的插件（例如 preset-lint 的近失键名夹具），旧宿主上照样能验。
+  const PKG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const explicit = process.argv.slice(2).map((f) => path.resolve(f));
+  const packageInput = explicit.length === 0
+    || explicit.some((f) => f === path.join(PKG, 'presets') || f.startsWith(path.join(PKG, 'presets') + path.sep));
+  const host = versionTriple(hostVersion());
+  const min = minDshVersion();
+  if (packageInput && host && min) {
+    const tooOld = host[0] < min[0] || (host[0] === min[0] && (host[1] < min[1] || (host[1] === min[1] && host[2] < min[2])));
+    if (tooOld) {
+      console.error('✗ 本机 dsh 版本 ' + host.join('.') + ' 低于本包要求（engines.dsh ' + min.join('.') + '.x）—— 无法校验：');
+      console.error('  更新版本的 preset 会引用较新的宿主插件，旧宿主上的失败不能当成"预设写错了"。');
+      console.error('  装好匹配的 dsh 后重跑，或设 DSH_INSTALL 指向 >= ' + min.join('.') + ' 的 @deepseek-ai/dsh 目录。');
+      process.exit(2);
+    }
+  }
+}
 const require = createRequire(path.join(DSH, 'index.js'));
 const YAML = require('yaml');
 
-/** 用户 preset 根目录（尊重 `DSH_HOME`，不再是写死的 `~/.dsh`）。 */
-const USER_PRESET_ROOT = path.join(process.env.DSH_HOME || path.join(os.homedir(), '.dsh'), '.agent-presets');
-
-/** 扫描用户 preset 根；**目录不存在不是错误**（还没跑过 /team 的机器就是这种状态）。 */
+/**
+ * 默认校验**本包随附的 preset 补丁**。
+ *
+ * dsh 0.2.x 起 preset 不再来自 `$DSH_HOME/.agent-presets/<id>/agent.cordis.yml`：
+ * 注册表不扫描目录（见 `@deepseek-ai/dsh-agent-preset-registry` README），
+ * preset 由 bundle 补丁里的 `@deepseek-ai/dsh-agent-preset` 行声明。
+ * 所以默认输入是包内 `presets/*.patch.yml`，而不是用户目录。
+ */
+const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 function discoverPresetFiles() {
+  const dir = path.join(PKG_ROOT, 'presets');
   let entries = [];
   try {
-    entries = fs.readdirSync(USER_PRESET_ROOT, { withFileTypes: true });
+    entries = fs.readdirSync(dir, { withFileTypes: true });
   } catch {
-    console.log(`· ${USER_PRESET_ROOT} 不存在 —— 没有可校验的 preset（还没自举过属正常）。`);
+    console.log(`· ${dir} 不存在 —— 没有可校验的 preset 补丁。`);
     return [];
   }
-  return entries
-    .filter((d) => d.isDirectory())
-    .map((d) => path.join(USER_PRESET_ROOT, d.name, 'agent.cordis.yml'))
-    .filter((p) => fs.existsSync(p));
+  const files = entries
+    .filter((d) => d.isFile() && /\.patch\.ya?ml$/.test(d.name))
+    .map((d) => path.join(dir, d.name));
+  if (!files.length) console.log(`· ${dir} 下没有 *.patch.yml —— 没有可校验的 preset 补丁。`);
+  return files;
 }
 
 const files = process.argv.slice(2).length ? process.argv.slice(2) : discoverPresetFiles();
 
-/** 递归展开 cordis:group 的 config 数组，收集叶子行。 */
+/** 递归展开 cordis:group 的 config 数组，并展开 preset 行的 config.plugins，收集叶子行。 */
 function collectRows(rows, out = [], parent = '') {
   for (const row of rows ?? []) {
     if (!row || typeof row !== 'object') continue;
@@ -87,6 +140,11 @@ function collectRows(rows, out = [], parent = '') {
       continue;
     }
     out.push({ where, id, name: row.name, disabled: row.disabled === true, config: row.config });
+    // preset 行：`config.plugins` 是这份 preset 的子插件列表，必须逐行校验 ——
+    // 否则"preset 里配错了插件"会整个漏检（旧版目录式 preset 的 collectRows 只认 group）。
+    if (row.name === '@deepseek-ai/dsh-agent-preset' && Array.isArray(row.config?.plugins)) {
+      collectRows(row.config.plugins, out, `${where}(${row.config.id || '?'})`);
+    }
   }
   return out;
 }
@@ -197,7 +255,15 @@ for (const file of files) {
     failures++;
     continue;
   }
-  const rows = collectRows(doc);
+  // 输入可能是「补丁文件」（`- insert: [...]`）也可能是「插件行列表」；补丁里所有 insert
+  // 内容都要展开，其它补丁动作（override/disable）不构成新的 preset，跳过即可。
+  const patchRows = Array.isArray(doc)
+    ? doc.flatMap((entry) => (entry && Array.isArray(entry.insert) ? entry.insert : []))
+    : [];
+  const rows = collectRows(patchRows.length ? patchRows : (Array.isArray(doc) ? doc : []));
+  // 声明的 preset id 先收齐：`agentPreset:` 引用必须指向真实存在的子预设（拼错 ⇒ 角色派工在
+  // **调用时**才失败，属于本仓最讨厌的"配好了但一跑就错"）。
+  const declaredPresets = new Set(rows.filter((r) => r.name === '@deepseek-ai/dsh-agent-preset').map((r) => r.config?.id).filter(Boolean));
   for (const row of rows) {
     if (row.group) continue;
     if (!row.name || !row.name.startsWith('@')) {
@@ -244,6 +310,32 @@ for (const file of files) {
       if (unknown.length) {
         lintWarns++;
         console.log(`    ⚠ agentOptions 含未知键（宿主 schema 不适用的键，确认是否有意）：${unknown.join('、')}`);
+      }
+      // ── dsh 0.2.2 的**挂载期**契约（schema 不拦，apply 时直接 throw）──────────────
+      // `dsh-tool-subagent` 0.2.2: persona/toolFilter 已移除，配置里出现即
+      // "persona is no longer supported; configure persona and tool plugins in an Agent
+      // Preset and select it with agentPreset (spawn only)" —— 整份 preset 因此挂不上。
+      if (row.name === '@deepseek-ai/dsh-tool-subagent') {
+        const cfg = row.config && typeof row.config === 'object' ? row.config : {};
+        for (const gone of ['persona', 'toolFilter']) {
+          if (Object.hasOwn(cfg, gone)) {
+            failures++;
+            console.log(`    ✗ config.${gone} 在 dsh >= 0.2.2 已移除（挂载时直接报错）⇒ 把角色人设/工具限制放进 Agent Preset，用 agentPreset 选择`);
+          }
+        }
+        for (const obsolete of ['backgroundMode', 'modelSelectionSettings']) {
+          if (Object.hasOwn(cfg, obsolete)) {
+            lintWarns++;
+            console.log(`    ⚠ config.${obsolete} 是 0.1.x 字段，0.2.x 会静默忽略（已无后台模式；模型选择改用 modelSelection/modelDiscovery）`);
+          }
+        }
+        if (cfg.agentPreset !== undefined) {
+          if (!declaredPresets.has(cfg.agentPreset)) {
+            failures++;
+            console.log(`    ✗ agentPreset="${cfg.agentPreset}" 没有对应的 @deepseek-ai/dsh-agent-preset 声明`
+              + `（已声明：${[...declaredPresets].join('、') || '无'}）`);
+          }
+        }
       }
     } catch (e) {
       failures++;

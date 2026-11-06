@@ -2332,7 +2332,7 @@ window.__ModuleLoader__.load({
       function relay() {
         if (!armed) {
           setArmed(true); setErr('')
-          setMsg(t('再点一次「确认重新铺设」才会真的覆盖当前目录。', 'Click “Confirm re-lay” once more to actually overwrite the current directory.'))
+          setMsg(t('再点一次「确认重新铺设」才会真的覆盖 skill 兜底副本（preset 由补丁提供，不参与铺设）。', 'Click “Confirm re-lay” once more to overwrite the skill fallback copy (presets come from the patch and are not laid).'))
           return
         }
         setArmed(false); setBusy(true); setErr(''); setMsg('')
@@ -2366,13 +2366,23 @@ window.__ModuleLoader__.load({
           h('span', { className: 'exp-hs-v' }, h('span', { className: cls }, esc(t(disp.zh, disp.en)))))
       }
       var d = st.display || {}
+      // 0.2.x：preset 由 bundle 补丁在 profile 组合期注册，不再有"铺设"这个动作。
+      // 状态必须说清"注册到了/挂载失败/根本没注册"——角色工具静默消失是这里唯一要防的事。
+      var pd = st.presetDelivery || {}
+      var presetDisp = pd.state === 'registered'
+        ? { level: 'ok', zh: '已注册（bundle 补丁）', en: 'registered (bundle patch)' }
+        : pd.state === 'broken'
+          ? { level: 'bad', zh: '挂载失败：' + (pd.broken || '未知原因'), en: 'failed to mount: ' + (pd.broken || 'unknown') }
+          : pd.state === 'missing'
+            ? { level: 'bad', zh: '未注册（补丁未生效，确认插件未被禁用后重启）', en: 'not registered (patch inactive; check the plugin is enabled and restart)' }
+            : { level: '', zh: '未知（当前宿主没有 agentPresets 注册表）', en: 'unknown (no agentPresets registry)' }
       return h('div', { className: 'exp-hs' },
-        h('div', { className: 'exp-settings-group' }, esc(t('预设铺设 · 归属与状态', 'Preset lay · ownership & state'))),
-        lineFor(t('专家团模式 preset', 'Expert-team preset'), d.preset),
+        h('div', { className: 'exp-settings-group' }, esc(t('预设 / skill 状态', 'Preset / skill state'))),
+        lineFor(t('专家团模式 preset', 'Expert-team preset'), presetDisp),
         lineFor(t('skill 副本', 'skill copy'), d.skill),
         h('div', { className: 'exp-settings-note' }, esc(t(
-          '本插件版本 ' + ((st.preset && st.preset.pluginVersion) || '') + '。铺设用原子换名：先把整份内容写进临时目录，再整目录换名到位；所以被打断只会留下"目录不存在"或"我们自己的临时目录"，不会再留下"看起来像你的定制的半成品"。但删除旧目录与换名之间若被打断，目录会短暂不存在（下次自动重铺）—— 它消灭的是"假用户定制"，不是"任何时刻都存在一份完整副本"，所以它不是"完全原子"。',
-          'Plugin version ' + ((st.preset && st.preset.pluginVersion) || '') + '. Laying is atomic by swapping a fully written temp directory into place, so an interruption leaves either no directory or our own temp dir — never a half copy that looks like your customization. If interrupted between removing the old directory and the swap, the directory can briefly be absent (it is re-laid next time); it removes the false-customization case, not the possibility of a momentary gap, so it is not fully atomic.'))),
+          '本插件版本 ' + ((st.preset && st.preset.pluginVersion) || '') + '。0.2.x 起「专家团模式」preset（含 12 个角色子预设）由插件包自带的 bundle 补丁注册，不再往 $DSH_HOME/.agent-presets 复制目录 —— 那里即使有旧副本也不会被宿主读取。skill 仍走运行时注册；下面的「重新铺设」只对 skill 的兜底副本有意义。',
+          'Plugin version ' + ((st.preset && st.preset.pluginVersion) || '') + '. Since 0.2.x the expert-team preset (plus its 12 role presets) is registered by the bundle patch shipped in this package; nothing is copied into $DSH_HOME/.agent-presets, and a legacy copy there is not read by the host. The skill still registers at runtime; “Re-lay” below only applies to the skill fallback copy.'))),
         h('div', { className: 'exp-hs-actions' },
           h('button', { className: 'exp-hs-btn' + (armed ? ' danger' : ''), disabled: busy, onClick: relay },
             esc(armed ? t('确认重新铺设', 'Confirm re-lay') : t('重新铺设', 'Re-lay')))),

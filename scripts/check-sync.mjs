@@ -5,7 +5,7 @@
 //   ① 源：      packages/dsh-expert-team/
 //   ② 已装 skill： $DSH_HOME/skills/expert-team/
 //   ③ profile 运行副本： $DSH_HOME/profiles/web/node_modules/@yangdcm/dsh-expert-team/
-//   ④ 已装 preset： $DSH_HOME/.agent-presets/expert-team/
+//   ④ （0.2.x 起 preset 不再铺盘：它由包内 bundle 补丁注册，见 presets/expert-team.patch.yml）
 //
 // 而 ensureSkillInstalled() / ensurePresetInstalled() 一旦发现目标存在就**直接 return**
 // （见 lib/command.js 的 `// already present`），**不会覆盖**。后果是：
@@ -50,18 +50,6 @@ const MAPPINGS = [
     optional: true,
   },
   {
-    id: 'preset',
-    label: '已装 preset',
-    src: join(PKG_ROOT, 'presets', 'expert-team'),
-    dst: join(DSH_HOME, '.agent-presets', 'expert-team'),
-    // 「专家团模式」preset 由**首次 `/team`** 铺（`ensurePresetInstalled`）⇒"目标不存在"是正常状态：
-    //   ① 全新安装还没跑过 `/team`；② 刚 `/team uninstall` 回收过；③ 宿主没有 preset 服务的降级场景。
-    // 旧实现把它当硬性目标，会让门禁在"还没用过"的安装上报漂移。
-    // **注意 optional 只豁免"不存在"，不豁免"内容不一致"** —— 副本存在时照旧逐文件比对，
-    // 仍能抓住"改了源码但运行时没同步"这个门禁真正要防的东西。
-    optional: true,
-  },
-  {
     id: 'runtime',
     label: 'profile 运行副本',
     src: PKG_ROOT,
@@ -72,7 +60,6 @@ const MAPPINGS = [
     only: PUBLISHED,
     nested: [
       { src: 'skills/expert-team', dst: 'skills/expert-team' },
-      { src: 'presets/expert-team', dst: 'presets/expert-team' },
     ],
   },
 ];

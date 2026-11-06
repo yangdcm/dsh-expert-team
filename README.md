@@ -18,7 +18,7 @@
 
 | 12 角色 | 9 阶段 | 90 个测试文件 | 0 运行时依赖 | 0 构建步骤 |
 |---|---|---|---|---|
-| 各带人设 / `toolFilter` / `maxDepth: 1` | 含 1 道硬门 + 1 道确认门 | CI 每次 push 跑全套测试 | `dependencies: {}` | 无 bundler、无 `prepare` 钩子 |
+| 各带角色子预设（persona + 工具边界）/ `maxDepth: 1` | 含 1 道硬门 + 1 道确认门 | CI 每次 push 跑全套测试 | `dependencies: {}` | 无 bundler、无 `prepare` 钩子 |
 
 > 零运行时依赖。推荐同时装 **Hindsight**（跨项目记忆）—— 见[依赖与推荐插件](#依赖与推荐插件--dependencies-and-recommended-plugins)。
 
@@ -26,7 +26,7 @@
 
 ```sh
 dsh plugin --profile web add @yangdcm/dsh-expert-team   # 1) 装
-# 2) 重启一次 dsh web —— 插件加载时会自动把「专家团模式」预设铺好
+# 2) 重启一次 dsh web —— 插件自带的 bundle 补丁会把「专家团模式」预设注册好
 ```
 
 3) 开新会话、切到 **「专家团模式」**，然后 `/team 做一个带登录的支付模块`。
@@ -75,7 +75,7 @@ UI/UX、前后端、数据、安全、评审、测试、运维、文档这 12 �
 |---|---|
 | 包名 | `@yangdcm/dsh-expert-team`（npm 公开包） |
 | 仓库 | <https://github.com/yangdcm/dsh-expert-team> |
-| 宿主 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) ≥ **0.1.5-rc.1**（`web` profile） |
+| 宿主 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) ≥ **0.2.2-rc.1**（`web` profile） |
 | 运行时依赖 | **无**（`dependencies: {}`；`lib/` 只 import 同目录文件与 Node 内建） |
 | Node.js | ≥ 20 |
 | License | MIT |
@@ -181,8 +181,8 @@ $ /team 做一个带登录的支付模块
 
 **要求**
 
-- `dsh web`（本包在 **0.1.5-rc.1** 上开发与验证；更早版本未经测试）
-- Node.js ≥ 20
+- `dsh web`（本包要求 **DeepSeek Harness ≥ 0.2.2-rc.1**；0.2.2 移除了 `persona`/`toolFilter` 的旧配置方式）
+- Node.js ≥ 24.9（与 dsh 0.2.2 的运行时下限一致）
 - 会话使用 **「专家团模式」** preset 时，12 个角色工具（`subagent_pm` / `subagent_architect` / …）才可用；
   否则自动退回通用 `subagent`（角色人设写进 prompt），功能不丢、只是少了配置层的边界保证
 
@@ -210,9 +210,10 @@ pnpm install && dsh web
 > （相对资源用 `resourceBase` 指回包内目录），所以 `$DSH_HOME/skills/` 下不会出现副本 ——
 > 卸载即干净。宿主没有 skill 注册表时才会回退为复制到 `$DSH_HOME/skills/`。
 >
-> **「专家团模式」preset 会复制**到 `$DSH_HOME/.agent-presets/`（宿主没有"运行时加扫描根"的 API），
-> 但带版本戳：升级后整目录重铺，不会静默停在旧版本。**插件加载时就会把它铺到位** ——
-> 所以 `/team uninstall` 回收之后，重启 `dsh web` 即会自愈重铺，不需要手工救。
+> **「专家团模式」preset 由 bundle 补丁注册**：0.2.x 的注册表**不扫描目录**，所以本包不再往
+> `$DSH_HOME/.agent-presets/` 复制任何东西；lead preset 与 12 份角色子预设都在
+> `presets/expert-team.patch.yml` 里随包交付。**升级插件即升级 preset**，不存在"铺了但没人读"的旧副本。
+> 老版本留下的 `$DSH_HOME/.agent-presets/expert-team/` 可继续用 `/team uninstall` 回收。
 >
 > **设置在哪改**：**设置 →「专家团」** —— 官方设置菜单里的一整页（`settings.section` 槽，
 > `id: expert-team`、`order: 50`），与其它插件的设置同一入口、同一套面板 chrome。数据层是宿主命名空间
@@ -227,19 +228,19 @@ pnpm install && dsh web
 
 ### 装上之后怎么用
 
-1. 装完**重启一次 `dsh web`**：插件加载时会把「专家团模式」预设自动铺到 `$DSH_HOME/.agent-presets/expert-team`
-   （带版本戳，升级会整目录重铺）—— **不需要手工创建预设**。重启后预设选择器里就有「专家团模式」，
-   12 个角色化专家 subagent 工具也全部就位（可在 `设置 → 插件 → 插件列表 → 会话插件` 看到它们）。
+1. 装完**重启一次 `dsh web`**：插件自带的 bundle 补丁会把「专家团模式」预设（以及 12 份角色子预设）
+   注册进 preset 名册 —— **不需要手工创建预设**。重启后预设选择器里就有「专家团模式」，
+   12 个角色化专家 subagent 工具也全部就位（每个角色工具用 `agentPreset` 选中自己的角色子预设）。
 2. 会话切到「专家团模式」，再 `/team <一句话目标>`。
 3. 改设置走 **设置 →「专家团」**（值存在宿主命名空间 `expert-team`，随插件市场的备份/恢复一起走）。
 
-**排障**：预设丢了、或被同名预设占住 —— **重启一次 `dsh web` 即自愈**（插件加载会重铺），也可跑一次 `/team <任务>`。
-细节见下面「排障」一节，其中包含那条最容易踩的坑：**不要**用 `expert-team` 这个 id 去「创建 preset」。
+**排障**：`/team status` 会明确显示「专家团模式」preset 的状态（已注册 / 挂载失败 / 未注册）。
+显示"未注册"时先确认插件没在 Plugins 页被禁用，再重启 `dsh web`。细节见下面「排障」一节。
 
 ## 依赖与推荐插件 / Dependencies and recommended plugins
 
 **必需**：无。本插件**零运行时依赖**（`package.json` 无 `dependencies` 字段；`lib/` 只 import 同目录文件与 Node 内建，
-`client.js` 只 `require('react')`，由宿主提供），只要求宿主 `DeepSeek Harness ≥ 0.1.5-rc.1`（web profile）。
+`client.js` 只 `require('react')`，由宿主提供），只要求宿主 `DeepSeek Harness ≥ 0.2.2-rc.1`（web profile）。
 下面这些**不装也能跑完整个团队流程**，装上是为了让「跨项目记忆」「本地零 LLM 记忆」「费用显示」这类事真正兑现。
 
 ### 推荐：Hindsight 长期记忆（跨项目 / 跨会话）
@@ -328,17 +329,17 @@ dsh plugin --profile web add dshmarket
 
 **必须再装别的插件吗？** **不必**。本插件零运行时依赖；Hindsight（跨项目记忆）是**推荐**、Midas（本地零 LLM 记忆）与 `dsh-cost-meter`（费用视图）是**可选**，不装也能跑完整个流程 —— 见[依赖与推荐插件](#依赖与推荐插件--dependencies-and-recommended-plugins)。
 
-**支持哪些 dsh 版本？** `engines.dsh: >=0.1.5-rc.1`（开发与验证基线 0.1.5-rc.1）；更早版本未经测试。Node.js ≥ 20。
+**支持哪些 dsh 版本？** `engines.dsh: >=0.2.2-rc.1`（开发与验证基线 0.2.2-rc.1）；更早版本**不支持**（0.2.2 移除了 `persona`/`toolFilter` 配置，旧的 preset 会挂载失败）。Node.js ≥ 24.9。
 
 **数据放在哪？** 工件在你的工作区 `<workspace>/team/<run-id>/`；本机偏好与跨项目经验在 `$DSH_HOME/expert-team/`（`settings.json` / `LEARNINGS.md` / `session-runs.json`）。
 
-**怎么卸载？** `/team uninstall` 回收它铺到 `$DSH_HOME` 的副本（skill 走运行时注册、本就不落地），再从命令行或插件市场移除插件。**注意**：`$DSH_HOME/expert-team/` 下的 `LEARNINGS.md` 等是**你的数据**，卸载不会删。
+**怎么卸载？** 从命令行或插件市场移除插件即可（skill 走运行时注册、本就不落地；preset 随包，不需要回收）。`/team uninstall` 仍可用：它回收**历史版本**铺到 `$DSH_HOME` 的副本，并保留 `$DSH_HOME/expert-team/` 下的 `LEARNINGS.md` 等**你的数据**。
 
 **会自己联网吗？** 不会主动联网：它只调用宿主提供的工具（文件、shell、子代理）；能不能联网取决于你给会话的工具面。
 
 **支持哪些模型？** 由宿主决定；本插件支持**按角色分别配置模型**（浮层里能看到每个成员用哪个模型），异构模型可用于交叉验证。
 
-**不切「专家团模式」preset 也能用吗？** 能。`/team` 是 host 平面命令，任何预设下都能跑；此时退回通用 `subagent`（角色人设写进 prompt），少的是配置层的边界保证（`toolFilter` / `maxDepth: 1`）。
+**不切「专家团模式」preset 也能用吗？** 能。`/team` 是 host 平面命令，任何预设下都能跑；此时退回通用 `subagent`（角色人设写进 prompt），少的是配置层的边界保证（角色子预设的工具集 / `maxDepth: 1`）。
 
 **浮层/画布打开很慢？** 见[排障](#排障)。1.3.5 起 `/state` 不再逐条全量读子会话日志；升级到 ≥ 1.3.5 后重启 `dsh web` 即可（1.3.13 起首屏走 `?section=summary`，1.3.17 起重活也**有界**）。
 
@@ -392,7 +393,7 @@ lib/metrics/           token 记账、首产物耗时、收尾预算、METRICS �
 lib/routes/            路由层共享件（统一 405/500/JSON 处理、本机来源守卫）
 client.js              客户端浮层（模块加载器 bundle，仅 require('react')）
 skills/expert-team/    编排「大脑」：SKILL.md + references/ + assets/templates/
-presets/expert-team/   「专家团模式」preset：12 个角色 subagent 工具实例
+presets/               preset 补丁：lead preset + 12 份角色子预设（bundle.patch 声明）
 ```
 
 编排协议几乎全在 skill 里而非代码里 —— 这样团队协议可以随 skill 更新，不必改包。
@@ -423,25 +424,31 @@ dsh 安装里插件自带的 Config schema（dsh 路径自动探测，可用 `DS
 **设置菜单里找不到「专家团」那一页？** 确认版本 ≥ 1.3.0（`dsh plugin --profile web add @yangdcm/dsh-expert-team`
 升级，或 `npm view @yangdcm/dsh-expert-team version` 看线上版本），然后**重启 `dsh web`** —— 1.3.0 之前没有这一页。
 
-**「专家团模式」显示成裸 id（`expert-team`）、会话里没有 12 个角色工具？** 说明
-`$DSH_HOME/.agent-presets/expert-team/` 里不是我们那份（被删过，或被一份同名预设占了）。按优先级修：
+**「专家团模式」显示成裸 id（`expert-team`）、会话里没有 12 个角色工具？** 说明 `expert-team`
+这份 preset **没有注册成功**（或挂了但挂载失败）。按顺序排查：
 
-1. 跑一次 `/team <任意小任务>` —— 插件会用包内资产重铺一份带版本戳的（最省事；1.3.0 起插件加载时也会自动铺）；
-2. 或从包内覆盖：`cp -f <包路径>/presets/expert-team/{agent.cordis.yml,preset.yml} ~/.dsh/.agent-presets/expert-team/`；
-3. **不要**用同一个 id 在「设置 → Agent 预设」里「创建 preset」——那只会得到你选的**源**的组合（例如标准模式），
-   不是我们这份。
+1. 跑 `/team status` —— 末尾那行会明确写「已注册 / 挂载失败 / 未注册」；挂载失败时还会带宿主给的原因；
+2. 确认插件在 **Plugins 页是启用状态**，且 dsh 版本 ≥ 0.2.2-rc.1（本包要求；更旧的宿主没有 preset 注册表）；
+3. **重启 `dsh web`**（preset 名册在启动时组建），再开**新会话**（preset 只在会话创建时固定）；
+4. 仍不行就看启动日志里的 `agent preset expert-team: …` —— 那一行是宿主给的挂载诊断原文。
 
-改完**重启 `dsh web`**（预设名册在启动时固化，刷新页面不够），再开**新会话**（预设只在会话创建时固定）。
+> 0.2.x **不要**再手工往 `$DSH_HOME/.agent-presets/` 放文件：注册表不扫描目录，放了也不会被读。
+> 需要定制就照下一节写自己的 bundle 补丁。
 
 **浮层打开很慢 / 整个 `dsh web` 发卡？** 1.3.5 之前 `/state` 会逐条全量读子会话日志（实测热态 7–10 s、
 冷态 283 s），并堵住事件循环。升级到 ≥ 1.3.5 后重启 `dsh web` 即可。
 
 ## 自定义预设 / Custom presets（想改专家团默认行为时）
 
-- **创建**：`设置 → Agent 预设 → 用「创造模式」创作自定义预设`（其机制是"复制一份既有预设"，产出落在 `$DSH_HOME/.agent-presets/<id>/`）。
-- **要定制专家团，请以「专家团模式」为源、换一个你自己的 id**（例如 `my-team`）：复制出来的目录天然带上 12 个角色工具与它的 skill 目录，
-  你的改动只写在 `my-team/` 里。**永远不要改 `expert-team/` 里的文件** —— 那份是插件所有的，加载/升级会整目录重铺覆盖。
-- 新建的预设**可能要重启 `dsh web` 后**才出现在选择器里（宿主名册在启动时读取）。
+- **0.2.x 的 preset 是 bundle 补丁声明**（不是目录）：在 profile 的补丁层里插入一行
+  `@deepseek-ai/dsh-agent-preset`，把 `config.plugins` 写成你想要的组合即可；界面里的
+  「创造模式」产出的也是这类声明。
+- **要定制专家团，请以「专家团模式」为源、用你自己的 id**（例如 `my-team`）：把
+  `presets/expert-team.patch.yml` 里的 `id: expert-team` 改名、`order` 调开，跟着改角色工具上的
+  `agentPreset`，再作为你自己的 bundle 安装。**不要改包内那份** —— 升级插件会整份替换。
+- 角色边界现在在**角色子预设**里（persona + 工具集）：想给某个角色加/减工具，改
+  `expert-team-<角色>` 那份的 `plugins`，而不是去动 `dsh-tool-subagent` 的配置
+  （0.2.2 会拒绝 `persona`/`toolFilter`，直接挂载失败）。
 
 ## 适用性与边界
 
@@ -454,9 +461,9 @@ dsh 安装里插件自带的 Config schema（dsh 路径自动探测，可用 `DS
 - **浮层需要 `web` profile**：浮层与路由依赖 `webServer`；其它 profile 或无浮层场景下，`/team` 命令与工件协议**照常可用**（少的只是可视化那一层）。
 - **写侧门禁的残余绕过面**：工件归属门禁守在 `write` / `edit` 通道上（创建放行、覆写他人工件当场拒绝）；
   **持 `bash` 的角色仍可能绕过它** —— 这是该机制的已知边界，见 `lib/artifact-ownership.js`。
-- **preset 漂移**：随包的「专家团模式」是官方 `standard` preset 的拷贝 + 角色工具，
-  宿主若调整内置 preset 结构，需要同步更新。升级插件时会按版本戳整目录重铺；
-  `/team uninstall` 可回收它（用户自己写的同名 preset 不会被碰）。
+- **preset 漂移**：随包的「专家团模式」是官方 `standard` preset 的同步副本 + 角色工具/角色子预设，
+  宿主若调整内置 preset 结构（插件增删、config 字段改名），需要跟着同步；`gate:preset` 会用宿主
+  真实的 Config schema 逐行校验，并在 0.2.x 上额外拦 `persona`/`toolFilter` 这类**挂载期**缺陷。
 - **会有意调用 `git status --porcelain`（只读）** 用于工件新鲜度判断。
 - **本插件会改宿主 GUI 的一处展示顺序（默认开，可关）**：装上之后，**子代理列表**（会话头部那棵
   lineage 树）按「**最新在上**」显示。它**只改展示顺序**：插件遮蔽宿主把目录送到浏览器的那一个 remote 方法
@@ -469,9 +476,9 @@ dsh 安装里插件自带的 Config schema（dsh 路径自动探测，可用 `DS
 
 ## 兼容性
 
-- `engines.dsh: >=0.1.5-rc.1`，声明在 `package.json` 的 `dsh.compatibility`（`dshReleases` 逐版本标注）；
+- `engines.dsh: >=0.2.2-rc.1`，声明在 `package.json` 的 `dsh.compatibility`（`dshReleases` 逐版本标注）；
   插件市场按它判断"这个插件跟你的宿主兼不兼容"。
-- Node.js ≥ 20。
+- Node.js ≥ 24.9。
 - profile：`web`（见上「适用性与边界」）。
 
 ## 现在就试

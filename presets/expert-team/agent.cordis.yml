@@ -1,3 +1,14 @@
+# ⚠ ARCHIVED — NOT LOADED, NOT PUBLISHED.
+#
+# This is the pre-1.6.0 directory-style preset for dsh 0.1.x. Since dsh 0.2.0 the preset
+# registry no longer scans $DSH_HOME/.agent-presets, and since 0.2.2 dsh-tool-subagent
+# REJECTS `persona`/`toolFilter` in tool config. The live composition is
+# ../expert-team.patch.yml (declared in package.json `dsh.bundle.patch`).
+#
+# Kept only so historical run artifacts that cite this path still resolve their anchors.
+# It is excluded from the published `files` list, so no user ever receives it.
+# Do not edit; do not copy it anywhere; do not treat it as the current preset.
+
 # The `standard` agent preset: the full coding agent, mounted once per process.
 #
 # This file is an AGENT-PLANE composition. The roster mounts it ONCE under a

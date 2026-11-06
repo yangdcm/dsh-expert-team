@@ -95,26 +95,29 @@ console.log('\n③ 版本戳过期 ⇒ 整目录重铺（旧实现"存在即 ret
   check((await readFile(join(skillDst, _live.INSTALL_STAMP), 'utf8')).trim() === _live.PLUGIN_VERSION, '版本戳已更新到当前版本');
 }
 
-console.log('\n④ 同名但非本插件产物 ⇒ 不覆盖、不删（用户的定制优先）');
+console.log('\n④ 0.2.x：preset 由 bundle 补丁注册，加载/命令都不再写 .agent-presets');
 {
-  // 造一个无版本戳、且内容不像本插件产物的同名 preset
+  // 旧契约是"插件装着 ⇒ 把 preset 目录铺到 $DSH_HOME/.agent-presets"；0.2.x 的注册表
+  // **不扫描目录**，继续铺只会制造"看起来铺好了、实际没人读"的假象。这里钉住"不写"。
   await rm(presetDst, { recursive: true, force: true });
-  await mkdir(presetDst, { recursive: true });
-  await writeFile(join(presetDst, 'agent.cordis.yml'), '# 用户自己写的 preset\n[]\n');
   await _live.ensurePresetInstalled();
-  const kept = await readFile(join(presetDst, 'agent.cordis.yml'), 'utf8');
-  check(/用户自己写的 preset/.test(kept), '身份不符 ⇒ 原样保留（没被我们的副本覆盖）');
-  check(!(await exists(join(presetDst, _live.INSTALL_STAMP))), '也没有给它盖上我们的版本戳');
+  check(!(await exists(presetDst)), 'ensurePresetInstalled() 不创建 .agent-presets 目录');
+  const legacy = await readFile(join(here, 'presets', 'expert-team.patch.yml'), 'utf8');
+  check(/_id: preset-expert-team_|id: preset-expert-team/.test(legacy) && /id: expert-team/.test(legacy),
+    'preset 补丁文件在位（lead preset 的声明可读）');
+  check(!/persona: >-/.test(legacy) || !/tool-subagent[\s\S]{0,200}persona: >-/.test(legacy),
+    '角色工具不再带 persona 键（0.2.2 挂载期会报错）');
 }
 
 console.log('\n⑤ 卸载：只回收"本插件的副本"，别的都留着');
 {
-  // 铺一份真的 preset 副本（先清掉上面那份用户内容）
+  // 造一份**历史版本**留下的 preset 副本（带我们的版本戳 ⇒ 归属明确），验证 /team uninstall
+  // 仍能回收它 —— 0.2.x 不再铺新目录，但老用户盘上可能还留着旧副本。
   await rm(presetDst, { recursive: true, force: true });
-  await _live.ensurePresetInstalled();
-  check(await exists(join(presetDst, 'agent.cordis.yml')), 'preset 副本已铺好');
-  const rec = JSON.parse(await readFile(manifestPath, 'utf8'));
-  check(rec.preset && rec.preset.path === presetDst, '清单登记了 preset', JSON.stringify(rec.preset && rec.preset.version));
+  await mkdir(presetDst, { recursive: true });
+  await writeFile(join(presetDst, 'agent.cordis.yml'), '- id: tool-subagent-pm\n');
+  await writeFile(join(presetDst, _live.INSTALL_STAMP), _live.PLUGIN_VERSION + '\n');
+  check(await exists(join(presetDst, 'agent.cordis.yml')), '历史 preset 副本已就位（带版本戳）');
 
   const stateDir = join(home, 'expert-team');
   await mkdir(stateDir, { recursive: true });
@@ -184,80 +187,61 @@ console.log('\n⑧ 命令面：/team uninstall 可解析');
   check(/\/team uninstall/.test((await import(join(here, 'lib', 'command-parse.js'))).USAGE), 'USAGE 里有它');
 }
 
-console.log('\n⑨ 插件加载时就把 preset 铺到位（2026-09-15 事故：uninstall 后 preset 消失 ⇒ 会话丢角色工具）');
+console.log('\n⑨ preset 健康检查（0.2.x：由 bundle 补丁注册，插件只读探测）');
 {
-  /** 与 ⑥ 段同形的假 ctx。 */
-  const fakeCtx = () => ({
-    commands: { register: () => {} },
-    on: () => {},
-    effect: (fn) => { try { fn(); } catch { /* 忽略 */ } },
-    inject: () => {},
-    get: (k) => (k === 'skills' ? { register: () => () => {} } : undefined),
-  });
+  const settle = () => new Promise((r) => setTimeout(r, 60));
+  /** 假 ctx：`agentPresets` 可注入 stub，其它服务一律缺省。 */
+  const fakeCtx = (presets) => {
+    const handlers = [];
+    const ctx = {
+      commands: { register: () => {} },
+      on: () => {},
+      effect: (fn) => { try { fn(); } catch { /* 忽略 */ } },
+      inject: (names, cb) => { if (presets && names.includes('agentPresets')) handlers.push(cb); },
+      get: (k) => (k === 'skills' ? { register: () => () => {} } : (k === 'agentPresets' ? presets : undefined)),
+    };
+    // 立刻触发一次 inject 回调，模拟服务已就绪
+    setTimeout(() => { for (const h of handlers) { try { h(); } catch { /* 忽略 */ } } }, 0);
+    return ctx;
+  };
 
-  // 前置：模拟"/team uninstall 之后、且还没跑过 /team <任务>"的状态
-  // ⚠️ 先等**上一轮**（前面几段的 fire-and-forget 铺设）彻底安静：清单是会被上一轮**重写**的，
-  // 所以"rm 掉清单"这一步本身会与它抢 —— 2026-09-16 CI(Node 20) 实测：rm 之后上一轮又把清单
-  // 写回来 ⇒ 完成信号立刻为真（waited=1ms）⇒ 测试在新一轮铺盘完成前就往下走 ⇒ 目标目录尚未
-  // 出现 ⇒ 读版本戳 ENOENT。**心跳用进程内**的 presetLayStatus().preset.at：它是本进程自己写下
-  // 的，不会被外部重写，所以能真实反映"还有没有铺设在发生"。
-  const quiet = await waitFor(async () => {
-    const a = (_live.presetLayStatus().preset || {}).at || 0;
-    await new Promise((r) => setTimeout(r, 120));
-    const b = (_live.presetLayStatus().preset || {}).at || 0;
-    return a === b;
-  }, { everyMs: 30, maxMs: 5000 });
-  check(quiet.ok, '前置：上一轮后台铺设已安静（120ms 内没有新的铺设记录）', 'waited=' + quiet.ms + 'ms');
+  // ⑨.1 注册成功 ⇒ registered，且**不写**任何目录
   await rm(presetDst, { recursive: true, force: true });
-  // ⚠️ **清单也要一起清**（2026-09-16 CI 实测）：完成信号取的是"清单里有 preset"，
-  // 而 ⑤ 已经登记过一条 ⇒ 不清清单时"清单里有 preset"**立刻为真**，测试会在**这一轮铺盘还
-  // 没做完**时就往下走。旧实现会先 mkdir 目标目录、于是往往侥幸读到文件；换成原子换名后目标
-  // 目录只在最后一步出现 ⇒ 竞态暴露（CI 上直接 ENOENT）。同一类错误：**完成信号必须是"这一轮
-  // 的"，不能是上一轮留下的台账**。
-  await rm(manifestPath, { force: true });
-  check(!(await exists(presetDst)), '前置：preset 副本不存在（正是事故现场的状态）');
-  check(!(await exists(manifestPath)), '前置：清单也不存在（否则"完成信号"是上一轮的台账 ⇒ 竞态/假绿）');
+  apply(fakeCtx({ resolve: async (id) => ({ id }) }), {});
+  await settle();
+  const okHealth = _live.presetHealthSnapshot();
+  check(okHealth.state === 'registered', '注册表能解析 expert-team ⇒ state=registered', JSON.stringify(okHealth));
+  check(!(await exists(presetDst)), '不再往 $DSH_HOME/.agent-presets 写任何东西（0.2.x 注册表不扫描目录）');
 
-  // ⑨.1 加载即铺 —— 本事故的核心修复：不再等 createRun
-  // **完成信号 = 本轮自己的记录**（at >= t0 且 outcome === succeeded），**不是**"清单里有 preset"：
-  // 后者可能来自上一轮（CI 上出现过 waited=1ms 的假绿），前者只可能由这一轮写下。
-  const t0 = Date.now();
-  apply(fakeCtx(), {});
-  const laid1 = await waitFor(() => {
-    const st = _live.presetLayStatus().preset;
-    return !!(st && st.at >= t0 && st.outcome === 'succeeded');
-  });
-  check(laid1.ok, 'apply() 之后**本轮**铺盘真的做完（信号是本轮记录 outcome=succeeded，不是上一轮的台账）', 'waited=' + laid1.ms + 'ms');
-  check(await presetRecorded(), '且清单也登记了 preset（两个信号都到位）', '');
-  check(await exists(join(presetDst, 'agent.cordis.yml')), 'apply() 之后 preset 已在位（**加载即铺**，不再等首次 /team）');
-  check((await readFile(join(presetDst, _live.INSTALL_STAMP), 'utf8')).trim() === _live.PLUGIN_VERSION, '且带上当前版本戳', _live.PLUGIN_VERSION);
-  check(!(await exists(skillDst)), 'skill 仍不落地（运行时注册优先，加载时那次调用立即返回）');
+  // ⑨.2 挂载失败 ⇒ broken（角色工具会不可用，必须响亮）
+  apply(fakeCtx({ resolve: async () => ({ id: 'expert-team', broken: 'tool-subagent: persona is no longer supported' }) }), {});
+  await settle();
+  const brokenHealth = _live.presetHealthSnapshot();
+  check(brokenHealth.state === 'broken' && /persona is no longer supported/.test(brokenHealth.broken || ''),
+    '挂载失败 ⇒ state=broken 且带原因（不静默）', String(brokenHealth.broken));
 
-  // ⑨.2 事故回归：uninstall → 再加载 ⇒ preset 又回来
-  await _live.uninstallInstalled();
-  check(!(await exists(presetDst)), 'uninstall 之后副本被清掉');
-  const t1 = Date.now();
-  apply(fakeCtx(), {});
-  const laid2 = await waitFor(() => {
-    const st = _live.presetLayStatus().preset;
-    return !!(st && st.at >= t1 && st.outcome === 'succeeded');
-  });
-  check(laid2.ok, '再次加载 ⇒ preset 又铺回来了（**本事故的回归测试**；信号同样是本轮记录）', 'waited=' + laid2.ms + 'ms');
-  check(await exists(join(presetDst, 'agent.cordis.yml')), '且文件确实落盘', '');
+  // ⑨.3 没注册 ⇒ missing（补丁没生效）
+  apply(fakeCtx({ resolve: async () => { const e = new Error('Unknown agent preset: expert-team'); throw e; } }), {});
+  await settle();
+  check(_live.presetHealthSnapshot().state === 'missing', '注册表说不认识 expert-team ⇒ state=missing', _live.presetHealthSnapshot().state);
 
-  // ⑨.3 铺不上不许抛（只读盘/权限问题不能把插件挂不上）
+  // ⑨.4 没有注册表（老宿主/测试替身）⇒ unknown，不臆断成功
+  apply(fakeCtx(null), {});
+  await settle();
+  check(_live.presetHealthSnapshot().state === 'unknown', '没有 agentPresets 服务 ⇒ state=unknown（不臆断）', _live.presetHealthSnapshot().state);
+
+  // ⑨.5 不许抛：无论外面怎么坏，apply() 都不能把插件挂不上
   const savedHome = process.env.DSH_HOME;
   let threw = null;
   try {
     process.env.DSH_HOME = '/dev/null/nope';
-    try { apply(fakeCtx(), {}); } catch (e) { threw = String((e && e.message) || e); }
-    await new Promise((r) => setTimeout(r, 80));
+    try { apply(fakeCtx({ resolve: async () => ({ id: 'expert-team' }) }), {}); } catch (e) { threw = String((e && e.message) || e); }
+    await settle();
   } finally {
     process.env.DSH_HOME = savedHome;
   }
-  check(threw === null, '$DSH_HOME 不可写时 apply() 不抛（铺不上不影响插件加载）', threw || '（预期会出现一条一次性的 warn）');
+  check(threw === null, '$DSH_HOME 不可写时 apply() 不抛（预设交付不依赖写盘）', threw || '');
 }
-
 
 // ── ⑩ 铺设的**归属判定**与**原子换名**（2026-09-16 · 用户批准 (a)+(b)）──────────
 //
@@ -332,56 +316,15 @@ console.log('\n⑩ 铺设：四态判定 / 原子换名 / 两条路径都不留�
     check(outLeft.filter((n) => n.startsWith(PL.LAY_TMP_PREFIX)).length === 0, '失败后**没有**我们前缀的临时残留', JSON.stringify(outLeft));
   }
 
-  // ⑩.4 preset 路径：foreign-complete / partial / 显式重铺 / ours-stale
-  if (typeof _live.layInstalledAsset !== 'function' || typeof _live.layFactsFor !== 'function') {
-    check(false, '_live 导出 layInstalledAsset / layFactsFor（旧代码上：断言失败）');
+  // ⑩.4 preset **不再走铺盘**：交付物是包内 bundle 补丁（13 份声明）
+  if (typeof _live.PRESET_PATCH !== 'string') {
+    check(false, '_live 导出 PRESET_PATCH（旧代码上：断言失败）');
   } else {
-    const src = _live.PRESET_DIR;
-    const srcNames = await readdir(src);
-    const statusOf = () => (typeof _live.presetLayStatus === 'function' ? _live.presetLayStatus() : null);
-
-    // (i) 身份明确不是我们的、且入口齐全 ⇒ **绝不覆盖**
-    await rm(presetDst, { recursive: true, force: true });
-    await mkdir(presetDst, { recursive: true });
-    for (const n of srcNames) await writeFile(join(presetDst, n), '# 用户自己写的\n');
-    await _live.layInstalledAsset('preset', src, presetDst);
-    check((await readFile(join(presetDst, 'agent.cordis.yml'), 'utf8')) === '# 用户自己写的\n', '(i) foreign-complete ⇒ 原样保留（用户的定制优先）');
-    const stUser = statusOf();
-    check(stUser && stUser.preset && stUser.preset.state === 'foreign-complete', '(i) 状态如实记为 foreign-complete（不是静默 warn）', JSON.stringify(stUser && stUser.preset && stUser.preset.state));
-    check(stUser && stUser.display && stUser.display.preset && stUser.display.preset.level === 'warn', '(i) 给界面的一句话是"让位给用户的定制"（可显示）', JSON.stringify(stUser && stUser.display && stUser.display.preset));
-
-    // (ii) 只有部分入口 ⇒ **不覆盖 + 显眼报告**（这正是"被打断留下的半成品"那种形态）
-    await rm(presetDst, { recursive: true, force: true });
-    await mkdir(presetDst, { recursive: true });
-    await writeFile(join(presetDst, 'preset.yml'), '# 半成品：只拷到这一个文件就被打断了\n');
-    await _live.layInstalledAsset('preset', src, presetDst);
-    check((await readFile(join(presetDst, 'preset.yml'), 'utf8')) === '# 半成品：只拷到这一个文件就被打断了\n', '(ii) partial-or-unknown ⇒ 不覆盖');
-    const stPart = statusOf();
-    check(stPart && stPart.preset && stPart.preset.state === 'partial-or-unknown', '(ii) 状态如实记为 partial-or-unknown', JSON.stringify(stPart && stPart.preset && stPart.preset.state));
-    check(stPart && stPart.preset && stPart.preset.missingBeforeLay.length > 0, '(ii) 并列出**缺哪些入口文件**（可操作）', JSON.stringify(stPart && stPart.preset && stPart.preset.missingBeforeLay));
-    // ⚠️ 字段名必须**自己说清**它是"铺设前"的快照：全新 DSH_HOME 上 `state:'absent'` 会列出
-    // 全部期望文件，铺完之后 `outcome:'succeeded'` 与它**并列**出现 —— 叫 `missing` 时极易被
-    // 读成"成功了但文件缺"（2026-09-16 独立验收就是这么被读偏的）。所以既钉住新名，也钉住旧名不再出现。
-    check(stPart && stPart.preset && !('missing' in stPart.preset),
-      '(ii) 那个字段叫 `missingBeforeLay`（铺设前快照），不再是与 `succeeded` 并列时会被读偏的 `missing`',
-      JSON.stringify(Object.keys((stPart && stPart.preset) || {})));
-    check(stPart && stPart.display && stPart.display.preset && stPart.display.preset.level === 'bad', '(ii) 给界面的一句话是"未覆盖：内容不完整"（显眼，不是一行 warn）', JSON.stringify(stPart && stPart.display && stPart.display.preset));
-
-    // (iii) **用户显式**重铺 ⇒ 照铺，且**如实记录替换了什么**
-    const relayed = typeof _live.relayInstalledAssets === 'function' ? await _live.relayInstalledAssets('preset') : { ok: false, results: [] };
-    check(relayed && relayed.ok === true, '(iii) 显式重铺成功', JSON.stringify(relayed && relayed.ok));
-    check(await exists(join(presetDst, _live.INSTALL_STAMP)), '(iii) 重铺后带上了我们的版本戳');
-    check((await readFile(join(presetDst, _live.INSTALL_STAMP), 'utf8')).trim() === _live.PLUGIN_VERSION, '(iii) 版本戳 = 当前版本', _live.PLUGIN_VERSION);
-    const stAfter = statusOf();
-    check(stAfter && stAfter.preset && stAfter.preset.state === 'ours', '(iii) 状态转为 ours', JSON.stringify(stAfter && stAfter.preset && stAfter.preset.state));
-    check(stAfter && stAfter.preset && typeof stAfter.preset.replaced === 'string' && /partial-or-unknown/.test(stAfter.preset.replaced), '(iii) **如实记录被替换的是什么**（不静默覆盖）', JSON.stringify(stAfter && stAfter.preset && stAfter.preset.replaced));
-
-    // (iv) ours-stale（版本戳过期）⇒ 原子重铺，旧版本多余文件被清掉
-    await writeFile(join(presetDst, 'OLD-ONLY.md'), 'gone after relayout\n');
-    await writeFile(join(presetDst, _live.INSTALL_STAMP), '0.0.1-old\n');
-    await _live.layInstalledAsset('preset', src, presetDst);
-    check(!(await exists(join(presetDst, 'OLD-ONLY.md'))), '(iv) ours-stale ⇒ 整目录重铺（旧版多余文件被清掉）');
-    check((await readFile(join(presetDst, _live.INSTALL_STAMP), 'utf8')).trim() === _live.PLUGIN_VERSION, '(iv) 版本戳已更新');
+    const patch = await readFile(_live.PRESET_PATCH, 'utf8');
+    const declared = (patch.match(/^\s+- id: preset-expert-team(-[a-z]+)?$/gm) || []).length;
+    check(declared === 13, '补丁声明 lead + 12 角色子预设（13 条）', `命中 ${declared}`);
+    check(/name: '@deepseek-ai\/dsh-agent-preset'/.test(patch), '声明用的是宿主 0.2.x 的 preset 插件', '');
+    check(!/toolFilter:/.test(patch), '没有 toolFilter 残留（0.2.2 挂载期会报错）', '');
   }
 
   // ⑩.5 skill 路径：同一条 fire-and-forget 路径 ⇒ **必须各自有测试**（派工方追加要求 3）

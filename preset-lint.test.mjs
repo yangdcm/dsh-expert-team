@@ -66,18 +66,21 @@ ${agentOptions}
 // 不需要宿主 —— 若放在探针之后，它就会「本机绿、CI 恒不跑」，那正是本仓登记过的
 // 「测试在盘上但不运行」。
 {
-  const presetSrc = readFileSync(join(here, 'presets', 'expert-team', 'agent.cordis.yml'), 'utf8');
+  const presetSrc = readFileSync(join(here, 'presets', 'expert-team.patch.yml'), 'utf8');
   const skillSrc = readFileSync(join(here, 'skills', 'expert-team', 'SKILL.md'), 'utf8');
   const countOf = (hay, needle) => hay.split(needle).length - 1;
 
-  // lead 行 = `- id: persona` 到下一个顶层行（`- id: agent-instructions`）
-  const leadStart = presetSrc.indexOf('\n- id: persona\n');
-  const leadEnd = presetSrc.indexOf('\n- id: agent-instructions', leadStart);
+  // lead 行 = preset 补丁里 lead preset 的 `- id: persona` 到 `- id: agent-instructions`。
+  // 0.2.x 的 persona 是 **preset 子插件行**（缩进 10），不再是顶层行。
+  const leadStart = presetSrc.indexOf('          - id: persona\n');
+  const leadEnd = presetSrc.indexOf('          - id: agent-instructions', leadStart);
   const leadRow = leadStart >= 0 && leadEnd > leadStart ? presetSrc.slice(leadStart, leadEnd) : '';
-  const roleRegion = leadEnd > 0 ? presetSrc.slice(leadEnd) : presetSrc;
+  // 角色区从第一个角色子预设开始（避免把 lead 自己那条同族措辞也算进 12 条）。
+  const roleStart = presetSrc.indexOf('    # ── role preset: pm');
+  const roleRegion = roleStart > 0 ? presetSrc.slice(roleStart) : '';
 
   // 12 条角色约束必须**逐字一致**（同族措辞）。按整块比对：任何一条被改/被删都会掉出计数。
-  const IND = ' '.repeat(10);
+  const IND = ' '.repeat(16);
   const ROLE_ZH_BLOCK = [
     '【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有',
     '回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。',
@@ -121,6 +124,19 @@ ${agentOptions}
   const missing = roleNames.filter((r) => !presetSrc.includes(`toolName: subagent_${r}\n`));
   check(missing.length === 0, '12 个角色工具都在 preset 里（约束挂在真实存在的角色上）', missing.length ? `缺 ${missing.join(',')}` : '');
 
+  console.log('\n⓪-e dsh 0.2.2 结构：persona 进子预设，角色工具用 agentPreset 选中');
+  // 0.2.2 `dsh-tool-subagent` 的 apply() 对 persona/toolFilter 直接 throw（整份 preset 挂不上）。
+  check(!/toolFilter:/.test(presetSrc), '没有任何 toolFilter 残留（0.2.2 挂载期会直接报错）');
+  const roleToolRows = (presetSrc.match(/toolName: subagent_(?!fork\b)[a-z]+\n/g) || []).length;
+  check(roleToolRows === 12, '12 个角色工具实例仍在 lead preset 里', `命中 ${roleToolRows}`);
+  const withPreset = roleNames.filter((r) => presetSrc.includes(`agentPreset: expert-team-${r}\n`));
+  check(withPreset.length === 12, '12 个角色工具都指向自己的子预设（agentPreset）', withPreset.length === 12 ? '' : `缺 ${roleNames.filter((r) => !withPreset.includes(r)).join(',')}`);
+  const rolePresets = (presetSrc.match(/id: expert-team-[a-z]+\n/g) || []).length;
+  check(rolePresets === 12, '12 个角色子预设声明在场', `命中 ${rolePresets}`);
+  const personaRows = (presetSrc.match(/^\s+- id: persona\n/gm) || []).length;
+  check(personaRows === 13, 'persona 行 = lead 1 + 角色 12（都挂在 preset 子插件列表里）', `命中 ${personaRows}`);
+  check(!/^\s+persona: >-/m.test(presetSrc), 'persona 不再是**工具 config 的键**（只作为 dsh-persona 的 config）');
+
   console.log('\n⓪-d 从属表述：SKILL.md 的同一句规则仍在场');
   check(skillSrc.includes('交互与语言') && skillSrc.includes('一律使用**中文**'),
     'SKILL.md 保留从属表述（权威是 persona；按需加载的它单独存在时不算约束）');
@@ -135,9 +151,9 @@ console.log('');
 // 于是：先探一次宿主；不可用就跳过**需要宿主 schema 的那几节**并说明怎么启用。
 // （§⓪ 已经在上面跑完了 —— 它只读文本、不依赖宿主，所以不受这里跳过的影响。）
 const hostProbe = run(writeFixture('probe-host.yml', ROW('      reasoningEffort: high')));
-if (/找不到 dsh 安装目录/.test(hostProbe.out)) {
+if (/找不到 dsh 安装目录/.test(hostProbe.out) || /低于本包要求/.test(hostProbe.out)) {
   console.log('# 预设自检：agentOptions 键名（L3-4b 前置）\n');
-  console.log('· 跳过：本机找不到 dsh 安装 —— ①~⑤ 需要宿主插件自带的 Config schema。');
+  console.log('· 跳过：本机没有匹配版本的 dsh（未安装 / 版本低于 engines.dsh）—— ①~⑤ 需要宿主插件自带的 Config schema。');
   console.log('  §⓪（persona 语言/交互契约）不依赖宿主，上面已经跑过；其余小节在此机器上未运行。');
   console.log('  在装了 dsh 的机器上重跑，或设置 DSH_INSTALL 指向 @deepseek-ai/dsh 包目录。');
   process.exit(0);
@@ -178,9 +194,15 @@ console.log('\n③ 完全无关的键 → 只提示、不失败（上游新增�
 
 console.log('\n④ 真实预设必须干净（零误报）');
 {
-  const r = run(join(here, 'presets', 'expert-team', 'agent.cordis.yml'));
-  check(r.code === 0, '本包 preset 通过 gate:preset 口径', 'exit=' + r.code);
-  check(!/键名疑似拼错/.test(r.out), '没有任何近失键名', '');
+  const r = run(join(here, 'presets', 'expert-team.patch.yml'));
+  // 宿主版本低于本包 engines.dsh ⇒ **验不了**（不是"预设写错了"）。脚本以 exit 2 明说，
+  // 这里跟着跳过并说明原因 —— 把"验不了"报成红会训练人忽略门禁。
+  if (r.code === 2 && /低于本包要求/.test(r.out)) {
+    console.log('  · 跳过：本机 dsh 版本低于本包要求（engines.dsh）—— ④ 需要匹配版本的宿主 schema。');
+  } else {
+    check(r.code === 0, '本包 preset 通过 gate:preset 口径', 'exit=' + r.code);
+    check(!/键名疑似拼错/.test(r.out), '没有任何近失键名', '');
+  }
 }
 
 console.log('\n⑤ 接线检查：lint 已进 gate:preset 走的那个脚本');

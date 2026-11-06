@@ -1,6 +1,6 @@
 {
   "name": "@yangdcm/dsh-expert-team",
-  "version": "1.5.3",
+  "version": "1.6.0",
   "description": "dsh「专家团」bundle：一句自然语言组建角色化多智能体「数字员工」团队，按九阶段门控流水线协作交付，实现者直接改代码并产出持久工件；带 live 团队浮层。 · Role-based multi-agent expert team for DeepSeek Harness: one sentence in, a staged and gated team delivery out.",
   "type": "module",
   "license": "MIT",
@@ -31,23 +31,26 @@
     "url": "https://github.com/yangdcm/dsh-expert-team/issues"
   },
   "engines": {
-    "node": ">=20",
-    "dsh": ">=0.1.5-rc.1"
+    "node": ">=24.9.0",
+    "dsh": ">=0.2.2-rc.1"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": ">=4.0.1",
-    "@deepseek-ai/dsh-commands": ">=0.1.5-rc.1",
-    "@deepseek-ai/dsh-fs": ">=0.1.5-rc.1",
-    "@deepseek-ai/dsh-host-webserver": ">=0.1.5-rc.1",
-    "@deepseek-ai/dsh-session-query": ">=0.1.5-rc.1",
-    "@deepseek-ai/dsh-subagent": ">=0.1.5-rc.1"
+    "@deepseek-ai/cordis": ">=4.1.0",
+    "@deepseek-ai/dsh-commands": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-fs": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-host-webserver": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-session-query": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-subagent": ">=0.2.2-rc.1"
   },
   "publishConfig": {
     "access": "public"
   },
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": [
+        "./cordis.patch.yml",
+        "./presets/expert-team.patch.yml"
+      ]
     },
     "client": {
       "platform": "web",
@@ -58,9 +61,9 @@
       ]
     },
     "compatibility": {
-      "dsh": ">=0.1.5-rc.1",
+      "dsh": ">=0.2.2-rc.1",
       "dshReleases": {
-        "0.1.5-rc.1": "compatible"
+        "0.2.2-rc.1": "compatible"
       },
       "profiles": [
         "web"
@@ -78,7 +81,7 @@
     "client.js",
     "cordis.patch.yml",
     "skills",
-    "presets",
+    "presets/expert-team.patch.yml",
     "LICENSE",
     "README.en.md",
     "CHANGELOG.md"

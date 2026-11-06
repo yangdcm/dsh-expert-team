@@ -7,7 +7,7 @@
 //       对**任何 preset 的任意会话**可见 —— 这既是产品可见的行为变更，
 //       也正是本文件头部注释写死的反模式（"contributes only HOST-plane rows
 //       (no agent-plane tool rows — those stay behind the preset the session runs)"）。
-//     · 正确落点是 `presets/expert-team/agent.cordis.yml`（agent-plane、preset 内、per-agent scoped）。
+//     · 正确落点是 `presets/expert-team.patch.yml`（agent-plane、preset 内、per-agent scoped；0.2.x 的 preset 声明）。
 //   ⇒「明确禁止改 `cordis.patch.yml` 来加工具行」。
 //
 // 该约束此前**只写在注释里**（注释拦不住手滑）。本测试把它变成机制。
@@ -55,7 +55,7 @@ console.log('① 机制约束：cordis.patch.yml 不得 insert 任何 `dsh-tool-
 
 console.log('\n② 只有 agent-plane 干净还不够：工具行必须落在 preset 里（若将来要加）');
 {
-  const presetPath = join(here, 'presets', 'expert-team', 'agent.cordis.yml');
+  const presetPath = join(here, 'presets', 'expert-team.patch.yml');
   check(existsSync(presetPath), 'preset 文件存在（正确的落点）');
   const preset = readFileSync(presetPath, 'utf8');
   check(/dsh-tool-subagent/.test(preset), 'preset 里确实有 agent-plane 工具行（证明落点机制可用）', '');

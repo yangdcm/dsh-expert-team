@@ -24,14 +24,14 @@ const { declaredEffortsFromPresetSource, effortPreflightPlan, createEffortPrefli
   await import(join(here, 'lib', 'effort-preflight.js'));
 
 console.log('\n① 从**真实 preset** 提取声明（真源；写死常量会与实际分档漂移）');
-const presetSrc = readFileSync(join(here, 'presets', 'expert-team', 'agent.cordis.yml'), 'utf8');
+const presetSrc = readFileSync(join(here, 'presets', 'expert-team.patch.yml'), 'utf8');
 const { efforts, counts } = declaredEffortsFromPresetSource(presetSrc);
 check(counts.high === 8 && counts.low === 4, 'preset 真实分档 = 8 个 high / 4 个 low（2026-09-15 实测）', JSON.stringify(counts));
 check(efforts.includes('low') && efforts.includes('high'), '声明集合含 low 与 high', JSON.stringify(efforts));
 check(EFFORT_DOMAIN.join('/') === 'off/low/high/max', '合法值域 = off/low/high/max（与宿主 dsh-llm 一致）', EFFORT_DOMAIN.join('/'));
 
 console.log('\n② 判定矩阵（纯函数）');
-const meta = readFileSync(join(here, 'presets', 'expert-team', 'agent.cordis.yml'), 'utf8');
+const meta = readFileSync(join(here, 'presets', 'expert-team.patch.yml'), 'utf8');
 const sel = { provider: 'liang', model: 'deepseek-flash' };
 {
   const onlyOff = effortPreflightPlan({ selection: sel, required: efforts, info: { reasoning: { efforts: [{ id: 'off' }], defaultEffort: 'off' } } });

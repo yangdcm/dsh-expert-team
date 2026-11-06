@@ -2,7 +2,7 @@
 
 编排者按这些模板构造每个角色的 prompt（one-shot 时作为 `workflow` 的 `agent(prompt)`；persist 时作为角色工具/`subagent` 的 `prompt`）。模板中 `{{run-dir}}`、`{{role-zh}}`（**中文角色标签**）、`{{cwd}}` 等占位符在构造时替换。
 
-> 会话运行在「专家团模式」preset 下时，固定角色有对应的命名工具实例（`subagent_pm / subagent_architect / subagent_researcher / subagent_ui / subagent_backend / subagent_frontend / subagent_dba / subagent_sec / subagent_reviewer / subagent_qa / subagent_devops / subagent_docs`），其 persona/toolFilter/maxDepth 已由配置生效——此时**不需要**再把角色人设写进 prompt，只需给本阶段任务。
+> 会话运行在「专家团模式」preset 下时，固定角色有对应的命名工具实例（`subagent_pm / subagent_architect / subagent_researcher / subagent_ui / subagent_backend / subagent_frontend / subagent_dba / subagent_sec / subagent_reviewer / subagent_qa / subagent_devops / subagent_docs`），其 persona/工具集/maxDepth 已由对应的角色子预设生效（工具实例用 `agentPreset: expert-team-<角色>` 选中）——此时**不需要**再把角色人设写进 prompt，只需给本阶段任务。
 >
 > **异构模型调度（降本不降智）**：轻角色（researcher / ui / backend / frontend / qa / devops / docs / 初始化类通用任务）跑快模型；重角色（pm / architect / dba / sec / reviewer / 复杂重构）跑顶配模型。默认全部继承会话模型；要按角色配模型，改各角色工具的 `agentOptions.model`（见 preset 注释）。
 

@@ -9,7 +9,7 @@
 - 包名：`@yangdcm/dsh-expert-team`（npm 公开包）
 - npm：<https://www.npmjs.com/package/@yangdcm/dsh-expert-team>
 - 仓库：<https://github.com/yangdcm/dsh-expert-team>
-- 宿主：DeepSeek Harness ≥ **0.1.5-rc.1**（`web` profile；开发与验证基线即 0.1.5-rc.1）
+- 宿主：DeepSeek Harness ≥ **0.2.2-rc.1**（`web` profile；开发与验证基线即 0.2.2-rc.1）
 - Node.js：≥ 20
 - 运行时依赖：**无**（`dependencies: {}`）
 - License：MIT

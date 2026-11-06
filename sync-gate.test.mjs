@@ -46,13 +46,10 @@ async function gate(dshHome, extra = []) {
 const root = await mkdtemp(join(tmpdir(), 'dsh-et-sync-'));
 const home = join(root, 'dsh');
 const skillDst = join(home, 'skills', 'expert-team');
-const presetDst = join(home, '.agent-presets', 'expert-team');
 const runtimeDst = join(home, 'profiles', 'web', 'node_modules', '@yangdcm', 'dsh-expert-team');
 await mkdir(join(home, 'skills'), { recursive: true });
-await mkdir(join(home, '.agent-presets'), { recursive: true });
 await mkdir(join(home, 'profiles', 'web', 'node_modules', '@yangdcm'), { recursive: true });
 await cp(join(here, 'skills', 'expert-team'), skillDst, { recursive: true });
-await cp(join(here, 'presets', 'expert-team'), presetDst, { recursive: true });
 await mkdir(runtimeDst, { recursive: true });
 // 夹具必须覆盖**检测面**（= package.json 的 `files` + package.json/README.md），否则测的是
 // "夹具缺文件"而不是门禁语义。历史事故：这里少铺 LICENSE/README.en.md/CHANGELOG.md，而 `only`
@@ -104,38 +101,33 @@ check(!/TypeError/.test(r5.out), '没有 TypeError（ABSENT_OPTIONAL 有自己�
 check(/\[skill\]/.test(r5.out), '打印了 skill 那一行说明', '');
 check(/三副本一致/.test(r5.out), '结论仍是"一致"');
 
-console.log('\n⑤ 两个可选映射同时缺席（skill + preset）→ 仍 exit 0、两行说明都在');
-await rm(presetDst, { recursive: true, force: true });
+console.log('\n⑤ 唯一的可选映射缺席（skill）→ 仍 exit 0、说明行还在');
 const r6 = await gate(home);
-check(r6.code === 0, '两个可选目标都缺失 → exit 0', `exit=${r6.code}`);
+check(r6.code === 0, '可选目标缺失 → exit 0', `exit=${r6.code}`);
 check(!/TypeError/.test(r6.out), '仍然没有 TypeError');
-check(/\[skill\]/.test(r6.out) && /\[preset\]/.test(r6.out), 'skill 与 preset 都有说明行');
+check(/\[skill\]/.test(r6.out), 'skill 有说明行');
 check(/\[runtime\]/.test(r6.out), '非可选的 runtime 行也照常打印（没有被 continue 跳过）');
 
 console.log('\n⑥ 反向：可选目标**存在但内容漂移** → 必须 exit 1 并指出文件（证明 optional 没关掉漂移检测）');
-await cp(join(here, 'presets', 'expert-team'), presetDst, { recursive: true });
-const presetDrift = join(presetDst, 'preset.yml');
-await appendFile(presetDrift, '\n# DRIFT_PROBE_IN_OPTIONAL_TARGET\n');
+await cp(join(here, 'skills', 'expert-team'), skillDst, { recursive: true });
+const skillDrift = join(skillDst, 'references', 'PIPELINE.md');
+await appendFile(skillDrift, '\n<!-- DRIFT_PROBE_IN_OPTIONAL_TARGET -->\n');
 const r7 = await gate(home);
 check(r7.code === 1, '可选目标存在且漂移 → exit 1', `exit=${r7.code}`);
-check(/preset\.yml/.test(r7.out), '指出具体是哪个文件漂移', '');
-const presetLine = r7.out.split('\n').filter((l) => l.includes('[preset]')).join('');
-check(/\[preset\]/.test(r7.out) && !/目标不存在/.test(presetLine), 'preset 那行报的是漂移，不是"目标不存在"');
+check(/PIPELINE\.md/.test(r7.out), '指出具体是哪个文件漂移', '');
+const skillLine = r7.out.split('\n').filter((l) => l.includes('[skill]')).join('');
+check(/\[skill\]/.test(r7.out) && !/目标不存在/.test(skillLine), 'skill 那行报的是漂移，不是"目标不存在"');
 
-console.log('\n⑦ 归属标记 `.expert-team-version` 不参与比对（1.2.x「加载即铺」会给每个副本盖章）');
+console.log('\n⑦ 归属标记 `.expert-team-version` 不参与比对（skill 兜底副本会盖章）');
 {
-  // 为什么要这条：1.2.x 起插件**加载时**就铺 preset 并盖上 `.expert-team-version`（归属/版本标记，
-  // 源里永远没有这一份）。它若进了比对名单，每个用户装完立刻会看到 skill/preset 两条**假漂移**。
-  // 这里构造的正是"新用户装完"的初始状态：**只有标记不同、内容与源逐字节一致**。
+  // 为什么要这条：skill 的兜底副本会盖上 `.expert-team-version`（归属/版本标记，源里永远没有这一份）。
+  // 它若进了比对名单，每个用户装完立刻会看到一条**假漂移**。
   const { _live } = await import(join(here, 'lib', 'command.js'));
   const STAMP = _live.INSTALL_STAMP;   // 不硬编码文件名：用插件自己的常量（单一真源）
 
   await rm(skillDst, { recursive: true, force: true });
-  await rm(presetDst, { recursive: true, force: true });
   await cp(join(here, 'skills', 'expert-team'), skillDst, { recursive: true });
-  await cp(join(here, 'presets', 'expert-team'), presetDst, { recursive: true });
   await writeFile(join(skillDst, STAMP), '9.9.9-probe\n');
-  await writeFile(join(presetDst, STAMP), '9.9.9-probe\n');
 
   const r8 = await gate(home);
   check(r8.code === 0, '带归属标记、内容与源一致 ⇒ exit 0（新用户装完就是这个状态）', `exit=${r8.code}`);
@@ -143,10 +135,8 @@ console.log('\n⑦ 归属标记 `.expert-team-version` 不参与比对（1.2.x�
 
   const j = JSON.parse((await gate(home, ['--json'])).out);
   const skillMap = j.mappings.find((m) => m.id === 'skill') || {};
-  const presetMap = j.mappings.find((m) => m.id === 'preset') || {};
   check(skillMap.status === 'IN_SYNC', 'skill 判 IN_SYNC（不是 DRIFT）', String(skillMap.status));
-  check(presetMap.status === 'IN_SYNC', 'preset 判 IN_SYNC', String(presetMap.status));
-  const leaked = [...(skillMap.onlyDst || []), ...(skillMap.differ || []), ...(presetMap.onlyDst || []), ...(presetMap.differ || [])]
+  const leaked = [...(skillMap.onlyDst || []), ...(skillMap.differ || [])]
     .filter((f) => String(f).includes(STAMP));
   check(leaked.length === 0, '标记既不在 onlyDst 也不在 differ 里', leaked.join(','));
   check(!JSON.stringify(j).includes(STAMP), '整份 JSON 报告里都不出现该标记');
@@ -158,10 +148,10 @@ console.log('\n⑦ 归属标记 `.expert-team-version` 不参与比对（1.2.x�
   const r10 = await gate(home, ['--fix']);
   check(r10.code === 0, '--fix 仍 exit 0', `exit=${r10.code}`);
   const keptSkill = await readFile(join(skillDst, STAMP), 'utf8');
-  const keptPreset = await readFile(join(presetDst, STAMP), 'utf8');
-  check(/0\.0\.1-别的版本/.test(keptSkill) && /9\.9\.9-probe/.test(keptPreset),
-    '--fix 不删也不覆盖目标侧的归属标记（检测范围与修复范围一致，没有"报漂移却永不修复"的死角）', `${keptSkill.trim()} / ${keptPreset.trim()}`);
+  check(/0\.0\.1-别的版本/.test(keptSkill),
+    '--fix 不删也不覆盖目标侧的归属标记（检测范围与修复范围一致，没有"报漂移却永不修复"的死角）', keptSkill.trim());
 }
+
 
 console.log('');
 if (fail > 0) {

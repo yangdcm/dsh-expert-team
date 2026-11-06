@@ -8,7 +8,7 @@
 //
 // 四条断言，一律**整串子串匹配**（不用模糊正则：正则的宽容度会让"看起来还在"蒙混过关）：
 //   A 真源含 R1 权威关键子串（逐字）
-//   B 旧表述在 `skills/expert-team/**` + `presets/expert-team/agent.cordis.yml` 里命中 **0**
+//   B 旧表述在 `skills/expert-team/**` + `presets/expert-team.patch.yml` 里命中 **0**
 //   C `skills/expert-team/**` 里所有 `assets/templates/<文件名>` 引用都**真实存在**
 //     （悬空引用 = 用户点开预览是空/报错，且说明模板被改名或没落盘）
 //   D 看板名唯一：不得再出现非「任务」前缀的 `看板.md`
@@ -31,7 +31,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SKILL_ROOT = join(here, 'skills', 'expert-team');
 const TEMPLATES_DIR = join(SKILL_ROOT, 'assets', 'templates');
 const SKILL_MD = join(SKILL_ROOT, 'SKILL.md');
-const PRESET_YML = join(here, 'presets', 'expert-team', 'agent.cordis.yml');
+const PRESET_YML = join(here, 'presets', 'expert-team.patch.yml');
 
 /** R1 的权威关键子串（逐字；改一个字都算红）。 */
 const R1_KEY = 'run 工件一律由产出它的角色自己';

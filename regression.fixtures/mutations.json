@@ -473,7 +473,7 @@
     {
       "id": "M37-agent-tool-in-host-plane",
       "title": "把 agent-plane 工具行塞进 host 平面 patch（架构评审明确否决的落点）",
-      "why": "L3-6 原方案要往 cordis.patch.yml insert 一个 dsh-tool-* 行。host 平面的 tool 行会把工具注册进**进程全局 tools registry**，对**任何 preset 的任意会话**可见 —— 既是产品可见的行为变更，也正是该文件头部注释写死的反模式（\"contributes only HOST-plane rows (no agent-plane tool rows)\"）。正确落点是 presets/expert-team/agent.cordis.yml（agent-plane、per-agent scoped）。此前该约束**只写在注释里**，本变异体证明它现在是机制。",
+      "why": "L3-6 原方案要往 cordis.patch.yml insert 一个 dsh-tool-* 行。host 平面的 tool 行会把工具注册进**进程全局 tools registry**，对**任何 preset 的任意会话**可见 —— 既是产品可见的行为变更，也正是该文件头部注释写死的反模式（\"contributes only HOST-plane rows (no agent-plane tool rows)\"）。正确落点是 presets/expert-team.patch.yml（agent-plane、preset 内、per-agent scoped）。此前该约束**只写在注释里**，本变异体证明它现在是机制。",
       "test": "agent-scope-guard.test.mjs",
       "edits": [
         {

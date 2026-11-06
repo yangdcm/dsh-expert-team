@@ -7,6 +7,32 @@
 
 （暂无）
 
+## 1.6.0
+
+**主题：适配 DeepSeek Harness 0.2.x —— 把「专家团模式」preset 从目录副本迁移到 bundle 补丁，并按 0.2.2 的新契约重建 12 个角色的配置层边界**。
+**本版是破坏性升级：`engines.dsh` 抬到 `>=0.2.2-rc.1`，Node 抬到 `>=24.9`；旧宿主（0.1.x / 0.2.0）安装会被兼容性策略拒绝。**
+
+### 为什么必须改（dsh 0.2.x 的三处硬变更）
+
+- **preset 目录不再被发现**：0.2.0 起 `@deepseek-ai/dsh-agent-preset-registry` **不扫描目录**，`$DSH_HOME/.agent-presets/<id>/` 不再生效 —— 旧实现"加载时把 preset 铺到那里"在 0.2.x 上等于**铺了一份没人读的文件**。
+- **`persona` / `toolFilter` 已从 `dsh-tool-subagent` 移除**：0.2.2 的 `apply()` 见到这两个键**直接抛错**（"configure persona and tool plugins in an Agent Preset and select it with agentPreset"）⇒ 旧 preset 在 0.2.2 上**整份挂不上**，12 个角色工具全部消失，且没有任何提示。
+- **默认 preset 组成漂移**：官方 `standard` 在 0.2.x 换了若干行（`dsh-workflow-worker-thread` 已移除、`dsh-tool-subagent-control/list-agents` 子路径已并入主包、`tool-fs`/`tool-todo`/`tool-web` 新增配置项、新增 `time-context`/`command-goal`/`tool-schedule`/`present`）。
+
+### 变更
+
+- **preset 交付方式**：新增 `presets/expert-team.patch.yml`（在 `package.json` 的 `dsh.bundle.patch` 里声明），里面是 **13 份 `@deepseek-ai/dsh-agent-preset` 声明**：lead 的 `expert-team` + 12 份角色子预设 `expert-team-<角色>`。删除旧的 `presets/expert-team/`（目录式 preset 与 `preset.yml`）。
+- **角色边界迁到角色子预设**：12 个角色工具改为 `agentPreset: expert-team-<角色>`，persona 与可用工具集写进对应子预设；`toolFilter` 删除。只读角色（pm/architect/researcher/ui/reviewer/sec/docs）的子预设不再挂 `bash`，实现/测试角色保留 shell + jobs。
+- **跟进 0.2.2 的委派语义**：删除 `backgroundMode`（已无后台模式，调用立即返回 child id）、`modelSelectionSettings` → `modelSelection` + `modelDiscovery`；`workflow-worker-thread` → `workflow-ptc`；新增 `time-context` / `command-goal` / `tool-schedule` / `present` 与 `tool-fs.applyPatch: false` / `tool-todo.allowParallelInProgress` / `tool-web.fetch` 等 0.2.x 标准配置。
+- **模型计划文案跟随官方 changelog**：`deepseek-flash` 自 2026-10-17 起服务 V4.1-Flash-1017（同一 id）；注释与 skill 同步，tier 结构不变。
+- **preset 健康检查**：插件加载时只读探测 `agentPresets.resolve('expert-team')`，把 `registered / broken / missing / unknown` 四态写进 `/team status` 与设置页；挂载失败会打一行带宿主原文的 warn。**不再往 `$DSH_HOME/.agent-presets` 写任何东西**（`/team uninstall` 仍可回收历史副本）。
+- **校验器升级**：`gate:preset` 现在会递归校验 preset 子插件列表、拦截 0.2.2 的 `persona`/`toolFilter` 挂载期错误、检查 `agentPreset` 引用是否都有声明；宿主版本低于 `engines.dsh` 时以 exit 2 明说"验不了"，不再把旧宿主的失败报成"预设写错了"。
+
+### 兼容性
+
+- `engines.dsh: >=0.2.2-rc.1`；`engines.node: >=24.9.0`；`dsh.compatibility.dsh` 与 `dshReleases` 同步。
+- 旧的 `$DSH_HOME/.agent-presets/expert-team/` 副本不再被读取，也不会自动删除；`/team uninstall` 可回收它（只回收带我们版本戳、或身份可判定为本插件产物的目录）。
+- 测试面：90 个测试文件；`bootstrap.test.mjs` 的 preset 段重写为「不写盘 + 健康检查四态」，`preset-lint.test.mjs` 增加 0.2.2 结构断言（13 份声明 / 12 个 agentPreset 引用 / 无 `toolFilter`）。
+
 ## 1.5.3
 
 **主题：精简插件介绍文案 —— 统一为「数字员工」口径，并补上「九阶段门控流水线」的可读表述**。

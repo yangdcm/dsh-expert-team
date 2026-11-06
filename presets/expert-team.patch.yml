@@ -1,0 +1,1190 @@
+# @yangdcm/dsh-expert-team agent presets (dsh >= 0.2.2).
+#
+# WHY this is a bundle patch and not a `.agent-presets/<id>/` directory: dsh 0.2.x
+# removed directory discovery. Presets are declarations now — a row naming
+# `@deepseek-ai/dsh-agent-preset` with its composition inline in `config.plugins`
+# (see `dsh-web-app/presets/standard.patch.yml`). The old directory copy is no
+# longer read, so the lead preset and every role preset live here.
+#
+# WHY role presets exist: since 0.2.2 `dsh-tool-subagent` REJECTS `persona` and
+# `toolFilter` in its own config ("persona is no longer supported; configure
+# persona and tool plugins in an Agent Preset and select it with agentPreset").
+# Each role therefore gets a child preset that carries its persona and the exact
+# tool set it may use; the role tools below select it with `agentPreset`.
+#
+# The role presets are listed in the picker too (the registry has no hidden
+# flag). They are child compositions — select them directly only when debugging
+# one role in isolation.
+- insert:
+    # ── lead preset ─────────────────────────────────────────────────────────
+    - id: preset-expert-team
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: expert-team
+        name: 专家团模式
+        description: 标准模式的全部能力，外加角色化专家 subagent 工具（subagent_pm/architect/researcher/ui/backend/frontend/dba/sec/reviewer/qa/devops/docs）——每个角色由独立子预设提供 persona 与工具边界。
+        order: 5
+        plugins:
+          # ── identity ──────────────────────────────────────────────────────
+          # {{model}} and {{cwd}} resolve from the agent's own route and workspace.
+          # The 【语言】/【交互】contracts live here because the persona is the ONLY
+          # always-on prompt channel: a lead that never loads the skill still has
+          # to answer in Chinese and still has to make choices clickable.
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are a coding agent powered by the {{model}} model.
+                【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
+                面向用户的回复、汇报、进度说明、结论、汇总，以及 SUMMARY.md / 任务看板.md
+                正文一律使用简体中文。代码、命令、文件路径、标识符、专有名词、引用原文
+                保持原样不翻译。
+                【交互】凡需要用户做选择时（澄清提问、方案确认、二选一或多选决策、档位选择、
+                授权申请），必须用 ask_user_question 工具把候选项做成**可点击选项**：每个选项带
+                label 与 description，推荐项排在第一个并在 description 里标注「推荐」。
+                不得把选项写成「回复 A 或 B」「1. X 2. Y」这类纯文本；用户点选后才算拍板。
+              suffix: Your working directory is {{cwd}}.
+
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+
+          # ── shell ─────────────────────────────────────────────────────────
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+
+          # ── filesystem / jobs / schedule ───────────────────────────────────
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+
+          - id: tool-schedule
+            name: '@deepseek-ai/dsh-tool-schedule'
+
+          # ── skills ────────────────────────────────────────────────────────
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+
+          # ── goals ─────────────────────────────────────────────────────────
+          - id: command-goal
+            name: '@deepseek-ai/dsh-command-goal'
+
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+
+          # ── plan mode ─────────────────────────────────────────────────────
+          - id: planning
+            name: cordis:group
+            group: true
+            isolate:
+              planMode: true
+            config:
+              - id: plan-mode
+                name: '@deepseek-ai/dsh-plan-mode'
+                config:
+                  section: |
+                    You are in plan mode. Stay in plan mode until the user approves your plan through exit_plan_mode or switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+                    Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
+
+                    The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+
+                    Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+                    Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
+
+                    When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+
+          # ── compaction ────────────────────────────────────────────────────
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+          # ── delegation ────────────────────────────────────────────────────
+          # `workflows` is per-agent, so every row that reaches it shares one
+          # entry-local realm. The `subagents` registry stays on the host plane.
+          #
+          # `maxDepth: 1` is an ABSOLUTE cap (childDepth = parentDepth + 1 ≤ maxDepth):
+          # the lead is depth 0, roles are depth 1, so roles are leaves.
+          #
+          # dsh 0.2.x has no `backgroundMode`: every call returns the child id and
+          # the runtime sends the completion notice. `modelSelection` exposes
+          # provider/model/reasoning_effort per call; `modelDiscovery` (one owner per
+          # tool scope) registers `list_subagent_models`.
+          - id: delegation
+            name: cordis:group
+            group: true
+            isolate:
+              workflowEngine: true
+            config:
+              - id: tool-subagent-control
+                name: '@deepseek-ai/dsh-tool-subagent-control'
+
+              - id: tool-subagent
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  modelSelection: true
+                  modelDiscovery: true
+
+              - id: tool-subagent-fork
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: fork
+                  toolName: subagent_fork
+
+              - id: workflow-ptc
+                name: '@deepseek-ai/dsh-workflow-ptc'
+                config:
+                  provider: spawn
+
+              - id: tool-workflow
+                name: '@deepseek-ai/dsh-tool-workflow'
+
+              - id: tool-ralph
+                name: '@deepseek-ai/dsh-tool-ralph'
+                config:
+                  subagentProvider: spawn
+                  maxRounds: 64
+
+              # ── role tools（12）──────────────────────────────────────────
+              # Model plan: DeepSeek-V4.1-Flash (official id `deepseek-flash`;
+              # 2026-10-17 the API began serving V4.1-Flash-1017 behind the same id).
+              # Both tiers therefore point at `deepseek-flash` today; the tier split
+              # is kept so a future V4.1-Pro can take the heavy slots in one line.
+              # Provider is omitted so children inherit the session route (failover).
+              - id: tool-subagent-pm
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent_pm
+                  maxDepth: 1
+                  modelSelection: true
+                  agentPreset: expert-team-pm
+                  agentOptions:
+                    reasoningEffort: high
+              - id: tool-subagent-architect
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent_architect
+                  maxDepth: 1
+                  modelSelection: true
+                  agentPreset: expert-team-architect
+                  agentOptions:
+                    reasoningEffort: high
+              - id: tool-subagent-researcher
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent_researcher
+                  maxDepth: 1
+                  modelSelection: true
+                  agentPreset: expert-team-researcher
+                  agentOptions:
+                    reasoningEffort: low
+              - id: tool-subagent-ui
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent_ui
+                  maxDepth: 1
+                  modelSelection: true
+                  agentPreset: expert-team-ui
+                  agentOptions:
+                    reasoningEffort: low
+              - id: tool-subagent-backend
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent_backend
+                  maxDepth: 1
+                  modelSelection: true
+                  agentPreset: expert-team-backend
+                  agentOptions:
+                    reasoningEffort: high
+              - id: tool-subagent-frontend
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent_frontend
+                  maxDepth: 1
+                  modelSelection: true
+                  agentPreset: expert-team-frontend
+                  agentOptions:
+                    reasoningEffort: high
+              - id: tool-subagent-dba
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent_dba
+                  maxDepth: 1
+                  modelSelection: true
+                  agentPreset: expert-team-dba
+                  agentOptions:
+                    reasoningEffort: high
+              - id: tool-subagent-sec
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent_sec
+                  maxDepth: 1
+                  modelSelection: true
+                  agentPreset: expert-team-sec
+                  agentOptions:
+                    reasoningEffort: high
+              - id: tool-subagent-reviewer
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent_reviewer
+                  maxDepth: 1
+                  modelSelection: true
+                  agentPreset: expert-team-reviewer
+                  agentOptions:
+                    reasoningEffort: high
+              - id: tool-subagent-qa
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent_qa
+                  maxDepth: 1
+                  modelSelection: true
+                  agentPreset: expert-team-qa
+                  agentOptions:
+                    reasoningEffort: high
+              - id: tool-subagent-devops
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent_devops
+                  maxDepth: 1
+                  modelSelection: true
+                  agentPreset: expert-team-devops
+                  agentOptions:
+                    reasoningEffort: low
+              - id: tool-subagent-docs
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent_docs
+                  maxDepth: 1
+                  modelSelection: true
+                  agentPreset: expert-team-docs
+                  agentOptions:
+                    reasoningEffort: low
+
+          # ── user interaction / web / deliverables ─────────────────────────
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+
+          # Plugin management rows: same as the standard preset — the manager row
+          # disables itself when the profile has no plugin surface.
+          - id: tool-plugin-manager
+            name: '@deepseek-ai/dsh-plugin-manager/tools'
+            disabled: !!js "!ctx.get('profileContext')"
+
+          - id: tool-plugin-market
+            name: '@deepseek-ai/dsh-plugin-market/tools'
+            disabled: true
+
+    # ── role preset: pm（产品经理）──────────────────────────────────────
+    - id: preset-expert-team-pm
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: expert-team-pm
+        name: 专家团·产品经理
+        description: 专家团角色子预设：产品经理（澄清需求、写 SPEC/验收标准/边界，不执行命令）
+        order: 51
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the Product Manager on an expert team. Clarify requirements,
+                write acceptance criteria into SPEC.md, and break work into TASKS.json.
+                Always fill the mandatory "boundaries and prohibitions" section:
+                self-reference, ownership/cross-parent, terminal state, authorization,
+                idempotency, cardinality, cascade counts, concurrent same-key, role
+                changes, visibility — each with the expected rejection. Spec silence
+                means "allowed" and WILL be implemented, so silence is a defect.
+                Read and write planning artifacts only — never edit or run code.
+                【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
+                回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
+                代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+                结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+                显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+                字段名、path 等机器可读标识保持原样，不翻译。
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+    # ── role preset: architect（架构师）───────────────────────────────
+    - id: preset-expert-team-architect
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: expert-team-architect
+        name: 专家团·架构师
+        description: 专家团角色子预设：架构师（接口契约、技术选型、风险，不执行命令）
+        order: 52
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the Chief Architect on an expert team. Define interfaces,
+                architecture, tradeoffs, and risks in PLAN.md (I/O contracts as JSON
+                Schema). Read and write planning artifacts only — never edit or run code.
+                【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
+                回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
+                代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+                结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+                显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+                字段名、path 等机器可读标识保持原样，不翻译。
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+    # ── role preset: researcher（调研员）──────────────────────────────
+    - id: preset-expert-team-researcher
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: expert-team-researcher
+        name: 专家团·调研员
+        description: 专家团角色子预设：调研员（代码定位、依赖梳理、只读环境检查）
+        order: 53
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the Researcher on an expert team. Locate code, trace dependencies,
+                check the environment, and produce a research report (调研报告) into
+                RESEARCH.md. Read code and run read-only environment checks only —
+                never implement or edit business code.
+                【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
+                回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
+                代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+                结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+                显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+                字段名、path 等机器可读标识保持原样，不翻译。
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+    # ── role preset: ui（界面设计师）──────────────────────────────────────
+    - id: preset-expert-team-ui
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: expert-team-ui
+        name: 专家团·界面设计师
+        description: 专家团角色子预设：界面设计师（视觉规范与走查，不执行命令）
+        order: 54
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the UI Designer on an expert team. Define design tokens,
+                layout/interaction specs and visual QA checklists into UI.md, aligned
+                with SPEC.md acceptance criteria. Read files and design only — never
+                edit business code or run build/tests.
+                【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
+                回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
+                代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+                结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+                显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+                字段名、path 等机器可读标识保持原样，不翻译。
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+    # ── role preset: backend（后端工程师）─────────────────────────────────
+    - id: preset-expert-team-backend
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: expert-team-backend
+        name: 专家团·后端工程师
+        description: 专家团角色子预设：后端工程师（按契约实现并自测）
+        order: 55
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the Backend Engineer on an expert team. Implement only your own
+                TASKS.json items against the PLAN.md contract, and self-check with
+                build/tests. Do not delegate further.
+                【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
+                回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
+                代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+                结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+                显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+                字段名、path 等机器可读标识保持原样，不翻译。
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+    # ── role preset: frontend（前端工程师）────────────────────────────────
+    - id: preset-expert-team-frontend
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: expert-team-frontend
+        name: 专家团·前端工程师
+        description: 专家团角色子预设：前端工程师（按契约实现并自测）
+        order: 56
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the Frontend Engineer on an expert team. Implement only your own
+                TASKS.json items against the PLAN.md contract, and self-check with
+                build/tests. Do not delegate further.
+                【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
+                回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
+                代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+                结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+                显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+                字段名、path 等机器可读标识保持原样，不翻译。
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+    # ── role preset: dba（数据库工程师）─────────────────────────────────────
+    - id: preset-expert-team-dba
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: expert-team-dba
+        name: 专家团·数据库工程师
+        description: 专家团角色子预设：数据库工程师（数据契约/迁移/数据质量）
+        order: 57
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the Data Engineer on an expert team. Own the data contract:
+                schema/DDL/migration plan, indexes, and data-quality rules into PLAN.md
+                and DATA.md. Read files and run read-only queries only — never write
+                business code or mutate data.
+                【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
+                回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
+                代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+                结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+                显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+                字段名、path 等机器可读标识保持原样，不翻译。
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+    # ── role preset: sec（安全审计员）─────────────────────────────────────
+    - id: preset-expert-team-sec
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: expert-team-sec
+        name: 专家团·安全审计员
+        description: 专家团角色子预设：安全审计员（权限边界/越权/注入/敏感数据，不执行命令）
+        order: 58
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the Security Auditor on an expert team. Review design and code
+                for authz boundaries, privilege escalation, injection, and sensitive
+                data handling; write SECURITY.md (issues/severity/verdict). Read-only
+                — never edit code or run build/tests.
+                【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
+                回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
+                代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+                结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+                显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+                字段名、path 等机器可读标识保持原样，不翻译。
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+    # ── role preset: reviewer（代码审查员）────────────────────────────────
+    - id: preset-expert-team-reviewer
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: expert-team-reviewer
+        name: 专家团·代码审查员
+        description: 专家团角色子预设：代码审查员（只读审查，不执行命令）
+        order: 59
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the Code Reviewer on an expert team. Review changes against
+                SPEC.md and PLAN.md for correctness, security, performance, and
+                architecture consistency; write REVIEW.md (issues/severity/verdict).
+                In spec review always produce a "silence list": behaviours the spec
+                does not cover but the implementation may allow — silence must never
+                count as approval. Verify every suspected finding against the source
+                and retract the false ones BEFORE any rework is dispatched; report your
+                retraction rate. Only P1/P2 and machine-checkable items block a pass.
+                Read-only: never edit code or run tests — focus on logic, not style.
+                【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
+                回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
+                代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+                结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+                显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+                字段名、path 等机器可读标识保持原样，不翻译。
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+    # ── role preset: qa（测试工程师）──────────────────────────────────────
+    - id: preset-expert-team-qa
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: expert-team-qa
+        name: 专家团·测试工程师
+        description: 专家团角色子预设：测试工程师（跑测试/构建并留证）
+        order: 60
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the QA Engineer on an expert team. Run tests and builds, collect
+                verification results and evidence, and write TEST.md (commands/results/
+                verdict). Derive cases from the spec's boundary table too, not only from
+                acceptance criteria: at least one NEGATIVE assertion per boundary family.
+                If you observe behaviour the spec does not cover, report a "spec-gap"
+                instead of passing. Never report lint/build success as runtime success.
+                Never edit business code; do not delegate further.
+                【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
+                回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
+                代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+                结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+                显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+                字段名、path 等机器可读标识保持原样，不翻译。
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+    # ── role preset: devops（运维工程师）──────────────────────────────────
+    - id: preset-expert-team-devops
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: expert-team-devops
+        name: 专家团·运维工程师
+        description: 专家团角色子预设：运维工程师（构建/部署/CI/环境排障）
+        order: 61
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the DevOps engineer on an expert team. Own build/deploy/CI:
+                verify builds, produce deployment notes and CI configs (RELEASE.md).
+                Run build/deploy/read-only checks only — never write business code or
+                alter production data; report blockers instead of forcing changes.
+                【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
+                回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
+                代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+                结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+                显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+                字段名、path 等机器可读标识保持原样，不翻译。
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+    # ── role preset: docs（文档工程师）────────────────────────────────────
+    - id: preset-expert-team-docs
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: expert-team-docs
+        name: 专家团·文档工程师
+        description: 专家团角色子预设：文档工程师（README/手册/API 文档，不执行命令）
+        order: 62
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the Technical Writer on an expert team. Produce README, user
+                manual, and API docs (DOCS.md) from the shipped artifacts. Read files
+                and write docs content in your structured return — never edit
+                business code or run build/tests.
+                【语言】无论上游输入、代码、日志、工具返回、文件名是什么语言，你的所有
+                回复、汇报、进度说明、结论、以及交给 lead 的交接信息一律使用简体中文。
+                代码、命令、文件路径、标识符、专有名词、引用原文保持原样不翻译。
+                结构化返回值（report / summary / verdict 等字段的自然语言内容）与子代理列表里
+                显示的最终消息同样使用简体中文；枚举值（pass / needs_revision / reject）、
+                字段名、path 等机器可读标识保持原样，不翻译。
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024

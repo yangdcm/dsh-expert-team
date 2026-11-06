@@ -6,7 +6,7 @@
 
 为每个固定/补位角色启动一个**可继续**子 agent：
 
-- **优先用角色工具**（会话运行在「专家团模式」preset 时可用）：`subagent_pm` / `subagent_architect` / `subagent_researcher` / `subagent_ui` / `subagent_backend` / `subagent_frontend` / `subagent_dba` / `subagent_sec` / `subagent_reviewer` / `subagent_qa` / `subagent_devops` / `subagent_docs`。它们的 persona、toolFilter、maxDepth 已由配置保证——`prompt` 里只需给「本阶段任务 + 要读写/更新的工件」，`description` 用角色名。
+- **优先用角色工具**（会话运行在「专家团模式」preset 时可用）：`subagent_pm` / `subagent_architect` / `subagent_researcher` / `subagent_ui` / `subagent_backend` / `subagent_frontend` / `subagent_dba` / `subagent_sec` / `subagent_reviewer` / `subagent_qa` / `subagent_devops` / `subagent_docs`。它们的 persona、工具集与 maxDepth 已由各自角色子预设保证（工具实例用 `agentPreset` 选中）——`prompt` 里只需给「本阶段任务 + 要读写/更新的工件」，`description` 用角色名。
 - **退回通用 `subagent`**（未运行 expert-team preset 时）：`prompt` 用 `ROLES.md` 里该角色的完整模板（含通用前缀，并把 `{{run-dir}}` 替换为真实路径、`{{role}}` 替换为角色名），`description` 用角色名。
 - `run_in_background` 默认 true。返回 `{ subagentId }` 后：`ROSTER.json` 的写入按 §2 由产出角色执行（lead 只读），`STATE.members` 由运行时回写。
 

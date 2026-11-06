@@ -19,7 +19,7 @@
 - 每个角色带 JSON `schema` 返回，下游据此解析，不回读原始文本。
 - schema 只声明需要下传的字段（详见各角色模板），不要塞大文本。
 
-## 4. 角色守界（toolFilter 纪律）
+## 4. 角色守界（子预设的工具面纪律）
 
 | 角色 | 能 | 不能 |
 |---|---|---|
@@ -71,9 +71,9 @@
 
 ## 11. 安全与守界（工具纪律 + 越界审计）
 
-> 说明：dsh **有**插件级拦截 hook —— `write`/`edit` 通道挂在宿主 `tools/pre-execute`（**写盘之前**拦，见 `lib/artifact-ownership.js` 的 `createOwnershipGate`），派工自动记账挂在 `tools/post-execute`（见 `lib/artifact-redirect-watch.js` 的 `createArtifactRedirectWatcher`）；另有 `fs/observed`/`tools/result` 事后事件。成员的**执行面**边界由 **expert-team preset 的 toolFilter** 保证，越界由**完成时 `changedPaths` 审计**兜底。本协议在编排层再加固。
+> 说明：dsh **有**插件级拦截 hook —— `write`/`edit` 通道挂在宿主 `tools/pre-execute`（**写盘之前**拦，见 `lib/artifact-ownership.js` 的 `createOwnershipGate`），派工自动记账挂在 `tools/post-execute`（见 `lib/artifact-redirect-watch.js` 的 `createArtifactRedirectWatcher`）；另有 `fs/observed`/`tools/result` 事后事件。成员的**执行面**边界由**角色子预设的工具集**保证（`agentPreset: expert-team-<角色>`；0.2.2 起宿主不再支持 `toolFilter`），越界由**完成时 `changedPaths` 审计**兜底。本协议在编排层再加固。
 
-- **工具守界（如实说，别把「约束在别处」说成「工具不存在」）**：非实现角色（pm/architect/researcher/ui/reviewer/sec/docs）在 preset 里被 `toolFilter.deny` 移掉的是 `bash` 这类**执行**工具，**`write`/`edit` 并未被 toolFilter 移除** ⇒ 写侧约束**不来自工具面缺失**，而来自 `lib/artifact-ownership.js` 的 `ARTIFACT_OWNERS` 归属门禁（挂在 `tools/pre-execute`：**创建放行 / 覆写别人的工件当场拒绝**）；qa/devops 只跑测试/构建/部署命令，dba 只做只读查询。若遇通用 subagent 回退，写进 prompt 的 ROLES.md 守界条款同样适用。
+- **工具守界（如实说，别把「约束在别处」说成「工具不存在」）**：非实现角色（pm/architect/researcher/ui/reviewer/sec/docs）的角色子预设里**没有挂** `bash` 这类**执行**工具，但 **`write`/`edit` 仍在**（它们要写工件）⇒ 写侧约束**不来自工具面缺失**，而来自 `lib/artifact-ownership.js` 的 `ARTIFACT_OWNERS` 归属门禁（挂在 `tools/pre-execute`：**创建放行 / 覆写别人的工件当场拒绝**）；qa/devops 只跑测试/构建/部署命令，dba 只做只读查询。若遇通用 subagent 回退，写进 prompt 的 ROLES.md 守界条款同样适用。
 - **实现者只动 `inScope`**：每条实现/修复任务的 `inScope` 写清合法改动范围；实现者不得改 `outOfScope` 文件；完成时回报 `changedPaths`，lead 对照 `inScope` 审计，越界不得 `completed`。
 - **高危命令**：成员（尤其实现者）禁止执行 `rm -rf`、`sudo`、`chmod 777`、`git push --force` 等破坏性/生产命令；这些只由 lead 在**沙箱/受控终端**里跑（dsh sandbox 已启用时），且需用户确认。
 - **审计**：lead 把关键工具/文件变更链路记入 `RUN.log`（`tool:bash <cmd>`、`fs:write <path>`）——§2 口径：lead 无 `write`，内容由 lead 口述、指派的有 `write` 角色落盘——形成可追溯审计；`/team learn` 会聚合高频错误/越界。

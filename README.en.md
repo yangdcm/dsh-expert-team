@@ -20,7 +20,7 @@ A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 | 12 roles | 9 phases | 90 test files | 0 runtime deps | 0 build steps |
 |---|---|---|---|---|
-| own persona / `toolFilter` / `maxDepth: 1` | 1 hard gate + 1 approval gate | CI runs the full suite on every push | `dependencies: {}` | no bundler, no `prepare` hook |
+| own child preset (persona + tool boundary) / `maxDepth: 1` | 1 hard gate + 1 approval gate | CI runs the full suite on every push | `dependencies: {}` | no bundler, no `prepare` hook |
 
 > Zero runtime dependencies. Recommended: also install **Hindsight** (cross-project memory) — see [Dependencies and recommended plugins](#dependencies-and-recommended-plugins).
 
@@ -28,7 +28,7 @@ A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 ```sh
 dsh plugin --profile web add @yangdcm/dsh-expert-team   # 1) install
-# 2) restart dsh web once — the plugin lays the "Expert team mode" preset for you
+# 2) restart dsh web once — the bundle patch registers the "Expert team mode" preset for you
 ```
 
 3) Open a new session, switch it to **"Expert team mode"**, then run `/team build a payments module with login`.
@@ -81,7 +81,7 @@ The `implement` phase **fans out** along the dependency DAG: several implementer
 |---|---|
 | Package | `@yangdcm/dsh-expert-team` (public npm package) |
 | Repository | <https://github.com/yangdcm/dsh-expert-team> |
-| Host | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) ≥ **0.1.5-rc.1** (`web` profile) |
+| Host | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) ≥ **0.2.2-rc.1** (`web` profile) |
 | Runtime dependencies | **none** (`dependencies: {}`; `lib/` imports only sibling files and Node builtins) |
 | Node.js | ≥ 20 |
 | License | MIT |
@@ -127,7 +127,7 @@ answer them:
 
 | Mechanism | How |
 |---|---|
-| **Role separation** | 12 roles, each with its own persona, tool boundary (`toolFilter`) and delegation depth (`maxDepth: 1`); product/architecture roles only read and write planning artifacts, review/security are read-only, only implementers touch code |
+| **Role separation** | 12 roles, each with its own persona, tool boundary (a per-role child preset) and delegation depth (`maxDepth: 1`); product/architecture roles only read and write planning artifacts, review/security are read-only, only implementers touch code |
 | **Phase gates** | 9 phases; every hand-off travels two channels — a structured return value **and** an artifact file. State never rides on chat history |
 | **Quality gates** | State-machine consistency is **enforced by plugin code**, not requested in a prompt: a task cannot be marked completed while unfinished, quality issues must be adjudicated by qa/reviewer, coverage gaps and over-budget rework are caught — violations show up **live** in the overlay and in `/team status`; **write-side ownership gate**: overwriting an artifact owned by another role is **rejected outright** (creating is allowed; the residual bypass is listed under [Fit and boundaries](#fit-and-boundaries)) |
 | **Convergence & accounting** | Every run records tokens, elapsed time, time-to-first-artifact and a closing budget; `/team learn` distills cross-run experience and feeds it back before the next run starts |
@@ -202,8 +202,8 @@ load are not directly comparable**. `state-perf-guard.test.mjs` keeps performanc
 
 **Requirements**
 
-- `dsh web` (developed and verified on **0.1.5-rc.1**; earlier versions are untested)
-- Node.js ≥ 20
+- `dsh web` (**DeepSeek Harness >= 0.2.2-rc.1**; 0.2.2 removed the old `persona`/`toolFilter` tool config)
+- Node.js ≥ 24.9
 - The 12 role tools (`subagent_pm` / `subagent_architect` / …) are available when the session uses the
   **"Expert team mode"** preset; otherwise the plugin falls back to the generic `subagent`
   (role personas go into the prompt) — nothing is lost except the configuration-level boundary guarantees
@@ -233,10 +233,11 @@ pnpm install && dsh web
 > appears under `$DSH_HOME/skills/` — uninstalling leaves no residue. It only falls back to copying into
 > `$DSH_HOME/skills/` when the host has no skill registry.
 >
-> **The "Expert team mode" preset is copied** into `$DSH_HOME/.agent-presets/` (the host exposes no runtime API
-> to add a scan root), but it carries a version stamp: on upgrade the whole directory is re-laid, so it never
-> silently stays behind. **The plugin lays it down at load time** — after `/team uninstall`, a restart of
-> `dsh web` re-lays it automatically; no manual rescue needed.
+> **The "Expert team mode" preset is registered by the bundle patch**: since 0.2.0 the preset registry does
+> **not** scan directories, so this package copies nothing into `$DSH_HOME/.agent-presets/`. The lead preset and
+> its 12 role child presets live in `presets/expert-team.patch.yml` and ship with the package. **Upgrading the
+> plugin upgrades the presets** — there is no stale copy that looks laid but is never read. Legacy copies left by
+> older versions can still be reclaimed with `/team uninstall`.
 >
 > **Where settings live**: **Settings → Expert team** — a full page inside the official settings menu
 > (the `settings.section` slot, `id: expert-team`, `order: 50`), sharing the same entry point and panel chrome
@@ -255,24 +256,23 @@ pnpm install && dsh web
 
 ### After installing
 
-1. **Restart `dsh web` once**: on load the plugin lays the "Expert team mode" preset into
-   `$DSH_HOME/.agent-presets/expert-team` (version-stamped; upgrades re-lay the whole directory) —
-   **you never create a preset by hand**. After the restart the preset appears in the picker and all 12 role
-   subagent tools are in place (see them under `Settings → Plugins → Plugin list → Session plugins`).
+1. **Restart `dsh web` once**: the bundle patch shipped in this package registers the "Expert team mode"
+   preset (plus its 12 role child presets) into the preset roster — **you never create a preset by hand**.
+   After the restart the preset appears in the picker and all 12 role subagent tools are in place (each one
+   selects its own role child preset through `agentPreset`).
 2. Switch the session to "Expert team mode", then run `/team <one-sentence goal>`.
 3. Change settings under **Settings → Expert team** (values live in the host namespace `expert-team`, so they
    travel with the plugin market's backup/restore).
 
-**Troubleshooting**: if the preset is gone or occupied by an unrelated preset of the same id, **one restart of
-`dsh web` heals it** (the plugin re-lays it at load); alternatively run `/team <task>` once. See the
-[Troubleshooting](#troubleshooting) section for the easiest trap to fall into: **do not** use the id
-`expert-team` when creating a preset.
+**Troubleshooting**: `/team status` states the preset's health explicitly (registered / failed to mount /
+not registered). "Not registered" almost always means the plugin is disabled on the Plugins page or dsh is
+older than 0.2.2-rc.1 — then restart `dsh web`.
 
 ## Dependencies and recommended plugins
 
 **Required**: none. This plugin has **zero runtime dependencies** (`package.json` has no `dependencies` field;
 `lib/` imports only sibling files and Node built-ins, and `client.js` only `require('react')`, which the host
-provides). It only requires the host `DeepSeek Harness >= 0.1.5-rc.1` (web profile). Everything below is optional:
+provides). It only requires the host `DeepSeek Harness >= 0.2.2-rc.1` (web profile). Everything below is optional:
 **the whole team workflow runs without them** — they exist so that things like cross-project memory, local
 zero-LLM memory and a cost view actually materialise.
 
@@ -372,7 +372,7 @@ Full command list (`/team codeindex` code index, `/team limit` quotas, `/team se
 
 **Do I have to install other plugins?** **No.** This plugin has zero runtime dependencies; Hindsight (cross-project memory) is **recommended**, and Midas (local zero-LLM memory) plus `dsh-cost-meter` (cost view) are **optional** — the full flow runs without any of them. See [Dependencies and recommended plugins](#dependencies-and-recommended-plugins).
 
-**Which dsh versions are supported?** `engines.dsh: >=0.1.5-rc.1` (developed and verified on 0.1.5-rc.1); earlier versions are untested. Node.js ≥ 20.
+**Which dsh versions are supported?** `engines.dsh: >=0.2.2-rc.1` (developed and verified on 0.2.2-rc.1); earlier versions are **not** supported (0.2.2 removed the `persona`/`toolFilter` tool config, so older presets fail to mount). Node.js ≥ 24.9.
 
 **Where does the data live?** Artifacts in your workspace: `<workspace>/team/<run-id>/`. Machine-local preferences and cross-project lessons: `$DSH_HOME/expert-team/` (`settings.json` / `LEARNINGS.md` / `session-runs.json`).
 
@@ -382,7 +382,7 @@ Full command list (`/team codeindex` code index, `/team limit` quotas, `/team se
 
 **Which models does it use?** Whatever the host provides; this plugin supports **per-role model configuration** (the overlay shows which model each member runs), and heterogeneous models can be used for cross-checking.
 
-**Does it work without the "Expert team mode" preset?** Yes. `/team` is a host-plane command and runs under any preset; it then falls back to the generic `subagent` (role personas go into the prompt), losing only the configuration-level boundaries (`toolFilter` / `maxDepth: 1`).
+**Does it work without the "Expert team mode" preset?** Yes. `/team` is a host-plane command and runs under any preset; it then falls back to the generic `subagent` (role personas go into the prompt), losing only the configuration-level boundaries (per-role child preset tool sets / `maxDepth: 1`).
 
 **Why is the overlay/canvas slow to open?** See [Troubleshooting](#troubleshooting). Since 1.3.5 `/state` no longer reads every sub-session log in full; upgrade to ≥ 1.3.5 and restart `dsh web` (1.3.13 made first paint a cheap `?section=summary` request, and 1.3.17 bounded the heavy sections).
 
@@ -436,7 +436,7 @@ lib/metrics/           token accounting, time-to-first-artifact, closing budget,
 lib/routes/            shared route helpers (uniform 405/500/JSON handling, local-origin guard)
 client.js              the client overlay (module-loader bundle, only require('react'))
 skills/expert-team/    the orchestration "brain": SKILL.md + references/ + assets/templates/
-presets/expert-team/   the "Expert team mode" preset: 12 role subagent tool instances
+presets/               preset patch: the lead preset plus 12 role child presets (declared in bundle.patch)
 ```
 
 Almost all of the orchestration protocol lives in the skill rather than in code — so the team protocol can
@@ -470,31 +470,35 @@ npm run check:name      # check for leftover placeholder package names
 `dsh plugin --profile web add @yangdcm/dsh-expert-team`, or `npm view @yangdcm/dsh-expert-team version`,
 then **restart `dsh web`** — the page did not exist before 1.3.0.
 
-**The preset shows as a bare id (`expert-team`) and the session has no role tools?** Then
-`$DSH_HOME/.agent-presets/expert-team/` does not hold our copy (it was deleted, or an unrelated preset
-took the id). Fix in this order:
+**The preset shows as a bare id (`expert-team`) and the session has no role tools?** That means the
+`expert-team` preset **was not registered** (or mounted but failed activation). Check in order:
 
-1. run `/team <any small task>` — the plugin re-lays a version-stamped copy from the package (easiest; since 1.3.0
-   it is also laid down at plugin load);
-2. or copy from the package: `cp -f <package>/presets/expert-team/{agent.cordis.yml,preset.yml} ~/.dsh/.agent-presets/expert-team/`;
-3. **do not** create a preset with the same id in `Settings → Agent presets` — you would only get a copy of the
-   **source** you picked (e.g. standard mode), not our preset.
+1. run `/team status` — its last line says "registered / failed to mount / not registered", and a failed mount
+   carries the host's own diagnostic;
+2. make sure the plugin is **enabled on the Plugins page** and dsh is >= 0.2.2-rc.1 (this package requires it;
+   older hosts have no preset registry at all);
+3. **restart `dsh web`** (the preset roster is built at startup), then open a **new session** (the preset is
+   fixed when a session is created);
+4. still stuck? read the startup log line `agent preset expert-team: …` — that is the host's mount diagnostic.
 
-Then **restart `dsh web`** (the preset roster is read at startup; refreshing the page is not enough) and open a
-**new session** (the preset is fixed when a session is created).
+> On 0.2.x do **not** hand-place files under `$DSH_HOME/.agent-presets/` any more: the registry does not scan
+> directories, so nothing there is read. To customize, author your own bundle patch (next section).
 
 **The overlay opens slowly / `dsh web` feels sluggish?** Before 1.3.5, `/state` read every sub-session log in full
 (measured 7–10 s warm, 283 s cold) and blocked the event loop. Upgrade to ≥ 1.3.5 and restart `dsh web`.
 
 ## Custom presets (when you want to change expert-team's defaults)
 
-- **Create**: `Settings → Agent presets → create a custom preset with "Creator mode"` (the mechanism is
-  "copy an existing preset"; output lands in `$DSH_HOME/.agent-presets/<id>/`).
-- **To customize the expert team, copy from "Expert team mode" and pick your own id** (e.g. `my-team`):
-  the copy comes with all 12 role tools and the skill directory, and your edits stay in `my-team/`.
-  **Never edit files in `expert-team/`** — that copy belongs to the plugin and is re-laid on load/upgrade.
-- A newly created preset may only appear in the picker **after a restart of `dsh web`** (the host reads its
-  roster at startup).
+- **0.2.x presets are bundle-patch declarations**, not directories: insert a row naming
+  `@deepseek-ai/dsh-agent-preset` into your profile's patch layer and put the composition in
+  `config.plugins`. Creator mode produces the same kind of declaration.
+- **To customize the expert team, start from "Expert team mode" and pick your own id** (e.g. `my-team`):
+  rename `id: expert-team` in `presets/expert-team.patch.yml`, move `order` out of the way, follow through on
+  every tool's `agentPreset`, and install it as your own bundle. **Never edit the copy inside the package** —
+  a plugin upgrade replaces it wholesale.
+- Role boundaries now live in the **role child presets** (persona + tool set): add or remove tools in
+  `expert-team-<role>`'s `plugins` instead of touching a `dsh-tool-subagent` config — 0.2.2 rejects
+  `persona`/`toolFilter` there and the whole preset fails to mount.
 
 ## Fit and boundaries
 
@@ -530,9 +534,9 @@ Then **restart `dsh web`** (the preset roster is read at startup; refreshing the
 
 ## Compatibility
 
-- `engines.dsh: >=0.1.5-rc.1`, declared in `package.json` under `dsh.compatibility` (`dshReleases` marks it
+- `engines.dsh: >=0.2.2-rc.1`, declared in `package.json` under `dsh.compatibility` (`dshReleases` marks it
   release by release); the plugin market uses it to decide whether this plugin fits your host.
-- Node.js ≥ 20.
+- Node.js ≥ 24.9.
 - Profile: `web` (see "Fit and boundaries" above).
 
 ## Try it now
