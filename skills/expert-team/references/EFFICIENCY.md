@@ -77,3 +77,12 @@
 - **实现者只动 `inScope`**：每条实现/修复任务的 `inScope` 写清合法改动范围；实现者不得改 `outOfScope` 文件；完成时回报 `changedPaths`，lead 对照 `inScope` 审计，越界不得 `completed`。
 - **高危命令**：成员（尤其实现者）禁止执行 `rm -rf`、`sudo`、`chmod 777`、`git push --force` 等破坏性/生产命令；这些只由 lead 在**沙箱/受控终端**里跑（dsh sandbox 已启用时），且需用户确认。
 - **审计**：lead 把关键工具/文件变更链路记入 `RUN.log`（`tool:bash <cmd>`、`fs:write <path>`）——§2 口径：lead 无 `write`，内容由 lead 口述、指派的有 `write` 角色落盘——形成可追溯审计；`/team learn` 会聚合高频错误/越界。
+
+
+## 12. 成本与预算（2026-11）
+
+- **费用 = 步数 × 每步上下文**，不是"模型话多"：实测输出 token 只占总量 0.34%（`team/METRICS.md`）。所以优化只做三件事：**少绕步、少重放、早压缩**。
+- **lead 步数预算**（`lib/lead-budget.js`）：只数 lead（depth 0）且属于某个 run 的工具调用，200 / 600 / 1200 各提醒一次（非阻断 `form:notice`）。收到 200 就改为派工；600 先收敛（P3 进 backlog）；1200 立即收尾并让用户决定是否继续。
+- **轮次默认 2**（`maxReviewRounds` / `maxTestRounds`）：到顶先升级用户；要更严在设置里调高，不要靠"再来一轮"。
+- **压缩阈值 0.5**（preset 的 `compaction-basic.thresholdRatio`）：默认 0.8 在 1M 窗口下要 ~800K 才压缩（实测峰值 807K）；0.5 约 500K 折叠，直接压住每步 prompt。
+- **按规模选档**：小任务用快速档（≤3 角色、2 轮），不要用 12 角色跑小活。

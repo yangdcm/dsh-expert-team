@@ -2293,6 +2293,19 @@
           "replace": "      if (m.kind === 'idle') return h('div', { className: 'exp-subbusy-idle' }, esc(m.text))"
         }
       ]
+    },
+    {
+      "id": "M176-lead-budget-counts-subagents",
+      "title": "预算计数器把**角色子代理**的调用也算进 lead 预算 ⇒ 提醒提前/错位（分不清谁在烧钱）",
+      "why": "成本治理（2026-11）：`lib/lead-budget.js` 只数 **lead（delegationDepth 0）且属于某个 run** 的工具调用，到 200/600/1200 各提醒一次。如果 depth 判据失效（子代理也计数），一个 12 角色的 run 会在 lead 自己没走几步时就触发提醒，文案里的「lead 已调用 N 次」变成假话；更糟的是 `fired` 会被子代理的调用提前消耗掉，真正的 lead 到阈值时**不再提醒** ⇒ 预算守门整体失效且看起来正常。本变异把 depth 判据短路成 `if (false)` ⇒ 角色调用也计数，`loop-guard.test.mjs` 的预算段必须变红（预期 1 项：`角色子代理（depth≥1）不计数` —— 计数会从 1 变成 2）。**必须仍然绿**：阈值/文案/消息形状/createLeadBudget 的其余断言（无 run 归属、同阈值只提醒一次、有界、坏输入吞错）—— 它们证明本变异只打中「谁被计数」这一维。",
+      "test": "loop-guard.test.mjs",
+      "edits": [
+        {
+          "file": "lib/lead-budget.js",
+          "find": "        if (Number.isFinite(depth) && depth > 0) return null;",
+          "replace": "        if (false) return null; // MUTANT: 角色子代理也计入 lead 预算"
+        }
+      ]
     }
   ]
 }

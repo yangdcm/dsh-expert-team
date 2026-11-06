@@ -15,6 +15,7 @@
 // 运行：node loop-guard.test.mjs
 
 import { callKey, createLoopGuard, oscillationPair, sortDeep, trackedPath } from './lib/loop-guard.js';
+import { DEFAULT_BUDGET_THRESHOLDS, budgetNotice, budgetNoticeMessage, createLeadBudget } from './lib/lead-budget.js';
 
 let fail = 0;
 const check = (ok, name, detail) => {
@@ -149,6 +150,70 @@ console.log('\n⑥ 不越界：失败不插嘴 / 每对只报一次 / agent 隔�
     kk.push((await g3(e, {}, accept)).kind);
   }
   check(kk.every((x) => x === 'accept'), '没有 agent 的调用不记链（无法归因）');
+}
+
+// ── lead 步数预算（成本治理 · 2026-11）：循环次数就是费用 ─────────────────────────
+{
+  console.log('\n# lead 步数预算（提醒式，不阻断）');
+  check(JSON.stringify(DEFAULT_BUDGET_THRESHOLDS) === '[200,600,1200]',
+    '阈值 = 200 / 600 / 1200（升序、可审计）', JSON.stringify(DEFAULT_BUDGET_THRESHOLDS));
+  check(budgetNotice(199) === null, '未到阈值 ⇒ 不提醒');
+  const n1 = budgetNotice(200);
+  check(n1 && n1.level === 0 && /派给对应角色/.test(n1.text), '到 200 ⇒ 一级提醒（把读/改/跑派出去）', n1 && n1.summary);
+  const n2 = budgetNotice(600);
+  check(n2 && n2.level === 1 && /收敛范围/.test(n2.text), '到 600 ⇒ 二级提醒（先收敛范围）', n2 && n2.summary);
+  const n3 = budgetNotice(1200);
+  check(n3 && n3.level === 2 && /立即收尾/.test(n3.text), '到 1200 ⇒ 三级提醒（立即收尾、交给用户）', n3 && n3.summary);
+  // 与宿主的提醒同族：必须是 form:'notice' 的 user 消息，而不是普通用户发言。
+  const msg = budgetNoticeMessage(n1, 'id-1');
+  check(msg.role === 'user' && msg.source && msg.source.form === 'notice' && msg.source.kind === 'expert-team-budget',
+    '提醒消息走宿主的 `form:notice` 通道（不是"假装用户说话"）', JSON.stringify(msg.source));
+  check(Array.isArray(msg.content) && msg.content[0].type === 'text' && msg.content[0].text === n1.text, '消息正文 = 提醒文案');
+}
+
+{
+  const events = [];
+  const budget = createLeadBudget({ onEvent: (e) => events.push(e) });
+  const lead = (n) => ({ agent: { session: { id: 'lead-1', header: { delegationDepth: 0 } } }, name: 'read', arguments: { file_path: 'x' } });
+  const role = () => ({ agent: { session: { id: 'role-1', header: { delegationDepth: 1 } } }, name: 'bash', arguments: { command: 'x' } });
+
+  check(budget.observe(lead(), 'run-A') === null, '第 1 次调用不提醒');
+  check(budget.observe(role(), 'run-A') === null && budget.countOf('run-A') === 1,
+    '角色子代理（depth≥1）不计数（否则分不清谁在烧钱）', String(budget.countOf('run-A')));
+  check(budget.observe(lead(), '') === null && budget.countOf('run-A') === 1, '没有 run 归属的会话不计数（普通会话不打扰）');
+
+  // 推到阈值：只在该次返回一次，重复同一阈值不再返回。
+  let hit = null;
+  for (let i = 0; i < 199; i += 1) { const x = budget.observe(lead(), 'run-A'); if (x) hit = x; }
+  check(hit && hit.count === 200 && hit.level === 0, '第 200 次返回一级提醒', JSON.stringify(hit && { count: hit.count, level: hit.level }));
+  check(budget.observe(lead(), 'run-A') === null, '同一阈值只提醒一次（噪声 = 没有门禁）');
+  check(events.length === 1 && events[0].type === 'budget:lead-calls' && events[0].runId === 'run-A',
+    '命中阈值会发 `budget:lead-calls` 事件（浮层可见）', JSON.stringify(events));
+
+  check(budget.countOf('run-B') === 0, '不同 run 各自计数');
+  budget.reset('run-A');
+  check(budget.countOf('run-A') === 0, 'reset 清空该 run（/team clear 之类可调）');
+
+  // 有界：杀进程级别的长跑也不会让 Map 无限增长。
+  const small = createLeadBudget({ maxRuns: 2 });
+  small.observe(lead(), 'r1'); small.observe(lead(), 'r2'); small.observe(lead(), 'r3');
+  check(small._runs.size === 2 && !small._runs.has('r1'), 'run 计数表有界（淘汰最老的）', String(small._runs.size));
+
+  // 守卫自身绝不能让工具调用变红：坏 exec 一律吞掉。
+  const boom = createLeadBudget({ onEvent: () => { throw new Error('boom'); } });
+  let threw = false;
+  try { boom.observe(null, 'r'); boom.observe({ get agent() { throw new Error('x'); } }, 'r'); } catch { threw = true; }
+  check(!threw, '坏输入/事件回调抛错 ⇒ 吞掉而不是让工具变红');
+}
+
+{
+  // 接线锚点：光有纯函数、没人调用 = 功能没上线（本仓既有纪律）。
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('./lib/command.js', import.meta.url), 'utf8');
+  check(src.includes("from './lead-budget.js'"), 'command.js 引入了 lead-budget');
+  check(/ctx\.on\('tools\/post-execute'[\s\S]{0,400}leadBudget\.observe\(/.test(src), '在 post-execute 上真的调用了 observe');
+  check(/additionalContexts: \[budgetNoticeMessage\(/.test(src), '命中后把提醒塞进 additionalContexts（模型可见、非阻断）');
+  check(src.includes('sessionRunFor(sid)'), '只对**有 run 归属**的会话计数');
 }
 
 if (fail) { console.error(`\n✗ loop-guard：${fail} 项失败`); process.exit(1); }

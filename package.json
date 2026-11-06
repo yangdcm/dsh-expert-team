@@ -1,6 +1,6 @@
 {
   "name": "@yangdcm/dsh-expert-team",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "description": "dsh「专家团」bundle：一句自然语言组建角色化多智能体「数字员工」团队，按九阶段门控流水线协作交付，实现者直接改代码并产出持久工件；带 live 团队浮层。 · Role-based multi-agent expert team for DeepSeek Harness: one sentence in, a staged and gated team delivery out.",
   "type": "module",
   "license": "MIT",

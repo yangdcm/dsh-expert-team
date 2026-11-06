@@ -123,9 +123,9 @@ clarify → research → design → spec-review → implement(DAG并行) → rev
   - **未获用户确认不得进入 implement，也不得开始改代码。** 权限不明、范围不清时宁可在这一点反复确认，也不要直接开工。**每轮的 lead 在继续前先读 `DECISIONS.md`/`STATE.pendingDecision` 是否已被用户拍板。**
 - **implement**（backend + frontend，可加补位角色，**按 DAG 并行**）：只按 `TASKS.json` 里属于自己 owner 的任务改代码，按 `dependsOn` 排依赖顺序；跨角色接口以 `PLAN.md` 契约为准。实现者返回各任务 status（带当前 `attemptId`）与 `changedPaths`，**`TASKS.json` 的更新（见 §2）由产出角色自己落盘**：状态机 `pending→claimed→in_progress→completed|failed|cancelled`，依赖只认上游 `completed`，`verify` 命令通过且 `changedPaths` 落 `inScope` 才 `completed`，旧 `attemptId` 迟到写拒绝。**模糊选择**抛候选项交 lead（也写入 `pendingDecision`）让用户拍板。
 - **review**（reviewer）：只读审代码（正确性/安全/性能/架构一致性），返回 `REVIEW.md` 内容与 `verdict`（`pass|needs_revision|reject`）→ **`REVIEW.md`（见 §2）由产出角色自己落盘**：只有 `pass` 才 `completed`；非 pass 必须带 findings 并以 `failed` 记，**由你（lead）裁决后，把新建 `repair-N` / `review-N+1` 写成派工；`TASKS.json` 的落盘按 §2**（`repair-N` 依赖指向被审实现，不依赖 failed review；`review-N+1` 针对最新 attempt，别用 reassign 重跑旧 review，reviewer 不审自己），`round` 递增至 `maxReviewRounds`。**到 `maxReviewRounds` 仍非 pass → 由你（lead）裁决升级并把 `STATE.pendingDecision` 交由运行时写入（`STATE.json` 的唯一写者是运行时）（title「审查到上限」，options：[继续审/停止]）升级到用户**：选「继续」→ **`pendingDecision` 被消费后 V1 即不再报**（这是运行时唯一可用的豁免；`ROUND_LIMITS` 只在 `apply(ctx, config)` 解析一次，**没有 per-run 覆写**，真要调高上限只能改 `config.limits` 或 env 后重启）→ 再继续自动修复链；选「停止」→ 该项记 `failed` 并在 `SUMMARY.md` 如实标注「停于 N 轮审查未过」，停止该项自动循环。盯逻辑别纠结样式；只重跑受影响角色。
-  - **收敛口径（防止「无限抛光」，必须）**：① 只有 **P1/P2 + 可机判项**阻塞 `pass`；**P3/文字/风格项不阻塞**，进 backlog 并计入 `SUMMARY.md`；② **同一 finding 连续两轮未闭环 ⇒ 判为「规格歧义」**，写 `pendingDecision` 升级用户裁定，**不再派修复**（继续派只会再产一轮新 finding）；**finding 必须带跨轮稳定的编号与标题**（如 `FIND-3 未校验 token`，下一轮原样沿用）——`FINDING_REOPENED` 门禁正是按标题归一分组来识别"同一条又回来了"，**每轮换标题会让这道门禁恒不命中**（实测：某 run 各轮标题互不相同 ⇒ V2 在真实数据上 0 命中，而 V1 命中 2 条）；③ `verify` **未实跑**的项不得计入 pass（如实标注「未实跑」）；④ 轮次上限现在是**代码强制**（`ROUND_LIMITS`，默认 review/test 各 3；违规码 `REWORK_LOOP_UNESCALATED` / `FINDING_REOPENED`，写侧拒绝码 `REWORK_LOOP_LIMIT`）——到顶的正确动作是**先升级用户**，不是「再来一轮」。
+  - **收敛口径（防止「无限抛光」，必须）**：① 只有 **P1/P2 + 可机判项**阻塞 `pass`；**P3/文字/风格项不阻塞**，进 backlog 并计入 `SUMMARY.md`；② **同一 finding 连续两轮未闭环 ⇒ 判为「规格歧义」**，写 `pendingDecision` 升级用户裁定，**不再派修复**（继续派只会再产一轮新 finding）；**finding 必须带跨轮稳定的编号与标题**（如 `FIND-3 未校验 token`，下一轮原样沿用）——`FINDING_REOPENED` 门禁正是按标题归一分组来识别"同一条又回来了"，**每轮换标题会让这道门禁恒不命中**（实测：某 run 各轮标题互不相同 ⇒ V2 在真实数据上 0 命中，而 V1 命中 2 条）；③ `verify` **未实跑**的项不得计入 pass（如实标注「未实跑」）；④ 轮次上限现在是**代码强制**（`ROUND_LIMITS`，默认 review/test 各 **2**（成本默认，可在设置调高）；违规码 `REWORK_LOOP_UNESCALATED` / `FINDING_REOPENED`，写侧拒绝码 `REWORK_LOOP_LIMIT`）——到顶的正确动作是**先升级用户**，不是「再来一轮」。
   - **返工循环的真实成因（实测，不是实现者不行）**：某 run 68 任务 / 32 条 repair / maxRound=8，评审每轮都在**新增** finding（20 条 → 新增 6 → 11 项 → 新增 3）且每轮撤销约 8 条幻觉 ⇒ **验收面无界 + 噪声制造返工**。解法是「边界前置到 SPEC」（§7.29）与「撤销前置到派工前」，不是加班修更多轮。
-- **test**（qa + 可选 ui验证补位）：按验收标准**自动生成用例→运行**，返回 `TEST.md` 内容与各用例通过/失败 → **`TEST.md`（见 §2）由产出角色自己落盘**：失败项自动新建 `repair-N`（kind=`verification`，依赖指向对应实现任务）→ 实现角色修复 → **重新派 qa 跑**，直到通过或 `maxTestRounds`（默认 3），到顶升级用户；测试失败不得当通过，`verify`/用例命令进 `TASKS.json`。
+- **test**（qa + 可选 ui验证补位）：按验收标准**自动生成用例→运行**，返回 `TEST.md` 内容与各用例通过/失败 → **`TEST.md`（见 §2）由产出角色自己落盘**：失败项自动新建 `repair-N`（kind=`verification`，依赖指向对应实现任务）→ 实现角色修复 → **重新派 qa 跑**，直到通过或 `maxTestRounds`（默认 2），到顶升级用户；测试失败不得当通过，`verify`/用例命令进 `TASKS.json`。
 - **deliver**（lead = 你）：汇总全部工件，跑一次构建/测试做最终校验；`RETRO.md` 与 `LEARNINGS.md` 的**内容由 lead 口述，由 lead 指派的一名有 `write` 的成员落盘**（`TASK.md` 的交付结论同理；`STATE.json` 只由运行时写）。
   - **交付前硬门禁（由 qa 全跑，不得凭"看起来对"置 complete）**：若本项目提供门禁命令就**必须跑它**——**交付前的六道 `npm run gate` 由 `qa` 全跑**（无 shell 的角色不得被要求跑命令）——并把关键输出贴进 `TEST.md`；**门禁非 0 不得把 `status` 置为 `complete`**（先在 `TASK.md` 如实写明未通过项与建议，再交付）。本包（`@yangdcm/dsh-expert-team`）的门禁是 **`npm run gate`**，它包含**六道**检查：`gate:preset`（preset 字段漂移）· `gate:evidence`（**引用/锚点可机器判定**：编造锚点或不存在的文件即失败）· `gate:sync`（**三副本一致性**：改了源码但运行时未同步即失败）· `gate:bypass`（**直写棘轮**：绕过受控写入口的新增直写即失败）· `test:all`（全部测试套件；**具体数量以 `package.json` 为准，不要写死数字**）· **`gate:mutation`（变异验证：确认这些测试真的能失败）**。任一非 0 就先修再交付。
   - **引用纪律**：工件里的代码引用一律写 `<相对路径> · <锚点（函数名/字段名/唯一字符串）> @ <行号>`，**锚点是主证据、行号只是阅读辅助**；`gate:evidence` 就是它的机器化校验。**禁止**写「哈希未变 ⇒ 全部行号有效」这类断言（并发写入会让行号分钟级失效）。
@@ -321,6 +321,15 @@ clarify → research → design → spec-review → implement(DAG并行) → rev
     - ⑤ 归属规则（供排障）：会话头里**既没有 runId 也没有 role**，所以归属只能从**派工提示词**里读 —— 提示词里带 `team/<runId>/` 路径的就是**强证据**；读不出来时落到"锚点（该 run 最早命中标记的会话）不晚于它、且不超出 12h"的那个 run，再读不出来就**判未归属**（**不猜**）。所以**派工时把 run 目录路径写进 prompt**（本包既有约定）顺带让记账更准。
 
 37. **异构模型降本**：轻角色跑快模型、重角色跑顶配模型（见 §1 的模型调度），成本可控且关键路径智能不降。
+39. **成本预算：循环次数就是费用（2026-11 起，代码强制但**只提醒**）**：实测（`team/METRICS.md`）输出 token 只占总量 0.34% ⇒ 费用 = **步数 × 每步上下文**，不是"模型话多"。因此：
+    - **lead 步数预算**：插件在 `tools/post-execute` 上只数 **lead（depth 0）且属于某个 run** 的工具调用，到 **200 / 600 / 1200** 各提醒一次（`additionalContexts` 的非阻断 `form:notice` 消息，模型可见、用户可见；同一阈值不重复）。
+      - 200：**把「读/改/跑」派给对应角色**，lead 只做编排/门控/裁决；读工件用 `offset/limit` 或 `/state?section=`，已通过的验证不要重复跑；
+      - 600：**先收敛范围**——P3/风格/润色项进 SUMMARY 的 backlog，只留 P1/P2；
+      - 1200：**立即收尾**——写 REVIEW/TEST/SUMMARY、剩余项转 backlog、把"是否继续"抛给用户。
+      提醒**不阻断**（判据不是可证明的违规）；是否停手仍由用户决定。
+    - **轮次默认 2**（`maxReviewRounds` / `maxTestRounds`，可在设置调高）：到顶先升级用户，不要「再来一轮」。
+    - **更早压缩**：preset 里 `compaction-basic.thresholdRatio = 0.5`（默认 0.8）——V4.1 Flash 的 1M 窗口下，默认要到 ~800K 才压缩（实测峰值 807K），0.5 约在 500K 就折叠，直接压住每步 prompt。
+    - **按规模选档**：体量小的任务走快速档（≤3 角色、2 轮），别用 12 角色跑小活。
 38. **全局搜索走代码索引（Qoder 式）**：找符号/文件/关键词先 `/team search <kw>`（读 `team/CODEINDEX.json`，秒级命中：路径 100 > 符号 60 > 高频词 20），不要对全仓库全局 grep；索引缺失会即时构建，项目变更后跑 `/team codeindex` 重建。
 
 详细规则见 `references/EFFICIENCY.md`。

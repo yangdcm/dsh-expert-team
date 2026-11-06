@@ -110,7 +110,7 @@ await putTasks(dir, [IMPL('be-1'), Q('rv-4', 'review', 4, 'reject')]);
 await patchState(dir, { pendingDecision: null });
 const out1 = await checkText(run);
 check(out1.includes('返工循环未升级'), '① 报出「返工循环未升级」', firstLine(out1, /\[rv-4\][^"]*/));
-check(/\[rv-4\] 已进入第 4 轮（上限 3，review）仍无 pendingDecision/.test(out1), '① 文案逐字含 id / 轮次 / 上限 / kind', '');
+check(/\[rv-4\] 已进入第 4 轮（上限 2，review）仍无 pendingDecision/.test(out1), '① 文案逐字含 id / 轮次 / 上限 / kind', '');
 const tasksTextAt1 = await readText(join(dir, 'TASKS.json'));
 
 console.log('\n② V1 不误报：同一任务集 + pendingDecision 有值 ⇒ 不报');
@@ -120,13 +120,13 @@ check(!out2.includes('返工循环未升级'), '② 有 pendingDecision ⇒ 不�
 check(!/\[rv-4\] 已进入第/.test(out2), '② 具体到该任务也不报（不是只改文案）', '');
 check((await readText(join(dir, 'TASKS.json'))) === tasksTextAt1, '② 与① 的任务表逐字同一份 ⇒ 唯一变量是 pendingDecision（不报才有意义）', '');
 
-console.log('\n③ V1 边界：round === 上限(3) 不报，而同一份输出里 round:4 必须仍被报');
-await putTasks(dir, [IMPL('be-1'), Q('rv-3', 'review', 3, 'reject'), Q('qa-4', 'verification', 4, null)]);
+console.log('\n③ V1 边界：round === 上限(2) 不报，而同一份输出里 round:4 必须仍被报');
+await putTasks(dir, [IMPL('be-1'), Q('rv-2', 'review', 2, 'reject'), Q('qa-4', 'verification', 4, null)]);
 await patchState(dir, { pendingDecision: null });
 const out3 = await checkText(run);
-check(!/\[rv-3\] 已进入第/.test(out3), '③ round === 3 不报（`>` 而非 `>=`）', '');
-check(/\[qa-4\] 已进入第 4 轮（上限 3，verification）/.test(out3), '③ 同输出的 round:4 verification 仍被报 ⇒ 上面的"不报"不是空断言', firstLine(out3, /\[qa-4\][^"]*/));
-check(/\[rv-3\] 已进入第 4 轮/.test(out3) === false, '③ 不得把边界值 +1 后冒充超限', '');
+check(!/\[rv-2\] 已进入第/.test(out3), '③ round === 2 不报（`>` 而非 `>=`）', '');
+check(/\[qa-4\] 已进入第 4 轮（上限 2，verification）/.test(out3), '③ 同输出的 round:4 verification 仍被报 ⇒ 上面的"不报"不是空断言', firstLine(out3, /\[qa-4\][^"]*/));
+check(/\[rv-2\] 已进入第 4 轮/.test(out3) === false, '③ 不得把边界值 +1 后冒充超限', '');
 
 console.log('\n④ V2 命中：同一 finding 标题出现在**相邻两轮**、且两轮均非 pass ⇒ 判规格歧义');
 await putTasks(dir, [
@@ -229,7 +229,7 @@ const res1 = await post('/plugins/dsh-expert-team/plan/approve', { workspace: w.
 check(res1.code === 400 && res1.body.error === 'REWORK_LOOP_LIMIT', '⑥ 路由级：新增 round:4 ⇒ HTTP 400 + 错误码 REWORK_LOOP_LIMIT', `HTTP ${res1.code} · error=${res1.body.error}`);
 const after = await readText(join(w.dir, 'TASKS.json'));
 check(before === after, '⑥ 磁盘 TASKS.json **逐字未变**（fail loud、不静默截断）', `${before.length} → ${after.length} 字符`);
-check(/任务 \[rv-4\] 第 4 轮超过上限 3（REWORK_LOOP_LIMIT）—— 未落盘；请先写 STATE.pendingDecision 升级用户/.test(JSON.stringify(res1.body.detail || [])), '⑥ 错误消息逐字含「未落盘」+ 升级指引（不是静默截断、也不只是"失败"）', firstLine(JSON.stringify(res1.body.detail || []), /任务 \[rv-4\][^"]*/));
+check(/任务 \[rv-4\] 第 4 轮超过上限 2（REWORK_LOOP_LIMIT）—— 未落盘；请先写 STATE.pendingDecision 升级用户/.test(JSON.stringify(res1.body.detail || [])), '⑥ 错误消息逐字含「未落盘」+ 升级指引（不是静默截断、也不只是"失败"）', firstLine(JSON.stringify(res1.body.detail || []), /任务 \[rv-4\][^"]*/));
 // 立起 pendingDecision ⇒ 同一写入成功（"到顶的正确动作是升级，不是禁止"）
 await patchState(w.dir, { pendingDecision: { title: '审查到上限', options: ['继续', '停止'] } });
 const res2 = await post('/plugins/dsh-expert-team/plan/approve', { workspace: w.c, run: w.run });
@@ -246,7 +246,7 @@ await patchState(w.dir, { pendingDecision: null, draft: { updatedAt: new Date().
 const beforeNoId = await readText(join(w.dir, 'TASKS.json'));
 const resNoId = await post('/plugins/dsh-expert-team/plan/approve', { workspace: w.c, run: w.run });
 check(resNoId.code === 400 && resNoId.body.error === 'REWORK_LOOP_LIMIT', '⑥-b 路由级：**无 id** 的 round:4 质量任务 ⇒ 400 + REWORK_LOOP_LIMIT', `HTTP ${resNoId.code} · error=${resNoId.body.error}`);
-check(/任务 \[\(no-id\)\] 第 4 轮超过上限 3（REWORK_LOOP_LIMIT）/.test(JSON.stringify(resNoId.body.detail || [])), '⑥-b 报错里以 `(no-id)` 指代该任务（逐字）', firstLine(JSON.stringify(resNoId.body.detail || []), /任务 \[\(no-id\)\][^"]*/));
+check(/任务 \[\(no-id\)\] 第 4 轮超过上限 2（REWORK_LOOP_LIMIT）/.test(JSON.stringify(resNoId.body.detail || [])), '⑥-b 报错里以 `(no-id)` 指代该任务（逐字）', firstLine(JSON.stringify(resNoId.body.detail || []), /任务 \[\(no-id\)\][^"]*/));
 check((await readText(join(w.dir, 'TASKS.json'))) === beforeNoId, '⑥-b 磁盘 TASKS.json 逐字未变', '');
 // 对照：同一"无 id"任务但 round:1 ⇒ 不超限 ⇒ 放行（证明拦的是"超限"，不是"无 id"本身）
 await patchState(w.dir, { draft: { updatedAt: new Date().toISOString(), tasks: [noId(1)] } });
@@ -256,9 +256,9 @@ check(resNoId1.code === 200 && resNoId1.body.ok === true, '⑥-b 对照：同一
 // 纯函数级（C2 第二条）：逻辑本身的边界
 const { reworkLoopWriteGuard } = _live;
 const g1 = reworkLoopWriteGuard({ tasks: [Q('rv-4', 'review', 4, 'reject')], existingTasks: [] }, null);
-check(!!g1 && g1.code === 'REWORK_LOOP_LIMIT' && g1.id === 'rv-4' && g1.actual === 4 && g1.limit === 3, '⑥ 纯函数级：返回 {code,id,actual,limit}', JSON.stringify(g1 && { code: g1.code, id: g1.id, actual: g1.actual, limit: g1.limit }));
+check(!!g1 && g1.code === 'REWORK_LOOP_LIMIT' && g1.id === 'rv-4' && g1.actual === 4 && g1.limit === 2, '⑥ 纯函数级：返回 {code,id,actual,limit}', JSON.stringify(g1 && { code: g1.code, id: g1.id, actual: g1.actual, limit: g1.limit }));
 check(!!g1 && /未落盘；请先写 STATE.pendingDecision/.test(g1.message), '⑥ 纯函数级：消息含升级指引', '');
-check(reworkLoopWriteGuard({ tasks: [Q('rv-3', 'review', 3, 'reject')], existingTasks: [] }, null) === null, '⑥ 纯函数级：round === 上限 ⇒ 不拦（边界安全）', '');
+check(reworkLoopWriteGuard({ tasks: [Q('rv-2', 'review', 2, 'reject')], existingTasks: [] }, null) === null, '⑥ 纯函数级：round === 上限 ⇒ 不拦（边界安全）', '');
 check(reworkLoopWriteGuard({ tasks: [Q('rv-4', 'review', 4, 'reject')], existingTasks: [Q('rv-4', 'review', 4, 'reject')] }, null) === null, '⑥ 纯函数级：**原地更新**（id 已在磁盘）不拦', '');
 check(reworkLoopWriteGuard({ tasks: [Q('rv-4', 'review', 4, 'reject')], existingTasks: [] }, { pendingDecision: { title: 'x' } }) === null, '⑥ 纯函数级：有 pendingDecision ⇒ 不拦', '');
 check(reworkLoopWriteGuard({ tasks: [IMPL('be-9', 9)], existingTasks: [] }, null) === null, '⑥ 纯函数级：非质量类任务超轮次不拦（只管质量任务）', '');
@@ -266,8 +266,8 @@ check(reworkLoopWriteGuard({ tasks: [Q('qa-4', 'verification', 4, null)], existi
 // ⑥-c R23 纯函数级：无 id 一律按"新增"处理（无法与磁盘比对 ⇒ 不得放行）
 const gNoId = reworkLoopWriteGuard({ tasks: [noId(4)], existingTasks: [] }, null);
 check(!!gNoId && gNoId.code === 'REWORK_LOOP_LIMIT' && gNoId.id === '(no-id)', '⑥-c 纯函数级：无 id 的超限质量任务被拦，id 记为 `(no-id)`', JSON.stringify(gNoId && { code: gNoId.code, id: gNoId.id, actual: gNoId.actual, limit: gNoId.limit }));
-check(!!gNoId && gNoId.message.includes('任务 [(no-id)] 第 4 轮超过上限 3（REWORK_LOOP_LIMIT）'), '⑥-c message 逐字含 `任务 [(no-id)] 第 4 轮超过上限 3（REWORK_LOOP_LIMIT）`', '');
-check(reworkLoopWriteGuard({ tasks: [noId(3)], existingTasks: [] }, null) === null, '⑥-c 纯函数级：无 id 但 round === 上限 ⇒ 不拦（边界安全）', '');
+check(!!gNoId && gNoId.message.includes('任务 [(no-id)] 第 4 轮超过上限 2（REWORK_LOOP_LIMIT）'), '⑥-c message 逐字含 `任务 [(no-id)] 第 4 轮超过上限 2（REWORK_LOOP_LIMIT）`', '');
+check(reworkLoopWriteGuard({ tasks: [noId(2)], existingTasks: [] }, null) === null, '⑥-c 纯函数级：无 id 但 round === 上限 ⇒ 不拦（边界安全）', '');
 check(reworkLoopWriteGuard({ tasks: [noId(4)], existingTasks: [Q('rv-9', 'review', 4, 'reject')] }, null) !== null, '⑥-c 纯函数级：磁盘有别的 id 也救不了它（无 id ⇒ 无法证明是更新）', '');
 check(reworkLoopWriteGuard({ tasks: [{ ...noId(4), id: 'rv-9' }], existingTasks: [Q('rv-9', 'review', 4, 'reject')] }, null) === null, '⑥-c 对照：**有 id 且在盘上** ⇒ 原地更新不拦（无 id 与有 id 的差别就在这）', '');
 // 接线（源级）：守卫定义 + 两个写入校验点，三处都在
@@ -280,19 +280,19 @@ console.log('\n⑦ 配置：env 覆盖、非法值忽略（回默认）、以及
 const cfg = await newWorkspaceRun('cfg-proj', '轮次上限配置验证');
 await putTasks(cfg.dir, [IMPL('be-1'), Q('rv-4', 'review', 4, 'reject')]);
 await patchState(cfg.dir, { pendingDecision: null });
-check((await checkText(cfg.run, cfg.c)).includes('返工循环未升级'), '⑦ 默认 maxReviewRounds=3 ⇒ round:4 命中', '');
+check((await checkText(cfg.run, cfg.c)).includes('返工循环未升级'), '⑦ 默认 maxReviewRounds=2 ⇒ round:4 命中', '');
 process.env.DSH_EXPERT_TEAM_MAX_REVIEW_ROUNDS = '5';
 _live.resolveRoundLimits(undefined);
 check(_live.ROUND_LIMITS.maxReviewRounds === 5, '⑦ env=5 被解析', String(_live.ROUND_LIMITS.maxReviewRounds));
 check(!(await checkText(cfg.run, cfg.c)).includes('返工循环未升级'), '⑦ env=5 ⇒ 同一 run 的 round:4 不再命中（读侧真的吃这份配置）', '');
 delete process.env.DSH_EXPERT_TEAM_MAX_REVIEW_ROUNDS;
 _live.resolveRoundLimits(undefined);
-check((await checkText(cfg.run, cfg.c)).includes('返工循环未升级'), '⑦ 撤掉 env ⇒ 回到默认 3、又命中（**无粘性**，不残留上一次的值）', '');
+check((await checkText(cfg.run, cfg.c)).includes('返工循环未升级'), '⑦ 撤掉 env ⇒ 回到默认 2、又命中（**无粘性**，不残留上一次的值）', '');
 for (const bad of ['abc', -1, 0, null, '']) {
   const v = _live.resolveRoundLimits({ limits: { maxReviewRounds: bad } }).maxReviewRounds;
-  check(v === 3, `⑦ 非法 maxReviewRounds=${JSON.stringify(bad)} 被忽略 ⇒ 默认 3`, String(v));
+  check(v === 2, `⑦ 非法 maxReviewRounds=${JSON.stringify(bad)} 被忽略 ⇒ 默认 2`, String(v));
 }
-check(_live.resolveRoundLimits({ limits: { maxReviewRounds: 0.5 } }).maxReviewRounds === 3, '⑦ 0.5 取整后为 0 ⇒ 判非法回默认 3（不放回"上限 0 = 人人超限"的陷阱）', '');
+check(_live.resolveRoundLimits({ limits: { maxReviewRounds: 0.5 } }).maxReviewRounds === 2, '⑦ 0.5 取整后为 0 ⇒ 判非法回默认 2（不放回"上限 0 = 人人超限"的陷阱）', '');
 check(_live.resolveRoundLimits({ limits: { maxReviewRounds: 7 } }).maxReviewRounds === 7, '⑦ 合法值 7 生效', '');
 check(_live.resolveRoundLimits({ limits: { maxTestRounds: 2 } }).maxTestRounds === 2, '⑦ maxTestRounds 独立于 review 档', '');
 check(_live.resolveRoundLimits({ limits: { maxReviewRounds: '6' } }).maxReviewRounds === 6, '⑦ 数字字符串按合法值收（与容量侧同语义）', '');
@@ -301,7 +301,7 @@ check(_live.resolveLimits({ limits: { maxTasks: 0 } }).maxTasks === 0, '⑦ 对�
 check(/resolveRoundLimits\(config, roundLimitsBaseFromSettings\(\)\);/.test(codeOnly), '⑦ 接线：apply(ctx, config) 里解析轮次上限（含设置来源）', '');
 _live.resolveRoundLimits(undefined); // 复位（后续用例不吃这份配置）
 _live.resolveLimits(null);
-check(_live.ROUND_LIMITS.maxReviewRounds === 3 && _live.ROUND_LIMITS.maxTestRounds === 3, '⑦ 复位：ROUND_LIMITS 回到默认', JSON.stringify(_live.ROUND_LIMITS));
+check(_live.ROUND_LIMITS.maxReviewRounds === 2 && _live.ROUND_LIMITS.maxTestRounds === 2, '⑦ 复位：ROUND_LIMITS 回到默认', JSON.stringify(_live.ROUND_LIMITS));
 
 // ══════════════════════════════════════════════════════════════════════════
 console.log('\n⑧ METRICS「评审效率（轮次 / 撤销率）」：只认显式撤销标记，无标记时如实说明');
